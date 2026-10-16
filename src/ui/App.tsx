@@ -1,19 +1,27 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { rotateObject } from "../model/operations";
 import { useOdaja } from "../store";
 import { Viewport } from "../three/Viewport";
+import { deleteSelected, duplicateSelected } from "./actions";
+import { AddPanel } from "./AddPanel";
+import { Inspector } from "./Inspector";
 import { PlanOverlay } from "./PlanOverlay";
 
 function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       const s = useOdaja.getState();
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
         if (e.shiftKey) s.redo();
         else s.undo();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        duplicateSelected();
         return;
       }
       if (mod) return;
@@ -36,6 +44,11 @@ function useShortcuts() {
         case "escape":
           s.select(null);
           break;
+        case "delete":
+        case "backspace":
+          e.preventDefault();
+          deleteSelected();
+          break;
       }
     };
     window.addEventListener("keydown", onKey);
@@ -51,6 +64,7 @@ function Sidebar() {
   const selectedId = useOdaja((s) => s.selectedId);
   const openScene = useOdaja((s) => s.openScene);
   const select = useOdaja((s) => s.select);
+  const [adding, setAdding] = useState(false);
 
   return (
     <aside className="sidebar">
@@ -73,7 +87,15 @@ function Sidebar() {
       </section>
 
       <section className="grow">
-        <h2>Objects</h2>
+        <div className="section-head">
+          <h2>{adding ? "Add object" : "Objects"}</h2>
+          <button className={`add-button ${adding ? "active" : ""}`} onClick={() => setAdding(!adding)} disabled={!scene}>
+            {adding ? "Close" : "+ Add"}
+          </button>
+        </div>
+        {adding ? (
+          <AddPanel onClose={() => setAdding(false)} />
+        ) : (
         <ul className="list">
           {scene?.objects.map((o) => (
             <li key={o.id}>
@@ -84,37 +106,11 @@ function Sidebar() {
             </li>
           ))}
         </ul>
+        )}
       </section>
 
       <Inspector />
     </aside>
-  );
-}
-
-function Inspector() {
-  const object = useOdaja((s) => s.scene?.objects.find((o) => o.id === s.selectedId));
-  if (!object) return <section className="inspector muted">Click an object to select it.</section>;
-  return (
-    <section className="inspector">
-      <h2>{object.name}</h2>
-      <dl>
-        <dt>id</dt>
-        <dd>{object.id}</dd>
-        <dt>position</dt>
-        <dd>
-          {object.position[0]} × {object.position[1]} cm
-        </dd>
-        <dt>rotation</dt>
-        <dd>{object.rotation}°</dd>
-        {object.room && (
-          <>
-            <dt>room</dt>
-            <dd>{object.room}</dd>
-          </>
-        )}
-      </dl>
-      <p className="hint">Drag the arrows to move · R rotate 90° · Shift+R rotate 15°. In Plan view, the orange lines show the distance to the walls.</p>
-    </section>
   );
 }
 

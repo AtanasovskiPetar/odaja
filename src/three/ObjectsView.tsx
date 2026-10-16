@@ -4,6 +4,7 @@ import { RoundedBox, TransformControls } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import type { Part, SceneObject } from "../model/schema";
 import { moveObject } from "../model/operations";
+import { roomAt } from "../model/geometry";
 import { M, planToWorld, rotationToWorld, worldToPlan } from "../model/units";
 import { useOdaja } from "../store";
 import { useMaterials } from "./materials";
@@ -71,7 +72,8 @@ function ObjectView({ object }: { object: SceneObject }) {
     setDragPreview(null);
     if (!group) return;
     const next = worldToPlan(group.position.x, group.position.z);
-    if (next[0] !== x || next[1] !== y) apply(moveObject(object.id, next));
+    const shell = useOdaja.getState().shell;
+    if (next[0] !== x || next[1] !== y) apply(moveObject(object.id, next, shell ? roomAt(shell, next) : undefined));
   };
 
   return (

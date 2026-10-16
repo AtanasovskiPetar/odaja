@@ -29,6 +29,7 @@ The app runs at http://localhost:5173.
 | Path | What |
 |---|---|
 | `src/model/schema.ts` | Zod schemas for the project format. **Source of truth**: keep `docs/project-format.md` in sync. |
+| `src/model/library.ts` | Built-in furniture templates (parametric parts). After changing it, run `bun run docs:templates` to refresh the table in the format doc. |
 | `src/model/operations.ts` | Named scene edits (`moveObject`, `rotateObject`, …). All UI changes go through these. The MCP server will expose the same set. |
 | `src/model/format.ts` | JSON formatter used for every save: short values stay on one line |
 | `src/model/geometry.ts` | 2D plan geometry: wall outlines, ray casts to walls, object footprints, room sizes, wall dimension chains |
@@ -36,7 +37,7 @@ The app runs at http://localhost:5173.
 | `src/store.ts` | Zustand store: loading, live reload, undo/redo, saving |
 | `src/platform.ts` | Host interface (file read/write/watch). Browser implementation now, Tauri later. |
 | `src/three/` | React Three Fiber rendering: shell (walls, openings, floors), objects, viewport |
-| `src/ui/` | App layout, sidebar, toolbar, styles. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
+| `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
 | `server/project-server.ts` | Vite plugin serving the project folder over `/api` and pushing file-change events. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
 | `examples/sample-flat/` | Sample project used in development |
 

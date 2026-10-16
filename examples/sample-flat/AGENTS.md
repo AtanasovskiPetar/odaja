@@ -108,7 +108,46 @@ Material fields: `color` (`#rrggbb`, required), `roughness` 0–1 (default 0.8),
 | `room` | Optional id of the room it belongs to. |
 | `locked` | `true` stops it being dragged in the app (default false). |
 | `notes` | Free text, such as a product link, price or reminder. |
-| `parts` | The shapes that make up the object (at least one). |
+| `parts` | The shapes that make up the object (at least one), unless it uses a `template`. |
+| `template`, `params` | Build the object from a built-in template instead of `parts` (see below). |
+
+### Template objects
+
+Instead of `parts`, an object can use a built-in **template** and set its sizes
+with `params`. This is the quickest way to add common furniture:
+
+```json
+{ "id": "base-cabinet-1", "name": "Sink cabinet", "template": "base-cabinet", "params": { "width": 80 }, "position": [120, 657.5] }
+```
+
+Params you leave out use the defaults below. An object has **either**
+`template` + `params` **or** `parts`, never both. To customise a template object
+beyond its params, replace `template`/`params` with your own `parts`. The app's
+"Edit as parts" button does exactly that.
+
+<!-- templates:start -->
+| Template | What | Params (defaults, cm) | Notes |
+|---|---|---|---|
+| `base-cabinet` | Base cabinet with worktop | `width` 60, `depth` 60, `height` 90 |  |
+| `wall-cabinet` | Wall cabinet | `width` 60, `depth` 35, `height` 70 | Set `elevation` (usually 145) |
+| `tall-cabinet` | Tall cabinet | `width` 60, `depth` 60, `height` 220 |  |
+| `fridge` | Fridge | `width` 60, `depth` 65, `height` 200 |  |
+| `table` | Table | `width` 160, `depth` 90, `height` 75 |  |
+| `chair` | Chair | `width` 45, `depth` 48, `seat` 45 |  |
+| `sofa` | Sofa | `width` 220, `depth` 95, `height` 85 |  |
+| `coffee-table` | Coffee table | `width` 110, `depth` 60, `height` 40 |  |
+| `bookcase` | Bookcase | `width` 80, `depth` 30, `height` 200, `shelves` 5 |  |
+| `bed` | Bed | `width` 160, `length` 200 |  |
+| `nightstand` | Nightstand | `width` 40, `depth` 40, `height` 50 |  |
+| `wardrobe` | Wardrobe | `width` 200, `depth` 60, `height` 220 |  |
+| `toilet` | Toilet | `width` 38, `depth` 65 |  |
+| `vanity` | Vanity with basin | `width` 60, `depth` 45 |  |
+| `shower` | Shower tray with glass | `width` 90, `depth` 90 |  |
+| `bathtub` | Bathtub | `width` 170, `depth` 75 |  |
+| `washing-machine` | Washing machine | `width` 60, `depth` 60, `height` 85 |  |
+| `box` | Box | `width` 60, `depth` 60, `height` 60 |  |
+| `cylinder` | Cylinder | `diameter` 50, `height` 75 |  |
+<!-- templates:end -->
 
 ### Parts
 

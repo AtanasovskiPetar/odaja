@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc -b --noEmit",
-    "format-project": "bun scripts/format-project.ts"
+    "format-project": "bun scripts/format-project.ts",
+    "docs:templates": "bun scripts/docs-templates.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.9",

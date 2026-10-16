@@ -1,6 +1,7 @@
 // The Odaja project format. Keep docs/project-format.md in sync with this file:
 // that document is what agents read before editing a project.
 import { z } from "zod";
+import { buildTemplate, TEMPLATES_BY_ID } from "./library";
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]*$/, "ids are lowercase kebab-case");
 const point2 = z.tuple([z.number(), z.number()]);
@@ -68,17 +69,38 @@ export const PartSchema = z.discriminatedUnion("shape", [
   z.object({ ...partBase, shape: z.literal("cylinder"), radius: z.number().positive(), height: z.number().positive() }),
 ]);
 
-export const ObjectSchema = z.object({
-  id,
-  name: z.string(),
-  position: point2,
-  elevation: z.number().default(0),
-  rotation: z.number().default(0),
-  room: id.optional(),
-  locked: z.boolean().default(false),
-  notes: z.string().optional(),
-  parts: z.array(PartSchema).min(1),
-});
+// An object is either built by hand from `parts`, or from a built-in
+// `template` (see library.ts) whose `params` set its sizes. Parsing fills in
+// `parts` for template objects, so rendering only ever deals with parts.
+export const ObjectSchema = z
+  .object({
+    id,
+    name: z.string(),
+    position: point2,
+    elevation: z.number().default(0),
+    rotation: z.number().default(0),
+    room: id.optional(),
+    locked: z.boolean().default(false),
+    notes: z.string().optional(),
+    template: z.string().optional(),
+    params: z.record(z.string(), z.number()).optional(),
+    parts: z.array(PartSchema).min(1).optional(),
+  })
+  .superRefine((o, ctx) => {
+    if (o.template !== undefined && !TEMPLATES_BY_ID.has(o.template)) {
+      ctx.addIssue({ code: "custom", path: ["template"], message: `unknown template "${o.template}"` });
+    }
+    if (o.template !== undefined && o.parts !== undefined) {
+      ctx.addIssue({ code: "custom", path: ["parts"], message: "use either template or parts, not both" });
+    }
+    if (o.template === undefined && o.parts === undefined) {
+      ctx.addIssue({ code: "custom", path: ["parts"], message: "an object needs parts or a template" });
+    }
+  })
+  .transform((o) => ({
+    ...o,
+    parts: o.parts ?? z.array(PartSchema).parse(buildTemplate(o.template!, o.params) ?? []),
+  }));
 
 export const SceneSchema = z.object({
   version: z.literal(1),
@@ -94,6 +116,7 @@ export type Opening = z.infer<typeof OpeningSchema>;
 export type Room = z.infer<typeof RoomSchema>;
 export type Shell = z.infer<typeof ShellSchema>;
 export type Part = z.infer<typeof PartSchema>;
+export type PartInput = z.input<typeof PartSchema>;
 export type SceneObject = z.infer<typeof ObjectSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 export type SceneDoc = z.input<typeof SceneSchema>;

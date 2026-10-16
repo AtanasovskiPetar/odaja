@@ -137,6 +137,11 @@ export function roomClearSize(room: Room, edges: [Vec, Vec][]): { width: number;
   return { width: left + right, depth: up + down };
 }
 
+// The room containing a plan point, if any.
+export function roomAt(shell: Shell, p: Vec): string | undefined {
+  return shell.rooms.find((r) => pointInPolygon(p, r.polygon))?.id;
+}
+
 function roomsContain(shell: Shell, p: Vec) {
   return shell.rooms.some((r) => pointInPolygon(p, r.polygon));
 }
