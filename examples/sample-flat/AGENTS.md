@@ -15,6 +15,7 @@ immediately. To change the design, edit the files directly.
 | `shell.json` | The flat as it is: **walls**, **openings** (doors, windows) and **rooms** (floors) |
 | `shells/*.json` | Other versions of the walls, for renovation options that move or remove walls |
 | `assets/models/*.glb` | 3D models used by objects (imported files are converted to GLB) |
+| `.odaja/` | App data such as saved chat conversations. Leave it alone. |
 | `scenes/*.json` | One file per layout or variant. Each scene holds the **objects** (furniture, fixtures) and says which shell it uses. |
 
 Scenes use `shell.json` unless they set `"shell": "shells/<name>.json"`. Scenes

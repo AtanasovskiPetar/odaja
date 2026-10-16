@@ -5,6 +5,8 @@ import { Viewport } from "../three/Viewport";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
 import { AddPanel } from "./AddPanel";
 import { Inspector } from "./Inspector";
+import { ChatPanel } from "./chat/ChatPanel";
+import { useChat } from "./chat/chatStore";
 import { ImportDialog } from "./ImportDialog";
 import { IssuesPanel } from "./IssuesPanel";
 import { SaveToLibraryDialog } from "./SaveToLibraryDialog";
@@ -25,6 +27,11 @@ function useShortcuts() {
         e.preventDefault();
         if (e.shiftKey) s.redo();
         else s.undo();
+        return;
+      }
+      if (mod && e.key.toLowerCase() === "j") {
+        e.preventDefault();
+        useChat.getState().toggle();
         return;
       }
       if (mod && e.key.toLowerCase() === "d" && s.mode === "furnish") {
@@ -221,6 +228,16 @@ function StructureToolbar() {
   );
 }
 
+function ChatToggle() {
+  const open = useChat((s) => s.open);
+  const toggle = useChat((s) => s.toggle);
+  return (
+    <button className={open ? "active" : ""} onClick={toggle} title="Chat with an AI about your design (⌘J)">
+      Chat
+    </button>
+  );
+}
+
 function Toolbar() {
   const mode = useOdaja((s) => s.mode);
   const setMode = useOdaja((s) => s.setMode);
@@ -264,6 +281,8 @@ function Toolbar() {
       <span className="sep" />
       <button onClick={undo} disabled={!canUndo} title="Undo (⌘Z)">Undo</button>
       <button onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)">Redo</button>
+      <span className="sep" />
+      <ChatToggle />
     </div>
   );
 }
@@ -319,6 +338,7 @@ function useFileDrop() {
 export function App() {
   const load = useOdaja((s) => s.load);
   const drop = useFileDrop();
+  const chatOpen = useChat((s) => s.open);
   const status = useOdaja((s) => s.status);
   const editingStructure = useOdaja((s) => s.mode === "structure" && s.viewMode === "plan");
   useEffect(() => {
@@ -342,6 +362,7 @@ export function App() {
         <IssuesPanel />
         <Errors />
       </main>
+      {chatOpen && <ChatPanel />}
       <Dialogs />
     </div>
   );

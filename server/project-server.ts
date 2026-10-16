@@ -12,6 +12,9 @@ import type { IncomingMessage } from "node:http";
 import type { Plugin, ViteDevServer } from "vite";
 import { newProjectFile, newSceneFile, newShellFile, slugify, type StarterRoom } from "../src/model/defaults";
 import { formatJson } from "../src/model/format";
+import { callTool, inputJsonSchema, TOOLS, type ToolContext } from "./tools";
+import { handleChat } from "./chat/routes";
+import { stopAllClaudeCode } from "./chat/runners";
 
 const AGENT_DOC_SOURCE = path.resolve("docs/project-format.md");
 // New projects are created here.
@@ -77,6 +80,27 @@ async function readBody(req: IncomingMessage): Promise<Buffer> {
   return Buffer.concat(chunks);
 }
 
+// The API can change files, delete library items and run models on the
+// user's accounts, so only Odaja itself may call it from a browser. Browsers
+// attach Origin (and Sec-Fetch-Site) to cross-site requests; other websites
+// the user visits are refused. Requests without them (the MCP server, curl)
+// come from local programs and are allowed. Hostile domains pointed at this
+// machine (DNS rebinding) are already refused by Vite's host check.
+function isLocalOrigin(origin: string) {
+  try {
+    const { hostname } = new URL(origin);
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]" || hostname.endsWith(".localhost");
+  } catch {
+    return false;
+  }
+}
+
+function crossSite(req: IncomingMessage): boolean {
+  const origin = req.headers.origin;
+  if (origin) return origin === "null" || !isLocalOrigin(origin);
+  return req.headers["sec-fetch-site"] === "cross-site";
+}
+
 class HttpError extends Error {
   constructor(
     public status: number,
@@ -89,6 +113,29 @@ class HttpError extends Error {
 export function odajaProjectServer(): Plugin {
   let projectDir: string | null = null;
   let server: ViteDevServer;
+  // The scene open in the app (reported by the app), the default for tools.
+  let openScenePath: string | null = null;
+  // Screenshots requested from the app, waiting for its reply.
+  const pendingShots = new Map<string, { resolve: (s: { data: string; mimeType: string }) => void; reject: (e: Error) => void }>();
+
+  const toolContext: ToolContext = {
+    projectDir: () => projectDir,
+    scenePath: () => openScenePath,
+    libraryRoot: LIBRARY_ROOT,
+    screenshot(view) {
+      const id = Math.random().toString(36).slice(2);
+      return new Promise((resolve, reject) => {
+        pendingShots.set(id, { resolve, reject });
+        server.ws.send({ type: "custom", event: "odaja:screenshot", data: { id, view } });
+        setTimeout(() => {
+          if (pendingShots.delete(id)) reject(new Error("Odaja didn't answer; is the app open in a browser window?"));
+        }, 15000);
+      });
+    },
+    openScene(path) {
+      server.ws.send({ type: "custom", event: "odaja:open-scene", data: { path } });
+    },
+  };
 
   function requireProject(): string {
     if (!projectDir) throw new HttpError(409, "no project is open");
@@ -123,6 +170,7 @@ export function odajaProjectServer(): Plugin {
     const abs = path.resolve(dir.replace(/^~(?=$|\/)/, os.homedir()));
     if (!(await isProject(abs))) throw new HttpError(404, `not an Odaja project (no project.json): ${abs}`);
     if (projectDir && projectDir !== abs) server.watcher.unwatch(projectDir);
+    if (projectDir !== abs) openScenePath = null;
     projectDir = abs;
     server.watcher.add(abs);
     await syncAgentDocs();
@@ -294,6 +342,7 @@ export function odajaProjectServer(): Plugin {
     name: "odaja-project-server",
     async configureServer(devServer) {
       server = devServer;
+      server.httpServer?.on("close", stopAllClaudeCode);
       const initial = process.env.ODAJA_PROJECT ?? (await readState()).recent[0];
       if (initial) await openProject(initial).catch((err) => console.warn(`[odaja] ${err.message}`));
 
@@ -315,9 +364,20 @@ export function odajaProjectServer(): Plugin {
           res.setHeader("Content-Type", "application/json");
           res.end(JSON.stringify(body));
         };
+        if (crossSite(req)) return send(403, { error: "Odaja's API only accepts requests from Odaja itself." });
         const json = async () => JSON.parse((await readBody(req)).toString("utf8") || "{}");
         const route = `${req.method} ${url.pathname}`;
         try {
+          if (route.includes(" /chat/")) {
+            const handled = await handleChat(route, url, req, res, {
+              projectDir: () => projectDir,
+              tools: toolContext,
+              odajaUrl: () => `http://localhost:${server.config.server.port ?? 5173}`,
+              json,
+              send,
+            });
+            if (handled) return;
+          }
           switch (route) {
             case "GET /projects":
               return send(200, await listProjects());
@@ -367,6 +427,27 @@ export function odajaProjectServer(): Plugin {
               await fs.writeFile(abs, await readBody(req));
               return send(200, { ok: true });
             }
+            case "GET /tools":
+              return send(200, TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: inputJsonSchema(t) })));
+            case "POST /tools/call": {
+              const { name, input } = await json();
+              return send(200, await callTool(String(name), input, toolContext));
+            }
+            case "POST /ui-state": {
+              const { scenePath } = await json();
+              openScenePath = typeof scenePath === "string" ? scenePath : null;
+              return send(200, { ok: true });
+            }
+            case "POST /screenshot-result": {
+              const { id, data, mimeType, error } = await json();
+              const pending = pendingShots.get(String(id));
+              pendingShots.delete(String(id));
+              if (pending) {
+                if (error) pending.reject(new Error(String(error)));
+                else pending.resolve({ data: String(data), mimeType: String(mimeType ?? "image/png") });
+              }
+              return send(200, { ok: true });
+            }
             case "GET /library":
               return send(200, await listLibrary());
             case "POST /library/new": {
@@ -385,7 +466,9 @@ export function odajaProjectServer(): Plugin {
           }
           send(404, { error: "unknown endpoint" });
         } catch (err) {
-          send(err instanceof HttpError ? err.status : 500, { error: (err as Error).message });
+          const status = err instanceof HttpError ? err.status : ((err as { status?: number }).status ?? 500);
+          if (!res.headersSent) send(status, { error: (err as Error).message });
+          else res.end();
         }
       });
     },

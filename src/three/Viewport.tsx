@@ -7,6 +7,7 @@ import { shellBounds } from "../model/geometry";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { gizmo, ObjectsView } from "./ObjectsView";
+import { viewport } from "./capture";
 import { planCamera } from "./planCamera";
 import { ShellView } from "./ShellView";
 
@@ -45,6 +46,17 @@ function CameraRig() {
     controls.update();
   }, [viewMode, frameRequest, controls, camera, hasShell]);
 
+  return null;
+}
+
+// Gives screenshot code access to the renderer, scene and camera.
+function RegisterViewport() {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    Object.assign(viewport, { gl, scene, camera });
+  }, [gl, scene, camera]);
   return null;
 }
 
@@ -100,6 +112,7 @@ export function Viewport() {
         }
       />
       <CameraRig />
+      <RegisterViewport />
       {plan && <PlanViewSync />}
     </Canvas>
   );

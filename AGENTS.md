@@ -29,6 +29,42 @@ The app runs at http://localhost:5173. The furniture library is
 in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The start screen lists those, every project folder in
 `~/Documents/Odaja`, and the sample project.
 
+## AI integration
+
+- **Tools** (`server/tools.ts`): one set of tools (get_overview, add_object,
+  update_wall, screenshot, check_issues, …) that read and change the open
+  project. The dev server exposes them at `/api/tools` and `/api/tools/call`.
+  Screenshots are taken by the open app (the server asks it over the HMR
+  socket), so the app must be open in a browser.
+- **MCP server** (`mcp/server.ts`): forwards Odaja's tools to any MCP client.
+  The app must be running (`bun run dev`). To use Odaja from Claude Code:
+  `claude mcp add odaja -- bun /path/to/odaja/mcp/server.ts` (set `ODAJA_URL`
+  if the app isn't on http://localhost:5173).
+- **In-app chat** (`server/chat/`, `src/ui/chat/`): a chat panel (⌘J) with a
+  model picker. Connections:
+  - *Claude Code (subscription)*: drives the user's own installed, signed-in
+    `claude` in headless stream-json mode with only Odaja's MCP tools
+    (`--tools "" --strict-mcp-config --allowedTools "mcp__odaja__*"
+    --permission-mode dontAsk`), with `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`
+    removed so the subscription is used. Odaja never reads Claude credentials.
+    For personal use only.
+  - *Anthropic API*: the official `@anthropic-ai/sdk`, streaming tool loop
+    (default model `claude-opus-5-5`, server-side refusal fallback on).
+  - *OpenAI, Gemini, OpenRouter, Ollama, LM Studio*: the Vercel AI SDK.
+  - API keys and local server URLs live in `~/.odaja/settings.json` (mode 600),
+    never in projects. Conversations are saved per project in
+    `<project>/.odaja/chats/`.
+
+## Security
+
+The dev server listens on localhost only. Its `/api` can change files, delete
+library items and run models on the user's accounts, so it refuses requests
+whose browser `Origin` isn't Odaja itself (other websites the user visits);
+local programs without an Origin (the MCP server, curl) are allowed, and Vite's
+host check refuses DNS-rebinding hosts. Keep new endpoints under `/api` so they
+get the same check. Never put API keys or Claude credentials in the repo or in
+project folders.
+
 ## Layout
 
 | Path | What |
@@ -40,6 +76,11 @@ in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The start screen 
 | `src/model/rooms.ts` | Finding enclosed areas in the wall graph ("Make room") |
 | `src/model/snap.ts` | Snapping for the wall tools (ends, onto walls, 45° angles, alignment, grid) |
 | `src/model/issues.ts` | Design checks (furniture in walls, overlaps, blocked doors, clearances) with quick fixes |
+| `server/tools.ts` | AI tools shared by the chat and the MCP server |
+| `server/chat/` | Chat backend: providers and models, settings, conversations, the three runners, HTTP routes |
+| `mcp/server.ts` | MCP server forwarding Odaja's tools to MCP clients |
+| `src/three/capture.ts` | Viewport screenshots (plan view includes the dimension overlay) |
+| `src/ui/chat/` | Chat panel, model picker, connection settings |
 | `src/three/modelImport.ts` | Loading model files (GLB/glTF, FBX, OBJ+MTL, DAE, 3DS, USDZ/USD, 3MF, STL, PLY, WRL), units/up-axis/facing normalisation, simplification, GLB export |
 | `src/three/ModelView.tsx` | Renders model objects stretched to their size, with the bounding box as fallback |
 | `src/three/thumbnail.ts` | Preview images for library items |

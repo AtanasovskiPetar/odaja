@@ -249,6 +249,13 @@ export const useOdaja = create<OdajaState>((set, get) => {
     else await loadShell(DEFAULT_SHELL);
   }
 
+  // An agent created a scene and wants it shown.
+  platform.onOpenSceneRequest(async (path) => {
+    if (get().status !== "project") return;
+    await refreshScenes();
+    await get().openScene(path);
+  });
+
   platform.onFileChanged(async (path) => {
     const s = get();
     if (s.status !== "project") return;
@@ -337,6 +344,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
       // Ignore a slow load that finished after the user switched scenes.
       if (get().scenePath !== path) return;
       set({ sceneDoc: loaded?.raw ?? null, scene: loaded?.data ?? null });
+      platform.reportUiState({ scenePath: path });
       await loadShell(loaded?.data.shell ?? DEFAULT_SHELL);
       const dir = get().projectDir;
       if (dir) rememberScene(dir, path);
@@ -382,6 +390,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
         }));
         const dir = get().projectDir;
         if (dir) rememberScene(dir, next);
+        platform.reportUiState({ scenePath: next });
       }
       await refreshScenes();
     },

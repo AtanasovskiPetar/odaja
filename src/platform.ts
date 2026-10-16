@@ -47,6 +47,11 @@ export interface Platform {
   // Copy a library item's model into the open project; returns its path there.
   placeLibraryModel(id: string): Promise<string>;
   onFileChanged(callback: (path: string) => void): void;
+  // Tell the server what the app is showing (tools default to the open scene).
+  reportUiState(state: { scenePath: string | null }): void;
+  // Requests from the server: open a scene, take a screenshot.
+  onOpenSceneRequest(callback: (path: string) => void): void;
+  onScreenshotRequest(callback: (view: "plan" | "3d") => Promise<{ data: string; mimeType: string }>): void;
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -120,5 +125,21 @@ export const platform: Platform = {
   },
   onFileChanged(callback) {
     import.meta.hot?.on("odaja:file-changed", (data: { path: string }) => callback(data.path));
+  },
+  reportUiState(state) {
+    post("/api/ui-state", state).catch(() => {});
+  },
+  onOpenSceneRequest(callback) {
+    import.meta.hot?.on("odaja:open-scene", (data: { path: string }) => callback(data.path));
+  },
+  onScreenshotRequest(callback) {
+    import.meta.hot?.on("odaja:screenshot", async (data: { id: string; view: "plan" | "3d" }) => {
+      try {
+        const shot = await callback(data.view);
+        await post("/api/screenshot-result", { id: data.id, ...shot });
+      } catch (err) {
+        await post("/api/screenshot-result", { id: data.id, error: (err as Error).message });
+      }
+    });
   },
 };
