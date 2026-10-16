@@ -9,6 +9,7 @@ import { roomAt } from "../model/geometry";
 import { M, planToWorld, rotationToWorld, worldToPlan } from "../model/units";
 import { useOdaja } from "../store";
 import { useMaterials } from "./materials";
+import { ModelView } from "./ModelView";
 
 // Clicking the move gizmo doesn't hit a scene mesh, which three-fiber reports as
 // a "pointer missed" click. The viewport checks this to avoid deselecting.
@@ -106,9 +107,16 @@ function ObjectView({ object, ghost }: { object: SceneObject; ghost: boolean }) 
         onClick={onClick}
         userData={{ kind: "object", id: object.id }}
       >
-        {object.parts.map((part, i) => (
-          <PartMesh key={i} part={part} ghost={ghost} />
-        ))}
+        {object.model ? (
+          <ModelView
+            src={object.model.src}
+            size={object.model.size}
+            material={ghost ? GHOST : undefined}
+            fallback={object.parts.map((part, i) => <PartMesh key={i} part={part} ghost />)}
+          />
+        ) : (
+          object.parts.map((part, i) => <PartMesh key={i} part={part} ghost={ghost} />)
+        )}
       </group>
       {selected && !ghost && group && <SelectionBox target={group} />}
       {selected && !ghost && group && !object.locked && (

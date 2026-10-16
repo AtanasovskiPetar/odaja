@@ -8,7 +8,7 @@ import { useOdaja } from "../store";
 
 // Where new objects appear: the middle of the plan view if it's showing,
 // otherwise the middle of the flat.
-function dropPoint(): Vec {
+export function dropPoint(): Vec {
   const { viewMode, planView, shell } = useOdaja.getState();
   if (viewMode === "plan" && planView) return [round(planView.centerX * 100), round(planView.centerZ * 100)];
   const b = shell ? shellBounds(shell) : null;

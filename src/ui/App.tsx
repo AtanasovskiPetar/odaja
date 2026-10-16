@@ -5,7 +5,9 @@ import { Viewport } from "../three/Viewport";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
 import { AddPanel } from "./AddPanel";
 import { Inspector } from "./Inspector";
+import { ImportDialog } from "./ImportDialog";
 import { IssuesPanel } from "./IssuesPanel";
+import { SaveToLibraryDialog } from "./SaveToLibraryDialog";
 import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
 import { StartScreen } from "./StartScreen";
@@ -281,8 +283,42 @@ function Errors() {
   );
 }
 
+function Dialogs() {
+  const dialog = useOdaja((s) => s.dialog);
+  if (dialog?.kind === "import") return <ImportDialog files={dialog.files} />;
+  if (dialog?.kind === "save") return <SaveToLibraryDialog objectId={dialog.objectId} />;
+  return null;
+}
+
+// Dropping model files anywhere on the view opens the import dialog.
+function useFileDrop() {
+  const [over, setOver] = useState(false);
+  const hasFiles = (e: React.DragEvent) => e.dataTransfer.types.includes("Files");
+  return {
+    over,
+    handlers: {
+      onDragOver: (e: React.DragEvent) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        setOver(true);
+      },
+      onDragLeave: (e: React.DragEvent) => {
+        if (e.currentTarget === e.target) setOver(false);
+      },
+      onDrop: (e: React.DragEvent) => {
+        if (!hasFiles(e)) return;
+        e.preventDefault();
+        setOver(false);
+        const files = [...e.dataTransfer.files];
+        if (files.length) useOdaja.getState().openDialog({ kind: "import", files });
+      },
+    },
+  };
+}
+
 export function App() {
   const load = useOdaja((s) => s.load);
+  const drop = useFileDrop();
   const status = useOdaja((s) => s.status);
   const editingStructure = useOdaja((s) => s.mode === "structure" && s.viewMode === "plan");
   useEffect(() => {
@@ -295,7 +331,7 @@ export function App() {
   return (
     <div className="app">
       <Sidebar />
-      <main className="viewport">
+      <main className={`viewport ${drop.over ? "drop-over" : ""}`} {...drop.handlers}>
         <Viewport />
         <PlanOverlay />
         {editingStructure && <StructureLayer />}
@@ -306,6 +342,7 @@ export function App() {
         <IssuesPanel />
         <Errors />
       </main>
+      <Dialogs />
     </div>
   );
 }

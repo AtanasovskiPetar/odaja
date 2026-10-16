@@ -14,6 +14,7 @@ immediately. To change the design, edit the files directly.
 | `project.json` | Project name and the named **materials** (colours) |
 | `shell.json` | The flat as it is: **walls**, **openings** (doors, windows) and **rooms** (floors) |
 | `shells/*.json` | Other versions of the walls, for renovation options that move or remove walls |
+| `assets/models/*.glb` | 3D models used by objects (imported files are converted to GLB) |
 | `scenes/*.json` | One file per layout or variant. Each scene holds the **objects** (furniture, fixtures) and says which shell it uses. |
 
 Scenes use `shell.json` unless they set `"shell": "shells/<name>.json"`. Scenes
@@ -124,8 +125,9 @@ Material fields: `color` (`#rrggbb`, required), `roughness` 0–1 (default 0.8),
 | `attachedTo` | Optional id of the wall the object's back stands against. When that wall moves, the object moves with it. Set it for kitchen runs, wardrobes, toilets and anything else fixed to a wall, with the object's back (+y side) touching the wall face. |
 | `locked` | `true` stops it being dragged in the app (default false). |
 | `notes` | Free text, such as a product link, price or reminder. |
-| `parts` | The shapes that make up the object (at least one), unless it uses a `template`. |
+| `parts` | The shapes that make up the object (at least one), unless it uses a `template` or `model`. |
 | `template`, `params` | Build the object from a built-in template instead of `parts` (see below). |
+| `model` | Use a 3D model instead of `parts`: `{ "src": "assets/models/chair-3a2f.glb", "size": [w, d, h] }`. The model is stretched to exactly `size` (cm), centred on the object's origin and standing on its elevation, with its front towards -y like every object. |
 
 ### Template objects
 
@@ -164,6 +166,14 @@ beyond its params, replace `template`/`params` with your own `parts`. The app's
 | `box` | Box | `width` 60, `depth` 60, `height` 60 |  |
 | `cylinder` | Cylinder | `diameter` 50, `height` 75 |  |
 <!-- templates:end -->
+
+### Model objects
+
+Use a model for things that can't be built well from boxes and cylinders
+(chairs, lamps, taps, real products). The user imports models in the app, which
+converts them to GLB under `assets/models/`. An agent can also put a GLB there
+and reference it; set `size` to the real product dimensions. Measurements and
+checks use the box of `size`.
 
 ### Parts
 
@@ -218,3 +228,25 @@ them unless the user wants them:
   main paths, 100–120 cm between a kitchen run and an island.
 - Prefer adding a material to `project.json` over repeating `color` on many parts.
 - To compare layouts, create a new scene file instead of overwriting the user's scene.
+
+## The furniture library
+
+Reusable furniture lives in the user's library, shared by all projects, at
+`~/Documents/Odaja/Library/` (or `$ODAJA_HOME/Library/`). Each item is a folder:
+
+```
+Library/ikea-metod-sink-80/
+  item.json      { "version": 1, "name": "IKEA METOD sink 80", "category": "Kitchen", "notes": "…",
+                   "object": { "template": "base-cabinet", "params": { "width": 80 } } }
+  model.glb      only for model items; then "object": { "model": { "src": "model.glb", "size": [w, d, h] } }
+  preview.png    optional thumbnail
+```
+
+`object` holds the same fields as a scene object without `id`, `name` and
+position: `template`+`params`, `parts` or `model`, plus an optional
+`elevation`. Categories are Kitchen, Living, Bedroom, Bathroom, Lighting, Decor
+and Other. To add something the user asked to keep (for example a piece you
+built from a photo), write a new folder with an `item.json`; it shows up in the
+app under **+ Add → My library**. To use a library item in a scene, copy its
+`object` fields into a new scene object; for model items also copy `model.glb`
+into the project's `assets/models/` and point `src` at the copy.

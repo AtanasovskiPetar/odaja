@@ -4,6 +4,7 @@
 // agents (or any editor) show up live. It also lists, creates and opens
 // projects. The Tauri build will replace this with native file access behind
 // the same interface (src/platform.ts).
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +16,18 @@ import { formatJson } from "../src/model/format";
 const AGENT_DOC_SOURCE = path.resolve("docs/project-format.md");
 // New projects are created here.
 const PROJECTS_ROOT = path.resolve(process.env.ODAJA_HOME ?? path.join(os.homedir(), "Documents", "Odaja"));
+// Your furniture library, shared by all projects.
+const LIBRARY_ROOT = path.join(PROJECTS_ROOT, "Library");
+const CONTENT_TYPES: Record<string, string> = {
+  ".json": "application/json; charset=utf-8",
+  ".md": "text/markdown; charset=utf-8",
+  ".glb": "model/gltf-binary",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+};
+
 // Remembers recently opened projects between runs. A custom ODAJA_HOME gets
 // its own state, so test setups don't touch the real list.
 const STATE_FILE = process.env.ODAJA_HOME
@@ -196,6 +209,70 @@ export function odajaProjectServer(): Plugin {
     }
   }
 
+  // --- library -----------------------------------------------------------
+
+  function resolveInLibrary(relPath: string): string {
+    const abs = path.resolve(LIBRARY_ROOT, relPath);
+    if (!abs.startsWith(LIBRARY_ROOT + path.sep)) throw new HttpError(400, `path escapes library: ${relPath}`);
+    return abs;
+  }
+
+  async function listLibrary() {
+    const entries = await fs.readdir(LIBRARY_ROOT, { withFileTypes: true }).catch(() => []);
+    const items = await Promise.all(
+      entries
+        .filter((e) => e.isDirectory())
+        .map(async (e) => {
+          const dir = path.join(LIBRARY_ROOT, e.name);
+          try {
+            const item = JSON.parse(await fs.readFile(path.join(dir, "item.json"), "utf8"));
+            const stat = await fs.stat(path.join(dir, "item.json"));
+            const preview = await fs.stat(path.join(dir, "preview.png")).then(() => true, () => false);
+            return { id: e.name, item, preview, modified: stat.mtimeMs };
+          } catch {
+            return null; // Not an item (yet), or a broken one.
+          }
+        }),
+    );
+    return { root: LIBRARY_ROOT, items: items.filter((i) => i !== null).sort((a, b) => b.modified - a.modified) };
+  }
+
+  async function newLibraryItem(name: string) {
+    const stem = slugify(name);
+    await fs.mkdir(LIBRARY_ROOT, { recursive: true });
+    for (let n = 1; ; n++) {
+      const id = `${stem}${n === 1 ? "" : `-${n}`}`;
+      try {
+        await fs.mkdir(path.join(LIBRARY_ROOT, id));
+        return id;
+      } catch {
+        // Taken; try the next number.
+      }
+    }
+  }
+
+  // Copy a library item's model into the open project, named by content so
+  // re-placing the same item reuses the file and edited items don't clash.
+  async function placeModel(id: string) {
+    const data = await fs.readFile(resolveInLibrary(`${id}/model.glb`));
+    const hash = createHash("sha256").update(data).digest("hex").slice(0, 8);
+    const rel = `assets/models/${id}-${hash}.glb`;
+    const abs = resolveInProject(rel);
+    if (!(await fs.stat(abs).catch(() => null))) {
+      await fs.mkdir(path.dirname(abs), { recursive: true });
+      await fs.writeFile(abs, data);
+    }
+    return rel;
+  }
+
+  async function sendFile(res: import("node:http").ServerResponse, abs: string) {
+    const data = await fs.readFile(abs).catch(() => null);
+    if (data === null) throw new HttpError(404, `not found: ${abs}`);
+    res.setHeader("Content-Type", CONTENT_TYPES[path.extname(abs).toLowerCase()] ?? "application/octet-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.end(data);
+  }
+
   async function renameScene(from: string, name: string) {
     const abs = resolveInProject(from);
     const scene = JSON.parse(await fs.readFile(abs, "utf8"));
@@ -279,19 +356,31 @@ export function odajaProjectServer(): Plugin {
               return send(200, { ok: true });
             }
             case "GET /file":
-            case "PUT /file": {
+            case "PUT /file":
+            case "GET /library/file":
+            case "PUT /library/file": {
               const rel = url.searchParams.get("path");
               if (!rel) return send(400, { error: "missing path" });
-              const abs = resolveInProject(rel);
-              if (req.method === "GET") {
-                const text = await fs.readFile(abs, "utf8").catch(() => null);
-                if (text === null) return send(404, { error: `not found: ${rel}` });
-                res.setHeader("Content-Type", "text/plain; charset=utf-8");
-                return res.end(text);
-              }
+              const abs = url.pathname.startsWith("/library") ? resolveInLibrary(rel) : resolveInProject(rel);
+              if (req.method === "GET") return await sendFile(res, abs);
               await fs.mkdir(path.dirname(abs), { recursive: true });
               await fs.writeFile(abs, await readBody(req));
               return send(200, { ok: true });
+            }
+            case "GET /library":
+              return send(200, await listLibrary());
+            case "POST /library/new": {
+              const { name } = await json();
+              return send(200, { id: await newLibraryItem(String(name ?? "item")) });
+            }
+            case "POST /library/delete": {
+              const { id } = await json();
+              await fs.rm(resolveInLibrary(String(id)), { recursive: true, force: true });
+              return send(200, { ok: true });
+            }
+            case "POST /library/place-model": {
+              const { id } = await json();
+              return send(200, { src: await placeModel(String(id)) });
             }
           }
           send(404, { error: "unknown endpoint" });

@@ -23,7 +23,9 @@ bun run typecheck
 bun run format-project <dir>                   # reformat a project's JSON the way the app saves it
 ```
 
-The app runs at http://localhost:5173. Recently opened projects are remembered
+The app runs at http://localhost:5173. The furniture library is
+`~/Documents/Odaja/Library` (`$ODAJA_HOME/Library`), served under `/api/library`.
+`public/draco/` holds the Draco decoder for compressed glTF files. Recently opened projects are remembered
 in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The start screen lists those, every project folder in
 `~/Documents/Odaja`, and the sample project.
 
@@ -38,6 +40,10 @@ in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The start screen 
 | `src/model/rooms.ts` | Finding enclosed areas in the wall graph ("Make room") |
 | `src/model/snap.ts` | Snapping for the wall tools (ends, onto walls, 45° angles, alignment, grid) |
 | `src/model/issues.ts` | Design checks (furniture in walls, overlaps, blocked doors, clearances) with quick fixes |
+| `src/three/modelImport.ts` | Loading model files (GLB/glTF, FBX, OBJ+MTL, DAE, 3DS, USDZ/USD, 3MF, STL, PLY, WRL), units/up-axis/facing normalisation, simplification, GLB export |
+| `src/three/ModelView.tsx` | Renders model objects stretched to their size, with the bounding box as fallback |
+| `src/three/thumbnail.ts` | Preview images for library items |
+| `src/ui/libraryActions.ts` | Place library items, save objects to the library, finish imports |
 | `src/model/operations.ts` | Named scene edits (`moveObject`, `rotateObject`, …). All UI changes go through these. The MCP server will expose the same set. |
 | `src/model/format.ts` | JSON formatter used for every save: short values stay on one line |
 | `src/model/geometry.ts` | 2D plan geometry: wall outlines, ray casts to walls, object footprints, room sizes, wall dimension chains |

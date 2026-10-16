@@ -73,9 +73,18 @@ export const PartSchema = z.discriminatedUnion("shape", [
   z.object({ ...partBase, shape: z.literal("cylinder"), radius: z.number().positive(), height: z.number().positive() }),
 ]);
 
-// An object is either built by hand from `parts`, or from a built-in
-// `template` (see library.ts) whose `params` set its sizes. Parsing fills in
-// `parts` for template objects, so rendering only ever deals with parts.
+// A 3D model file in the project (always GLB; imports are converted). It is
+// stretched to exactly `size` (cm: width x, depth y, height), sitting on the
+// object's origin with its footprint centred there and its front facing -y.
+export const ModelSchema = z.object({
+  src: z.string().regex(/^assets\/[^]+\.glb$/, "model src is a .glb file under assets/"),
+  size: point3,
+});
+
+// An object is built by hand from `parts`, from a built-in `template` (see
+// library.ts) whose `params` set its sizes, or from a 3D `model`. Parsing fills
+// in `parts` for template and model objects (a model gets one box the size of
+// its bounds), so measuring and checks only ever deal with parts.
 export const ObjectSchema = z
   .object({
     id,
@@ -91,21 +100,23 @@ export const ObjectSchema = z
     template: z.string().optional(),
     params: z.record(z.string(), z.number()).optional(),
     parts: z.array(PartSchema).min(1).optional(),
+    model: ModelSchema.optional(),
   })
   .superRefine((o, ctx) => {
     if (o.template !== undefined && !TEMPLATES_BY_ID.has(o.template)) {
       ctx.addIssue({ code: "custom", path: ["template"], message: `unknown template "${o.template}"` });
     }
-    if (o.template !== undefined && o.parts !== undefined) {
-      ctx.addIssue({ code: "custom", path: ["parts"], message: "use either template or parts, not both" });
-    }
-    if (o.template === undefined && o.parts === undefined) {
-      ctx.addIssue({ code: "custom", path: ["parts"], message: "an object needs parts or a template" });
-    }
+    const kinds = [o.template, o.parts, o.model].filter((k) => k !== undefined).length;
+    if (kinds > 1) ctx.addIssue({ code: "custom", path: ["parts"], message: "use only one of template, parts or model" });
+    if (kinds === 0) ctx.addIssue({ code: "custom", path: ["parts"], message: "an object needs parts, a template or a model" });
   })
   .transform((o) => ({
     ...o,
-    parts: o.parts ?? z.array(PartSchema).parse(buildTemplate(o.template!, o.params) ?? []),
+    parts:
+      o.parts ??
+      (o.model
+        ? [PartSchema.parse({ name: "model-bounds", shape: "box", size: o.model.size })]
+        : z.array(PartSchema).parse(buildTemplate(o.template!, o.params) ?? [])),
   }));
 
 export const DEFAULT_SHELL = "shell.json";
@@ -132,6 +143,27 @@ export type Shell = z.infer<typeof ShellSchema>;
 export type Part = z.infer<typeof PartSchema>;
 export type PartInput = z.input<typeof PartSchema>;
 export type SceneObject = z.infer<typeof ObjectSchema>;
+export type ObjectInput = z.input<typeof ObjectSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 export type SceneDoc = z.input<typeof SceneSchema>;
 export type ShellDoc = z.input<typeof ShellSchema>;
+
+// A furniture library item (Library/<id>/item.json): an object without a
+// place, to drop into any scene. Model items keep their GLB next to item.json
+// as model.glb; `model.src` is then "model.glb".
+export const LibraryItemSchema = z.object({
+  version: z.literal(1),
+  name: z.string(),
+  category: z.string().default("Other"),
+  notes: z.string().optional(),
+  object: z.object({
+    elevation: z.number().optional(),
+    template: z.string().optional(),
+    params: z.record(z.string(), z.number()).optional(),
+    parts: z.array(PartSchema).min(1).optional(),
+    model: z.object({ src: z.literal("model.glb"), size: point3 }).optional(),
+  }),
+});
+
+export type LibraryItem = z.infer<typeof LibraryItemSchema>;
+export type LibraryItemDoc = z.input<typeof LibraryItemSchema>;

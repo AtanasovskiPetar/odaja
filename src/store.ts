@@ -42,6 +42,10 @@ export interface FileError {
   message: string;
 }
 
+// A dialog over the app: importing model files, or saving an object to the
+// library.
+export type Dialog = { kind: "import"; files: File[] } | { kind: "save"; objectId: string } | null;
+
 // One undoable step: the before/after content of every file it touched.
 interface FileEdit {
   path: string;
@@ -79,6 +83,9 @@ interface OdajaState {
   showChanges: boolean;
   // The issue being looked at (highlighted on the plan).
   focusedIssue: string | null;
+  dialog: Dialog;
+  // Bumped when the furniture library changes, so lists reload.
+  libraryVersion: number;
   wallThickness: number;
   wallsCut: boolean;
   viewMode: ViewMode;
@@ -107,6 +114,8 @@ interface OdajaState {
   toggleHideFurniture(): void;
   toggleShowChanges(): void;
   focusIssue(key: string | null): void;
+  openDialog(dialog: Dialog): void;
+  libraryChanged(): void;
   toggleWallsCut(): void;
   setViewMode(mode: ViewMode): void;
   setPlanView(view: PlanView): void;
@@ -285,6 +294,8 @@ export const useOdaja = create<OdajaState>((set, get) => {
     hideFurniture: false,
     showChanges: true,
     focusedIssue: null,
+    dialog: null,
+    libraryVersion: 0,
     wallThickness: 12,
     wallsCut: false,
     viewMode: "3d",
@@ -414,6 +425,14 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
     focusIssue(focusedIssue) {
       set({ focusedIssue });
+    },
+
+    openDialog(dialog) {
+      set({ dialog });
+    },
+
+    libraryChanged() {
+      set((s) => ({ libraryVersion: s.libraryVersion + 1 }));
     },
 
     toggleWallsCut() {

@@ -158,6 +158,9 @@ export function Inspector() {
         <button onClick={duplicateSelected} title="Duplicate (⌘D)">
           Duplicate
         </button>
+        <button onClick={() => useOdaja.getState().openDialog({ kind: "save", objectId: object.id })} title="Reuse this object in any scene or project">
+          Save to library
+        </button>
         {object.template && (
           <button
             onClick={() => apply(detachTemplate(object.id, object.parts.map(compactPart)))}

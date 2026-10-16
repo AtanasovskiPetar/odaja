@@ -2,7 +2,7 @@
 // to the dev server (server/project-server.ts); the Tauri build will provide a
 // native implementation of the same interface.
 import type { StarterRoom } from "./model/defaults";
-import type { SceneDoc } from "./model/schema";
+import type { LibraryItemDoc, SceneDoc } from "./model/schema";
 
 export interface ProjectSummary {
   dir: string;
@@ -16,6 +16,15 @@ export interface SceneSummary {
   shell: string; // the shell file this scene uses
 }
 
+export interface LibraryEntry {
+  id: string;
+  item: LibraryItemDoc;
+  preview: boolean;
+  modified: number;
+}
+
+type Body = string | Blob | ArrayBuffer;
+
 export interface Platform {
   listProjects(): Promise<{ root: string; current: string | null; projects: ProjectSummary[] }>;
   openProject(dir: string): Promise<void>;
@@ -27,7 +36,16 @@ export interface Platform {
   deleteScene(path: string): Promise<void>;
   copyShell(from: string, name: string): Promise<string>;
   readFile(path: string): Promise<string>;
-  writeFile(path: string, text: string): Promise<void>;
+  writeFile(path: string, data: Body): Promise<void>;
+  // URL the app can load a project file from (models, images).
+  fileUrl(path: string): string;
+  listLibrary(): Promise<{ root: string; items: LibraryEntry[] }>;
+  newLibraryItem(name: string): Promise<string>;
+  writeLibraryFile(path: string, data: Body): Promise<void>;
+  libraryFileUrl(path: string): string;
+  deleteLibraryItem(id: string): Promise<void>;
+  // Copy a library item's model into the open project; returns its path there.
+  placeLibraryModel(id: string): Promise<string>;
   onFileChanged(callback: (path: string) => void): void;
 }
 
@@ -50,6 +68,7 @@ const post = <T>(url: string, body: unknown) =>
   request<T>(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 const fileUrl = (path: string) => `/api/file?path=${encodeURIComponent(path)}`;
+const libraryFileUrl = (path: string) => `/api/library/file?path=${encodeURIComponent(path)}`;
 
 export const platform: Platform = {
   listProjects: () => request("/api/projects"),
@@ -75,9 +94,29 @@ export const platform: Platform = {
   async copyShell(from, name) {
     return (await post<{ path: string }>("/api/shells/copy", { from, name })).path;
   },
-  readFile: (path) => request<string>(fileUrl(path)),
-  async writeFile(path, text) {
-    await request(fileUrl(path), { method: "PUT", body: text });
+  async readFile(path) {
+    const res = await fetch(fileUrl(path), { cache: "no-store" });
+    const text = await res.text();
+    if (!res.ok) throw new Error(text);
+    return text;
+  },
+  async writeFile(path, data) {
+    await request(fileUrl(path), { method: "PUT", body: data });
+  },
+  fileUrl,
+  listLibrary: () => request("/api/library"),
+  async newLibraryItem(name) {
+    return (await post<{ id: string }>("/api/library/new", { name })).id;
+  },
+  async writeLibraryFile(path, data) {
+    await request(libraryFileUrl(path), { method: "PUT", body: data });
+  },
+  libraryFileUrl,
+  async deleteLibraryItem(id) {
+    await post("/api/library/delete", { id });
+  },
+  async placeLibraryModel(id) {
+    return (await post<{ src: string }>("/api/library/place-model", { id })).src;
   },
   onFileChanged(callback) {
     import.meta.hot?.on("odaja:file-changed", (data: { path: string }) => callback(data.path));
