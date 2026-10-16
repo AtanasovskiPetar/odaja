@@ -4,6 +4,17 @@ import { formatJson } from "./model/format";
 import { platform } from "./platform";
 import { ProjectSchema, SceneSchema, ShellSchema, type Project, type Scene, type SceneDoc, type Shell } from "./model/schema";
 
+export type ViewMode = "3d" | "plan";
+
+// Where the plan camera is looking, so the 2D overlay can line up with it.
+export interface PlanView {
+  centerX: number; // world metres
+  centerZ: number;
+  zoom: number; // pixels per metre
+  width: number; // viewport pixels
+  height: number;
+}
+
 export interface FileError {
   path: string;
   message: string;
@@ -23,7 +34,11 @@ interface OdajaState {
   errors: FileError[];
   selectedId: string | null;
   wallsCut: boolean;
-  viewRequest: { kind: "top" | "perspective"; at: number } | null;
+  viewMode: ViewMode;
+  frameRequest: number;
+  planView: PlanView | null;
+  // Live position of an object while it is being dragged (not saved yet).
+  dragPreview: { id: string; position: [number, number] } | null;
   undoStack: SceneDoc[];
   redoStack: SceneDoc[];
 
@@ -31,7 +46,9 @@ interface OdajaState {
   openScene(path: string): Promise<void>;
   select(id: string | null): void;
   toggleWallsCut(): void;
-  requestView(kind: "top" | "perspective"): void;
+  setViewMode(mode: ViewMode): void;
+  setPlanView(view: PlanView): void;
+  setDragPreview(preview: OdajaState["dragPreview"]): void;
   apply(change: (doc: SceneDoc) => SceneDoc): void;
   undo(): void;
   redo(): void;
@@ -124,7 +141,10 @@ export const useOdaja = create<OdajaState>((set, get) => {
     errors: [],
     selectedId: null,
     wallsCut: false,
-    viewRequest: null,
+    viewMode: "3d",
+    frameRequest: 0,
+    planView: null,
+    dragPreview: null,
     undoStack: [],
     redoStack: [],
 
@@ -152,8 +172,17 @@ export const useOdaja = create<OdajaState>((set, get) => {
       set((s) => ({ wallsCut: !s.wallsCut }));
     },
 
-    requestView(kind) {
-      set({ viewRequest: { kind, at: Date.now() } });
+    // Choosing a view again re-frames the camera on the whole flat.
+    setViewMode(viewMode) {
+      set((s) => ({ viewMode, frameRequest: s.frameRequest + 1 }));
+    },
+
+    setPlanView(planView) {
+      set({ planView });
+    },
+
+    setDragPreview(dragPreview) {
+      set({ dragPreview });
     },
 
     apply(change) {

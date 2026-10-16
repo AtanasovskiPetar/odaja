@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { rotateObject } from "../model/operations";
 import { useOdaja } from "../store";
 import { Viewport } from "../three/Viewport";
+import { PlanOverlay } from "./PlanOverlay";
 
 function useShortcuts() {
   useEffect(() => {
@@ -21,11 +22,13 @@ function useShortcuts() {
         case "r":
           if (selected && !selected.locked) s.apply(rotateObject(selected.id, e.shiftKey ? 15 : 90));
           break;
+        case "2":
         case "t":
-          s.requestView("top");
+          s.setViewMode("plan");
           break;
+        case "3":
         case "p":
-          s.requestView("perspective");
+          s.setViewMode("3d");
           break;
         case "c":
           s.toggleWallsCut();
@@ -110,7 +113,7 @@ function Inspector() {
           </>
         )}
       </dl>
-      <p className="hint">Drag the arrows to move · R rotate 90° · Shift+R rotate 15°</p>
+      <p className="hint">Drag the arrows to move · R rotate 90° · Shift+R rotate 15°. In Plan view, the orange lines show the distance to the walls.</p>
     </section>
   );
 }
@@ -118,7 +121,8 @@ function Inspector() {
 function Toolbar() {
   const wallsCut = useOdaja((s) => s.wallsCut);
   const toggleWallsCut = useOdaja((s) => s.toggleWallsCut);
-  const requestView = useOdaja((s) => s.requestView);
+  const viewMode = useOdaja((s) => s.viewMode);
+  const setViewMode = useOdaja((s) => s.setViewMode);
   const undo = useOdaja((s) => s.undo);
   const redo = useOdaja((s) => s.redo);
   const canUndo = useOdaja((s) => s.undoStack.length > 0);
@@ -126,11 +130,17 @@ function Toolbar() {
 
   return (
     <div className="toolbar">
-      <button onClick={() => requestView("perspective")} title="Perspective view (P)">3D</button>
-      <button onClick={() => requestView("top")} title="Top view (T)">Top</button>
-      <button className={wallsCut ? "active" : ""} onClick={toggleWallsCut} title="Cut walls at 110 cm (C)">
-        Cut walls
+      <button className={viewMode === "plan" ? "active" : ""} onClick={() => setViewMode("plan")} title="Floor plan with dimensions (T)">
+        Plan
       </button>
+      <button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")} title="3D view (P)">
+        3D
+      </button>
+      {viewMode === "3d" && (
+        <button className={wallsCut ? "active" : ""} onClick={toggleWallsCut} title="Cut walls at 110 cm (C)">
+          Cut walls
+        </button>
+      )}
       <span className="sep" />
       <button onClick={undo} disabled={!canUndo} title="Undo (⌘Z)">Undo</button>
       <button onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)">Redo</button>
@@ -165,6 +175,7 @@ export function App() {
       <Sidebar />
       <main className="viewport">
         <Viewport />
+        <PlanOverlay />
         <Toolbar />
         <Errors />
       </main>

@@ -53,6 +53,7 @@ function ObjectView({ object }: { object: SceneObject }) {
   const selected = useOdaja((s) => s.selectedId === object.id);
   const select = useOdaja((s) => s.select);
   const apply = useOdaja((s) => s.apply);
+  const setDragPreview = useOdaja((s) => s.setDragPreview);
   const [group, setGroup] = useState<THREE.Group | null>(null);
   const [x, y] = object.position;
 
@@ -61,8 +62,13 @@ function ObjectView({ object }: { object: SceneObject }) {
     select(object.id);
   };
 
+  const onDrag = () => {
+    if (group) setDragPreview({ id: object.id, position: worldToPlan(group.position.x, group.position.z) });
+  };
+
   const onDragEnd = () => {
     gizmo.lastUsed = performance.now();
+    setDragPreview(null);
     if (!group) return;
     const next = worldToPlan(group.position.x, group.position.z);
     if (next[0] !== x || next[1] !== y) apply(moveObject(object.id, next));
@@ -83,7 +89,7 @@ function ObjectView({ object }: { object: SceneObject }) {
       </group>
       {selected && group && <SelectionBox target={group} />}
       {selected && group && !object.locked && (
-        <TransformControls object={group} mode="translate" showY={false} translationSnap={0.05} size={0.8} onMouseDown={() => (gizmo.lastUsed = performance.now())} onMouseUp={onDragEnd} />
+        <TransformControls object={group} mode="translate" showY={false} translationSnap={0.05} size={0.8} onMouseDown={() => (gizmo.lastUsed = performance.now())} onObjectChange={onDrag} onMouseUp={onDragEnd} />
       )}
     </>
   );

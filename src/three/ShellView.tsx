@@ -1,19 +1,22 @@
 import { useMemo } from "react";
 import * as THREE from "three";
-import { Html } from "@react-three/drei";
 import type { Opening, Room, Shell, Wall } from "../model/schema";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { useMaterials } from "./materials";
 
-// Height walls are cut at in "cut" view, so you can see into rooms from above.
+// Height walls are cut at in "cut" view and in plan view, so you can see into
+// rooms from above and windows and doors show as openings.
 const CUT_HEIGHT = 110;
+const PLAN_WALL = new THREE.MeshBasicMaterial({ color: "#3d3a36" });
+const PLAN_WINDOW = new THREE.MeshBasicMaterial({ color: "#ffffff" });
 
 interface WallPiece {
   start: number; // cm along the wall from its `from` point
   end: number;
   bottom: number; // cm above the floor
   top: number;
+  sill?: boolean; // the wall under a window
 }
 
 // Split a wall into solid boxes around its openings. Walls are extended by
@@ -30,7 +33,7 @@ function wallPieces(wall: Wall, openings: Opening[], wallHeight: number): { soli
     const start = o.offset;
     const end = o.offset + o.width;
     if (start > cursor) solid.push({ start: cursor, end: start, bottom: 0, top: height });
-    if (o.sill > 0) solid.push({ start, end, bottom: 0, top: o.sill });
+    if (o.sill > 0) solid.push({ start, end, bottom: 0, top: o.sill, sill: o.type === "window" });
     if (o.sill + o.height < height) solid.push({ start, end, bottom: o.sill + o.height, top: height });
     if (o.type === "window") glass.push({ start, end, bottom: o.sill, top: o.sill + o.height });
     cursor = Math.max(cursor, end);
@@ -46,7 +49,8 @@ function cut(pieces: WallPiece[], wallsCut: boolean): WallPiece[] {
 
 function WallView({ wall, openings, shell }: { wall: Wall; openings: Opening[]; shell: Shell }) {
   const material = useMaterials();
-  const wallsCut = useOdaja((s) => s.wallsCut);
+  const plan = useOdaja((s) => s.viewMode === "plan");
+  const wallsCut = useOdaja((s) => s.wallsCut) || plan;
   const { solid, glass } = wallPieces(wall, openings, shell.wallHeight);
   const angle = Math.atan2(wall.to[1] - wall.from[1], wall.to[0] - wall.from[0]);
   const dir: [number, number] = [Math.cos(angle), Math.sin(angle)];
@@ -66,7 +70,7 @@ function WallView({ wall, openings, shell }: { wall: Wall; openings: Opening[]; 
       {cut(solid, wallsCut).map((p, i) => {
         const b = box(p, wall.thickness);
         return (
-          <mesh key={i} position={b.position} rotation={[0, -angle, 0]} castShadow receiveShadow material={material(wall.material ?? "wall")}>
+          <mesh key={i} position={b.position} rotation={[0, -angle, 0]} castShadow receiveShadow material={plan ? (p.sill ? PLAN_WINDOW : PLAN_WALL) : material(wall.material ?? "wall")}>
             <boxGeometry args={b.args} />
           </mesh>
         );
@@ -91,16 +95,8 @@ function RoomFloor({ room }: { room: Room }) {
     const shape = new THREE.Shape(room.polygon.map(([x, y]) => new THREE.Vector2(M(x), -M(y))));
     return new THREE.ShapeGeometry(shape);
   }, [room.polygon]);
-  const center = room.polygon.reduce((acc, [x, y]) => [acc[0] + x / room.polygon.length, acc[1] + y / room.polygon.length], [0, 0]);
 
-  return (
-    <group>
-      <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} receiveShadow material={material(room.floor ?? "oak")} />
-      <Html position={[M(center[0]), 0.01, M(center[1])]} center className="room-label" zIndexRange={[10, 0]}>
-        {room.name}
-      </Html>
-    </group>
-  );
+  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} receiveShadow material={material(room.floor ?? "oak")} />;
 }
 
 export function ShellView() {

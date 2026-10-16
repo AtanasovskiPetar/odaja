@@ -129,6 +129,14 @@ faces south (+y).** Then `rotation` behaves predictably.
 | `color` | `#rrggbb`, overrides the material's colour |
 | `name` | Optional label such as `top` or `leg-1` |
 
+## Checking measurements
+
+The app's **Plan** view shows a to-scale floor plan. Dimensions along the outer
+walls measure inside wall faces, broken at openings and at interior walls. Each
+room shows its clear width × depth and area. Selecting an object shows its
+footprint and its distance to the nearest wall or object on each side. Ask the
+user to check there, or compute the same numbers from the files.
+
 ## Rules for editing
 
 - Keep the JSON valid and keep `"version": 1`. If a file is invalid, the app

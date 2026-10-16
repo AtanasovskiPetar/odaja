@@ -205,14 +205,70 @@ button {
   background: var(--border);
 }
 
-.room-label {
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.75);
-  color: var(--muted);
-  font-size: 11px;
-  white-space: nowrap;
+.plan-overlay {
+  position: absolute;
+  inset: 0;
   pointer-events: none;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.plan-overlay text {
+  paint-order: stroke;
+  stroke: #f4f2ee;
+  stroke-width: 3.5px;
+  stroke-linejoin: round;
+}
+
+.plan-overlay .dim line {
+  stroke: #6f6a62;
+  stroke-width: 1;
+}
+
+.plan-overlay .dim .ext {
+  stroke: #a9a399;
+  stroke-width: 0.75;
+}
+
+.plan-overlay .dim text {
+  fill: #3d3a36;
+}
+
+.plan-overlay .dim.overall text {
+  font-weight: 600;
+}
+
+.plan-overlay .room-name {
+  fill: #3d3a36;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.plan-overlay .room-size,
+.plan-overlay .opening-label {
+  fill: #6f6a62;
+}
+
+.plan-overlay .dim.selection line {
+  stroke: var(--accent);
+  stroke-width: 1.25;
+}
+
+.plan-overlay .dim.selection text {
+  fill: var(--accent);
+  font-weight: 600;
+}
+
+.plan-overlay .footprint {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  stroke-dasharray: 4 3;
+}
+
+.plan-overlay .size-label {
+  fill: var(--accent);
+  font-weight: 700;
 }
 
 .errors {
