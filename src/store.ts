@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import type { z } from "zod";
 import { formatJson } from "./model/format";
-import { platform } from "./platform";
+import type { StarterRoom } from "./model/defaults";
+import { newSceneFile } from "./model/defaults";
+import { platform, type ProjectSummary, type SceneSummary } from "./platform";
 import { ProjectSchema, SceneSchema, ShellSchema, type Project, type Scene, type SceneDoc, type Shell } from "./model/schema";
 
 export type ViewMode = "3d" | "plan";
@@ -21,10 +23,14 @@ export interface FileError {
 }
 
 interface OdajaState {
-  projectDir: string;
+  // "start" shows the start screen (no project open).
+  status: "loading" | "start" | "project";
+  projectsRoot: string;
+  projects: ProjectSummary[];
+  projectDir: string | null;
   project: Project | null;
   shell: Shell | null;
-  scenePaths: string[];
+  scenes: SceneSummary[];
   scenePath: string | null;
   // sceneDoc is the file as written (what gets saved back, so files keep only
   // the fields their author wrote); scene is the same data with defaults filled
@@ -43,7 +49,15 @@ interface OdajaState {
   redoStack: SceneDoc[];
 
   load(): Promise<void>;
+  refreshProjects(): Promise<void>;
+  openProject(dir: string): Promise<void>;
+  createProject(name: string, room?: StarterRoom): Promise<void>;
+  closeProject(): Promise<void>;
   openScene(path: string): Promise<void>;
+  newScene(): Promise<string>;
+  duplicateScene(): Promise<string | null>;
+  renameScene(path: string, name: string): Promise<void>;
+  deleteScene(path: string): Promise<void>;
   select(id: string | null): void;
   toggleWallsCut(): void;
   setViewMode(mode: ViewMode): void;
@@ -56,6 +70,40 @@ interface OdajaState {
 
 // Text we last wrote per file, so our own saves don't come back as "external" edits.
 const lastWritten = new Map<string, string>();
+
+// The last scene opened in each project, so reopening a project returns to it.
+const LAST_SCENE_KEY = "odaja:last-scene";
+function rememberScene(dir: string, path: string) {
+  try {
+    const all = JSON.parse(localStorage.getItem(LAST_SCENE_KEY) ?? "{}");
+    localStorage.setItem(LAST_SCENE_KEY, JSON.stringify({ ...all, [dir]: path }));
+  } catch {
+    // Storage unavailable: just don't remember.
+  }
+}
+function lastScene(dir: string): string | undefined {
+  try {
+    return JSON.parse(localStorage.getItem(LAST_SCENE_KEY) ?? "{}")[dir];
+  } catch {
+    return undefined;
+  }
+}
+
+// Per-project state, cleared when switching projects.
+const EMPTY_PROJECT = {
+  projectDir: null,
+  project: null,
+  shell: null,
+  scenes: [],
+  scenePath: null,
+  sceneDoc: null,
+  scene: null,
+  errors: [],
+  selectedId: null,
+  dragPreview: null,
+  undoStack: [],
+  redoStack: [],
+};
 
 function serialize(doc: SceneDoc): string {
   return formatJson(doc);
@@ -102,12 +150,30 @@ export const useOdaja = create<OdajaState>((set, get) => {
     platform.writeFile(path, text).catch((err) => console.error("save failed", err));
   }
 
+  async function refreshScenes() {
+    const { scenes } = await platform.listScenes();
+    set({ scenes });
+    // The open scene was deleted or renamed outside the app: open another.
+    const current = get().scenePath;
+    if (current && !scenes.some((sc) => sc.path === current) && scenes.length > 0) {
+      await get().openScene(scenes[0].path);
+    }
+  }
+
+  async function loadProject() {
+    const { dir, scenes } = await platform.listScenes();
+    set({ ...EMPTY_PROJECT, status: "project", projectDir: dir, scenes, viewMode: "3d", frameRequest: get().frameRequest + 1 });
+    const [project, shell] = await Promise.all([loadFile("project.json", ProjectSchema), loadFile("shell.json", ShellSchema)]);
+    set({ project: project?.data ?? null, shell: shell?.data ?? null });
+    const remembered = lastScene(dir);
+    const first = scenes.find((sc) => sc.path === remembered) ?? scenes[0];
+    if (first) await get().openScene(first.path);
+  }
+
   platform.onFileChanged(async (path) => {
     const s = get();
-    if (path.startsWith("scenes/")) {
-      const { scenes } = await platform.listScenes();
-      set({ scenePaths: scenes });
-    }
+    if (s.status !== "project") return;
+    if (path.startsWith("scenes/")) await refreshScenes();
     if (path === "project.json") {
       const loaded = await loadFile(path, ProjectSchema);
       if (loaded) set({ project: loaded.data });
@@ -131,37 +197,94 @@ export const useOdaja = create<OdajaState>((set, get) => {
   });
 
   return {
-    projectDir: "",
-    project: null,
-    shell: null,
-    scenePaths: [],
-    scenePath: null,
-    sceneDoc: null,
-    scene: null,
-    errors: [],
-    selectedId: null,
+    ...EMPTY_PROJECT,
+    status: "loading",
+    projectsRoot: "",
+    projects: [],
     wallsCut: false,
     viewMode: "3d",
     frameRequest: 0,
     planView: null,
-    dragPreview: null,
-    undoStack: [],
-    redoStack: [],
 
     async load() {
-      const { dir, scenes } = await platform.listScenes();
-      const [project, shell] = await Promise.all([
-        loadFile("project.json", ProjectSchema),
-        loadFile("shell.json", ShellSchema),
-      ]);
-      set({ projectDir: dir, project: project?.data ?? null, shell: shell?.data ?? null, scenePaths: scenes });
-      if (scenes.length > 0) await get().openScene(scenes[0]);
+      const { current } = await platform.listProjects();
+      if (current) await loadProject();
+      else await get().refreshProjects();
+    },
+
+    async refreshProjects() {
+      const { root, projects } = await platform.listProjects();
+      set({ projectsRoot: root, projects, ...(get().status === "loading" ? { status: "start" } : {}) });
+    },
+
+    async openProject(dir) {
+      await platform.openProject(dir);
+      await loadProject();
+    },
+
+    async createProject(name, room) {
+      await platform.createProject(name, room);
+      await loadProject();
+      // A new project starts in the plan view, where its size is visible.
+      get().setViewMode("plan");
+    },
+
+    async closeProject() {
+      await platform.closeProject();
+      set({ ...EMPTY_PROJECT, status: "start" });
+      await get().refreshProjects();
     },
 
     async openScene(path) {
-      set({ scenePath: path, selectedId: null, undoStack: [], redoStack: [] });
+      set({ scenePath: path, selectedId: null, dragPreview: null, undoStack: [], redoStack: [] });
       const loaded = await loadFile(path, SceneSchema);
+      // Ignore a slow load that finished after the user switched scenes.
+      if (get().scenePath !== path) return;
       set({ sceneDoc: loaded?.raw ?? null, scene: loaded?.data ?? null });
+      const dir = get().projectDir;
+      if (dir) rememberScene(dir, path);
+    },
+
+    async newScene() {
+      const path = await platform.createScene("New scene", newSceneFile("New scene"));
+      await refreshScenes();
+      await get().openScene(path);
+      return path;
+    },
+
+    async duplicateScene() {
+      const { sceneDoc, scene } = get();
+      if (!sceneDoc || !scene) return null;
+      const path = await platform.createScene(`${scene.name} (copy)`, sceneDoc);
+      await refreshScenes();
+      await get().openScene(path);
+      return path;
+    },
+
+    async renameScene(path, name) {
+      const trimmed = name.trim();
+      if (!trimmed) return;
+      const next = await platform.renameScene(path, trimmed);
+      if (get().scenePath === path) {
+        // Keep the open scene (and its undo history) under its new file name.
+        set((s) => ({
+          scenePath: next,
+          sceneDoc: s.sceneDoc ? { ...s.sceneDoc, name: trimmed } : null,
+          scene: s.scene ? { ...s.scene, name: trimmed } : null,
+          undoStack: s.undoStack.map((d) => ({ ...d, name: trimmed })),
+          redoStack: s.redoStack.map((d) => ({ ...d, name: trimmed })),
+        }));
+        const dir = get().projectDir;
+        if (dir) rememberScene(dir, next);
+      }
+      await refreshScenes();
+    },
+
+    async deleteScene(path) {
+      await platform.deleteScene(path);
+      await refreshScenes();
+      const { scenes, scenePath } = get();
+      if (scenePath === path && scenes.length > 0) await get().openScene(scenes[0].path);
     },
 
     select(id) {

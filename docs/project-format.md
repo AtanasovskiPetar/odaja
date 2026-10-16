@@ -17,6 +17,8 @@ immediately. To change the design, edit the files directly.
 
 All scenes share `shell.json`. To try a variant, copy a scene file to a new
 name (for example `scenes/option-island-kitchen.json`) and change its `name`.
+Scene file names follow the scene's name in lowercase with dashes, the same way
+the app names them. Every project keeps at least one scene.
 
 ## Coordinates and units
 

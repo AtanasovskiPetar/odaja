@@ -16,13 +16,16 @@ folders of JSON files that the app watches, so any edit on disk shows up live.
 
 ```bash
 bun install
-bun run dev                                    # opens the sample project
-ODAJA_PROJECT=/path/to/project bun run dev     # opens another project folder
+bun run dev                                    # reopens the last project, or shows the start screen
+ODAJA_PROJECT=/path/to/project bun run dev     # opens a specific project folder
+ODAJA_HOME=/path bun run dev                   # where new projects are created (default ~/Documents/Odaja)
 bun run typecheck
 bun run format-project <dir>                   # reformat a project's JSON the way the app saves it
 ```
 
-The app runs at http://localhost:5173.
+The app runs at http://localhost:5173. Recently opened projects are remembered
+in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The start screen lists those, every project folder in
+`~/Documents/Odaja`, and the sample project.
 
 ## Layout
 
@@ -37,8 +40,9 @@ The app runs at http://localhost:5173.
 | `src/store.ts` | Zustand store: loading, live reload, undo/redo, saving |
 | `src/platform.ts` | Host interface (file read/write/watch). Browser implementation now, Tauri later. |
 | `src/three/` | React Three Fiber rendering: shell (walls, openings, floors), objects, viewport |
-| `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
-| `server/project-server.ts` | Vite plugin serving the project folder over `/api` and pushing file-change events. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
+| `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `StartScreen.tsx` is the project picker, `ScenesSection.tsx` the scene list. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
+| `server/project-server.ts` | Vite plugin: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; pushes file-change events. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
+| `src/model/defaults.ts` | Starting content for new projects (materials, the rectangular-room shell) and scenes |
 | `examples/sample-flat/` | Sample project used in development |
 
 ## Conventions

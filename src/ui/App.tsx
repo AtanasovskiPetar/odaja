@@ -6,12 +6,15 @@ import { deleteSelected, duplicateSelected } from "./actions";
 import { AddPanel } from "./AddPanel";
 import { Inspector } from "./Inspector";
 import { PlanOverlay } from "./PlanOverlay";
+import { ScenesSection } from "./ScenesSection";
+import { StartScreen } from "./StartScreen";
 
 function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       const s = useOdaja.getState();
+      if (s.status !== "project") return;
       const mod = e.metaKey || e.ctrlKey;
       if (mod && e.key.toLowerCase() === "z") {
         e.preventDefault();
@@ -58,33 +61,25 @@ function useShortcuts() {
 
 function Sidebar() {
   const project = useOdaja((s) => s.project);
-  const scenePaths = useOdaja((s) => s.scenePaths);
-  const scenePath = useOdaja((s) => s.scenePath);
+  const projectDir = useOdaja((s) => s.projectDir);
+  const closeProject = useOdaja((s) => s.closeProject);
   const scene = useOdaja((s) => s.scene);
   const selectedId = useOdaja((s) => s.selectedId);
-  const openScene = useOdaja((s) => s.openScene);
   const select = useOdaja((s) => s.select);
   const [adding, setAdding] = useState(false);
 
   return (
     <aside className="sidebar">
       <header className="brand">
-        <span className="logo">Odaja</span>
-        <span className="project-name">{project?.name ?? "…"}</span>
+        <button className="logo-button" onClick={closeProject} title="Back to projects">
+          <span className="logo">Odaja</span>
+        </button>
+        <span className="project-name" title={projectDir ?? undefined}>
+          {project?.name ?? "…"}
+        </span>
       </header>
 
-      <section>
-        <h2>Scenes</h2>
-        <ul className="list">
-          {scenePaths.map((path) => (
-            <li key={path}>
-              <button className={path === scenePath ? "active" : ""} onClick={() => openScene(path)}>
-                {path === scenePath && scene ? scene.name : path.replace(/^scenes\//, "").replace(/\.json$/, "")}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
+      <ScenesSection />
 
       <section className="grow">
         <div className="section-head">
@@ -95,17 +90,19 @@ function Sidebar() {
         </div>
         {adding ? (
           <AddPanel onClose={() => setAdding(false)} />
+        ) : scene?.objects.length === 0 ? (
+          <p className="muted empty-hint">No objects yet. Click + Add, or ask an agent to furnish this scene.</p>
         ) : (
-        <ul className="list">
-          {scene?.objects.map((o) => (
-            <li key={o.id}>
-              <button className={o.id === selectedId ? "active" : ""} onClick={() => select(o.id)}>
-                {o.name}
-                <span className="muted">{o.id}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
+          <ul className="list">
+            {scene?.objects.map((o) => (
+              <li key={o.id}>
+                <button className={o.id === selectedId ? "active" : ""} onClick={() => select(o.id)}>
+                  {o.name}
+                  <span className="muted">{o.id}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
@@ -161,11 +158,14 @@ function Errors() {
 
 export function App() {
   const load = useOdaja((s) => s.load);
+  const status = useOdaja((s) => s.status);
   useEffect(() => {
     load();
   }, [load]);
   useShortcuts();
 
+  if (status === "loading") return null;
+  if (status === "start") return <StartScreen />;
   return (
     <div className="app">
       <Sidebar />
