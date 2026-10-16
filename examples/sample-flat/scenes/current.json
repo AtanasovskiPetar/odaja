@@ -1,0 +1,275 @@
+{
+  "version": 1,
+  "name": "Current state",
+  "description": "The flat as it is today.",
+  "objects": [
+    {
+      "id": "kitchen-base-run",
+      "name": "Kitchen base cabinets",
+      "room": "living",
+      "position": [162.5, 657.5],
+      "parts": [
+        { "name": "plinth", "shape": "box", "size": [300, 52, 10], "at": [0, 4, 0], "material": "black" },
+        { "name": "carcass", "shape": "box", "size": [300, 56, 76], "at": [0, 2, 10], "material": "white" },
+        { "name": "front-1", "shape": "box", "size": [59, 2, 74], "at": [-120, -27, 11], "material": "white" },
+        { "name": "front-2", "shape": "box", "size": [59, 2, 74], "at": [-60, -27, 11], "material": "white" },
+        { "name": "front-3", "shape": "box", "size": [59, 2, 74], "at": [0, -27, 11], "material": "white" },
+        { "name": "front-4", "shape": "box", "size": [59, 2, 74], "at": [60, -27, 11], "material": "white" },
+        { "name": "front-5", "shape": "box", "size": [59, 2, 74], "at": [120, -27, 11], "material": "white" },
+        { "name": "worktop", "shape": "box", "size": [300, 62, 4], "at": [0, -1, 86], "material": "oak" },
+        { "name": "sink", "shape": "box", "size": [50, 40, 1], "at": [-80, -3, 90], "material": "steel", "radius": 0.5 },
+        { "name": "hob", "shape": "box", "size": [58, 50, 1], "at": [60, -3, 90], "material": "black", "radius": 0.5 }
+      ]
+    },
+    {
+      "id": "fridge",
+      "name": "Fridge",
+      "room": "living",
+      "position": [342.5, 656.5],
+      "parts": [
+        { "name": "body", "shape": "box", "size": [60, 62, 200], "material": "white", "radius": 2 },
+        { "name": "handle", "shape": "box", "size": [2, 3, 60], "at": [24, -32.5, 100], "material": "steel" }
+      ]
+    },
+    {
+      "id": "dining-table",
+      "name": "Dining table",
+      "room": "living",
+      "position": [180, 470],
+      "parts": [
+        { "name": "top", "shape": "box", "size": [160, 90, 4], "at": [0, 0, 71], "material": "oak", "radius": 1 },
+        { "shape": "cylinder", "radius": 2.5, "height": 71, "at": [-72, -37, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 2.5, "height": 71, "at": [72, -37, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 2.5, "height": 71, "at": [-72, 37, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 2.5, "height": 71, "at": [72, 37, 0], "material": "black" }
+      ]
+    },
+    {
+      "id": "chair-1",
+      "name": "Dining chair",
+      "room": "living",
+      "position": [140, 400],
+      "rotation": 180,
+      "parts": [
+        { "name": "seat", "shape": "box", "size": [42, 42, 4], "at": [0, 0, 43], "material": "walnut", "radius": 1 },
+        { "name": "back", "shape": "box", "size": [42, 3, 40], "at": [0, 19.5, 47], "material": "walnut", "radius": 1 },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [-18, -18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [18, -18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [-18, 18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [18, 18, 0], "material": "black" }
+      ]
+    },
+    {
+      "id": "chair-2",
+      "name": "Dining chair",
+      "room": "living",
+      "position": [220, 400],
+      "rotation": 180,
+      "parts": [
+        { "name": "seat", "shape": "box", "size": [42, 42, 4], "at": [0, 0, 43], "material": "walnut", "radius": 1 },
+        { "name": "back", "shape": "box", "size": [42, 3, 40], "at": [0, 19.5, 47], "material": "walnut", "radius": 1 },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [-18, -18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [18, -18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [-18, 18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [18, 18, 0], "material": "black" }
+      ]
+    },
+    {
+      "id": "chair-3",
+      "name": "Dining chair",
+      "room": "living",
+      "position": [140, 540],
+      "parts": [
+        { "name": "seat", "shape": "box", "size": [42, 42, 4], "at": [0, 0, 43], "material": "walnut", "radius": 1 },
+        { "name": "back", "shape": "box", "size": [42, 3, 40], "at": [0, 19.5, 47], "material": "walnut", "radius": 1 },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [-18, -18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [18, -18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [-18, 18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [18, 18, 0], "material": "black" }
+      ]
+    },
+    {
+      "id": "chair-4",
+      "name": "Dining chair",
+      "room": "living",
+      "position": [220, 540],
+      "parts": [
+        { "name": "seat", "shape": "box", "size": [42, 42, 4], "at": [0, 0, 43], "material": "walnut", "radius": 1 },
+        { "name": "back", "shape": "box", "size": [42, 3, 40], "at": [0, 19.5, 47], "material": "walnut", "radius": 1 },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [-18, -18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [18, -18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [-18, 18, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 1.5, "height": 43, "at": [18, 18, 0], "material": "black" }
+      ]
+    },
+    {
+      "id": "sofa",
+      "name": "Sofa",
+      "room": "living",
+      "position": [446, 150],
+      "rotation": 270,
+      "parts": [
+        {
+          "name": "base",
+          "shape": "box",
+          "size": [220, 95, 42],
+          "at": [0, 0, 0],
+          "material": "fabric-blue",
+          "radius": 4
+        },
+        {
+          "name": "back",
+          "shape": "box",
+          "size": [220, 22, 45],
+          "at": [0, 36.5, 40],
+          "material": "fabric-blue",
+          "radius": 6
+        },
+        {
+          "name": "arm-left",
+          "shape": "box",
+          "size": [22, 95, 25],
+          "at": [-99, 0, 40],
+          "material": "fabric-blue",
+          "radius": 6
+        },
+        {
+          "name": "arm-right",
+          "shape": "box",
+          "size": [22, 95, 25],
+          "at": [99, 0, 40],
+          "material": "fabric-blue",
+          "radius": 6
+        }
+      ]
+    },
+    {
+      "id": "coffee-table",
+      "name": "Coffee table",
+      "room": "living",
+      "position": [270, 150],
+      "parts": [
+        { "name": "top", "shape": "box", "size": [110, 60, 4], "at": [0, 0, 36], "material": "walnut", "radius": 1 },
+        { "name": "base", "shape": "box", "size": [90, 40, 36], "material": "black" }
+      ]
+    },
+    {
+      "id": "tv-unit",
+      "name": "TV unit with TV",
+      "room": "living",
+      "position": [32.5, 150],
+      "rotation": 90,
+      "parts": [
+        { "name": "cabinet", "shape": "box", "size": [180, 40, 50], "material": "walnut", "radius": 1 },
+        { "name": "tv", "shape": "box", "size": [123, 4, 71], "at": [0, 8, 56], "material": "black", "radius": 1 },
+        { "name": "tv-stand", "shape": "box", "size": [30, 20, 6], "at": [0, 5, 50], "material": "black" }
+      ]
+    },
+    {
+      "id": "bed",
+      "name": "Double bed 160x200",
+      "room": "bedroom",
+      "position": [787.5, 220],
+      "rotation": 270,
+      "parts": [
+        { "name": "frame", "shape": "box", "size": [166, 206, 30], "material": "oak", "radius": 1 },
+        {
+          "name": "mattress",
+          "shape": "box",
+          "size": [160, 200, 22],
+          "at": [0, -2, 30],
+          "material": "white",
+          "radius": 5
+        },
+        {
+          "name": "headboard",
+          "shape": "box",
+          "size": [166, 6, 100],
+          "at": [0, 100, 0],
+          "material": "oak",
+          "radius": 1
+        },
+        {
+          "name": "pillow-left",
+          "shape": "box",
+          "size": [60, 35, 12],
+          "at": [-38, 75, 52],
+          "material": "fabric-grey",
+          "radius": 5
+        },
+        {
+          "name": "pillow-right",
+          "shape": "box",
+          "size": [60, 35, 12],
+          "at": [38, 75, 52],
+          "material": "fabric-grey",
+          "radius": 5
+        }
+      ]
+    },
+    {
+      "id": "nightstand-left",
+      "name": "Nightstand",
+      "room": "bedroom",
+      "position": [867.5, 100],
+      "rotation": 270,
+      "parts": [{ "shape": "box", "size": [40, 40, 50], "material": "walnut", "radius": 1 }]
+    },
+    {
+      "id": "nightstand-right",
+      "name": "Nightstand",
+      "room": "bedroom",
+      "position": [867.5, 340],
+      "rotation": 270,
+      "parts": [{ "shape": "box", "size": [40, 40, 50], "material": "walnut", "radius": 1 }]
+    },
+    {
+      "id": "wardrobe",
+      "name": "Wardrobe",
+      "room": "bedroom",
+      "position": [536, 210],
+      "rotation": 90,
+      "parts": [
+        { "name": "body", "shape": "box", "size": [200, 60, 220], "material": "white", "radius": 1 },
+        { "name": "door-gap", "shape": "box", "size": [0.6, 1, 216], "at": [0, -30.2, 2], "material": "black" }
+      ]
+    },
+    {
+      "id": "toilet",
+      "name": "Toilet",
+      "room": "bathroom",
+      "position": [700, 652],
+      "parts": [
+        { "name": "bowl", "shape": "cylinder", "radius": 18, "height": 40, "at": [0, -6, 0], "material": "porcelain" },
+        { "name": "seat", "shape": "cylinder", "radius": 19, "height": 2, "at": [0, -6, 40], "material": "porcelain" },
+        {
+          "name": "tank",
+          "shape": "box",
+          "size": [38, 18, 40],
+          "at": [0, 26, 40],
+          "material": "porcelain",
+          "radius": 2
+        }
+      ]
+    },
+    {
+      "id": "bathtub",
+      "name": "Bathtub 170x75",
+      "room": "bathroom",
+      "position": [850, 511],
+      "parts": [{ "shape": "box", "size": [75, 170, 55], "material": "porcelain", "radius": 3 }]
+    },
+    {
+      "id": "vanity",
+      "name": "Vanity with basin",
+      "room": "bathroom",
+      "position": [730, 448.5],
+      "rotation": 180,
+      "parts": [
+        { "name": "cabinet", "shape": "box", "size": [60, 45, 70], "at": [0, 0, 15], "material": "oak", "radius": 1 },
+        { "name": "basin", "shape": "box", "size": [62, 46, 6], "at": [0, 0, 85], "material": "porcelain", "radius": 2 },
+        { "name": "mirror", "shape": "box", "size": [60, 2, 80], "at": [0, 21.5, 110], "material": "glass" }
+      ]
+    }
+  ]
+}

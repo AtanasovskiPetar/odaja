@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "name": "Sample flat",
+  "units": "cm",
+  "materials": {
+    "wall": { "color": "#f1ede6", "roughness": 0.95 },
+    "white": { "color": "#f7f7f5", "roughness": 0.5 },
+    "oak": { "color": "#c49a6c", "roughness": 0.7 },
+    "walnut": { "color": "#6b4a32", "roughness": 0.6 },
+    "black": { "color": "#262626", "roughness": 0.4 },
+    "steel": { "color": "#b9bcc0", "roughness": 0.3, "metalness": 0.8 },
+    "fabric-grey": { "color": "#8d8f93", "roughness": 1 },
+    "fabric-blue": { "color": "#4f6d8f", "roughness": 1 },
+    "porcelain": { "color": "#fbfbfb", "roughness": 0.15 },
+    "tile-white": { "color": "#e9ecee", "roughness": 0.3 },
+    "tile-grey": { "color": "#9fa4a8", "roughness": 0.5 },
+    "glass": { "color": "#bfe3f2", "roughness": 0.05, "opacity": 0.35 }
+  }
+}
