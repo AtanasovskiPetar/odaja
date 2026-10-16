@@ -157,12 +157,15 @@ export function odajaProjectServer(): Plugin {
         .map(async (f) => {
           const rel = `scenes/${f}`;
           let name = f.replace(/\.json$/, "");
+          let shell = "shell.json";
           try {
-            name = String(JSON.parse(await fs.readFile(resolveInProject(rel), "utf8")).name ?? name);
+            const scene = JSON.parse(await fs.readFile(resolveInProject(rel), "utf8"));
+            name = String(scene.name ?? name);
+            if (typeof scene.shell === "string") shell = scene.shell;
           } catch {
             // Invalid file: show its file name; the app reports the error when opened.
           }
-          return { path: rel, name };
+          return { path: rel, name, shell };
         }),
     );
     return { dir: requireProject(), scenes };
@@ -175,6 +178,21 @@ export function odajaProjectServer(): Plugin {
       const rel = `scenes/${stem}${n === 1 ? "" : `-${n}`}.json`;
       if (rel === except) return rel;
       if (!(await fs.stat(resolveInProject(rel)).catch(() => null))) return rel;
+    }
+  }
+
+  // Copy a shell to a new free file shells/<name>.json, for a scene that wants
+  // its own walls.
+  async function copyShell(from: string, name: string) {
+    const text = await fs.readFile(resolveInProject(from), "utf8");
+    const stem = slugify(name);
+    await fs.mkdir(resolveInProject("shells"), { recursive: true });
+    for (let n = 1; ; n++) {
+      const rel = `shells/${stem}${n === 1 ? "" : `-${n}`}.json`;
+      if (!(await fs.stat(resolveInProject(rel)).catch(() => null))) {
+        await fs.writeFile(resolveInProject(rel), text);
+        return rel;
+      }
     }
   }
 
@@ -246,6 +264,10 @@ export function odajaProjectServer(): Plugin {
               const rel = await freeScenePath(String(name));
               await fs.writeFile(resolveInProject(rel), formatJson({ ...content, name }));
               return send(200, { path: rel });
+            }
+            case "POST /shells/copy": {
+              const { from, name } = await json();
+              return send(200, { path: await copyShell(String(from), String(name)) });
             }
             case "POST /scenes/rename": {
               const { path: from, name } = await json();

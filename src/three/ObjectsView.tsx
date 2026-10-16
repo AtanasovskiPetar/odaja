@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import * as THREE from "three";
 import { RoundedBox, TransformControls } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import type { Part, SceneObject } from "../model/schema";
 import { moveObject } from "../model/operations";
+import { snapToWall } from "../model/attach";
 import { roomAt } from "../model/geometry";
 import { M, planToWorld, rotationToWorld, worldToPlan } from "../model/units";
 import { useOdaja } from "../store";
@@ -13,9 +14,12 @@ import { useMaterials } from "./materials";
 // a "pointer missed" click. The viewport checks this to avoid deselecting.
 export const gizmo = { lastUsed: 0 };
 
-function PartMesh({ part }: { part: Part }) {
+// Furniture is shown faded while editing walls.
+const GHOST = new THREE.MeshBasicMaterial({ color: "#b9b2a6", transparent: true, opacity: 0.35, depthWrite: false });
+
+function PartMesh({ part, ghost }: { part: Part; ghost: boolean }) {
   const material = useMaterials();
-  const mat = material(part.material, part.color);
+  const mat = ghost ? GHOST : material(part.material, part.color);
   const [x, y, z] = part.at;
   const rotation: [number, number, number] = [0, rotationToWorld(part.rotation), 0];
 
@@ -50,7 +54,7 @@ function SelectionBox({ target }: { target: THREE.Object3D }) {
   return <primitive object={helper} />;
 }
 
-function ObjectView({ object }: { object: SceneObject }) {
+function ObjectView({ object, ghost }: { object: SceneObject; ghost: boolean }) {
   const selected = useOdaja((s) => s.selectedId === object.id);
   const select = useOdaja((s) => s.select);
   const apply = useOdaja((s) => s.apply);
@@ -59,12 +63,27 @@ function ObjectView({ object }: { object: SceneObject }) {
   const [x, y] = object.position;
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
+    if (ghost) return;
     e.stopPropagation();
     select(object.id);
   };
 
+  // Wall the object snapped to during the current drag, if any.
+  const snappedWall = useRef<string | null>(null);
+
   const onDrag = () => {
-    if (group) setDragPreview({ id: object.id, position: worldToPlan(group.position.x, group.position.z) });
+    if (!group) return;
+    let position = worldToPlan(group.position.x, group.position.z);
+    const shell = useOdaja.getState().shell;
+    const snap = shell ? snapToWall(object.parts, object.rotation, position, shell.walls) : null;
+    snappedWall.current = snap?.wall ?? null;
+    if (snap) {
+      position = snap.position;
+      const [wx, , wz] = planToWorld(position[0], position[1]);
+      group.position.x = wx;
+      group.position.z = wz;
+    }
+    setDragPreview({ id: object.id, position });
   };
 
   const onDragEnd = () => {
@@ -73,7 +92,9 @@ function ObjectView({ object }: { object: SceneObject }) {
     if (!group) return;
     const next = worldToPlan(group.position.x, group.position.z);
     const shell = useOdaja.getState().shell;
-    if (next[0] !== x || next[1] !== y) apply(moveObject(object.id, next, shell ? roomAt(shell, next) : undefined));
+    if (next[0] !== x || next[1] !== y) {
+      apply(moveObject(object.id, next, { room: shell ? roomAt(shell, next) : undefined, attachedTo: snappedWall.current }));
+    }
   };
 
   return (
@@ -86,11 +107,11 @@ function ObjectView({ object }: { object: SceneObject }) {
         userData={{ kind: "object", id: object.id }}
       >
         {object.parts.map((part, i) => (
-          <PartMesh key={i} part={part} />
+          <PartMesh key={i} part={part} ghost={ghost} />
         ))}
       </group>
-      {selected && group && <SelectionBox target={group} />}
-      {selected && group && !object.locked && (
+      {selected && !ghost && group && <SelectionBox target={group} />}
+      {selected && !ghost && group && !object.locked && (
         <TransformControls object={group} mode="translate" showY={false} translationSnap={0.05} size={0.8} onMouseDown={() => (gizmo.lastUsed = performance.now())} onObjectChange={onDrag} onMouseUp={onDragEnd} />
       )}
     </>
@@ -99,5 +120,8 @@ function ObjectView({ object }: { object: SceneObject }) {
 
 export function ObjectsView() {
   const objects = useOdaja((s) => s.scene?.objects);
-  return <group>{objects?.map((object) => <ObjectView key={object.id} object={object} />)}</group>;
+  const structure = useOdaja((s) => s.mode === "structure");
+  const hidden = useOdaja((s) => s.mode === "structure" && s.hideFurniture);
+  if (hidden) return null;
+  return <group>{objects?.map((object) => <ObjectView key={object.id} object={object} ghost={structure} />)}</group>;
 }

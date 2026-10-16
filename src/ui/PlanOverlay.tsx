@@ -6,6 +6,7 @@ import { useMemo, type ReactNode } from "react";
 import {
   add,
   clearances,
+  doorSwing,
   exteriorSide,
   formatCm,
   objectFootprint,
@@ -18,8 +19,10 @@ import {
   wallChain,
   wallEdges,
   wallLength,
+  wallOutline,
   type Vec,
 } from "../model/geometry";
+import { issuesFor, objectOutlines } from "../model/issues";
 import type { Shell } from "../model/schema";
 import { M } from "../model/units";
 import { useOdaja, type PlanView } from "../store";
@@ -168,6 +171,30 @@ function WallDims({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
   );
 }
 
+// Door leaves drawn open, with their swing arc, as on an architect's plan.
+function DoorSwings({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  return (
+    <g className="door-swings">
+      {shell.openings.map((o) => {
+        if (o.type !== "door") return null;
+        const wall = shell.walls.find((w) => w.id === o.wall);
+        if (!wall) return null;
+        const { hinge, closed, open } = doorSwing(wall, o);
+        const [h, c, op] = [toScreen(hinge), toScreen(closed), toScreen(open)];
+        const r = Math.hypot(c[0] - h[0], c[1] - h[1]);
+        // Sweep direction: the arc goes from the open leaf back to the closed position.
+        const cross = (op[0] - h[0]) * (c[1] - h[1]) - (op[1] - h[1]) * (c[0] - h[0]);
+        return (
+          <g key={o.id}>
+            <line x1={h[0]} y1={h[1]} x2={op[0]} y2={op[1]} className="leaf" />
+            <path d={`M ${op[0]} ${op[1]} A ${r} ${r} 0 0 ${cross > 0 ? 1 : 0} ${c[0]} ${c[1]}`} className="arc" />
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 function RoomLabels({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
   const edges = useMemo(() => wallEdges(shell), [shell]);
   return (
@@ -238,6 +265,68 @@ function SelectionDims({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }
   );
 }
 
+// Red/amber outlines on everything that has an issue; the focused issue's
+// targets drawn stronger.
+function IssueHighlights({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  const scene = useOdaja((s) => s.scene);
+  const focused = useOdaja((s) => s.focusedIssue);
+  const issues = issuesFor(scene, shell);
+  if (!scene) return null;
+  const poly = (points: Vec[]) => points.map((p) => toScreen(p).join(",")).join(" ");
+  return (
+    <g className="issue-highlights">
+      {issues.flatMap((issue) =>
+        issue.targets.map((t, i) => {
+          const cls = `${issue.severity} ${focused === issue.key ? "focused" : ""}`;
+          if (t.kind === "object") {
+            const o = scene.objects.find((x) => x.id === t.id);
+            return o ? objectOutlines(o).map((p, j) => <polygon key={`${issue.key}-${i}-${j}`} points={poly(p)} className={cls} />) : null;
+          }
+          if (t.kind === "opening") {
+            const o = shell.openings.find((x) => x.id === t.id);
+            const wall = o && shell.walls.find((w) => w.id === o.wall);
+            if (!o || !wall) return null;
+            const h = wall.thickness / 2 + 2;
+            const r = [pointOnWall(wall, o.offset, -h), pointOnWall(wall, o.offset + o.width, -h), pointOnWall(wall, o.offset + o.width, h), pointOnWall(wall, o.offset, h)];
+            return <polygon key={`${issue.key}-${i}`} points={poly(r)} className={cls} />;
+          }
+          // Walls are only outlined for the focused issue (they'd clutter otherwise).
+          if (focused !== issue.key) return null;
+          const wall = shell.walls.find((w) => w.id === t.id);
+          return wall ? <polygon key={`${issue.key}-${i}`} points={poly(wallOutline(wall))} className={cls} /> : null;
+        }),
+      )}
+    </g>
+  );
+}
+
+// What a renovation option changes compared with the flat as it is
+// (shell.json): walls to take down in red, new walls in green.
+function WallChanges({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  const base = useOdaja((s) => s.baseShell);
+  const show = useOdaja((s) => s.showChanges);
+  if (!base || !show) return null;
+  const key = (w: Shell["walls"][number]) => {
+    const ends = [w.from, w.to].map((p) => `${Math.round(p[0])},${Math.round(p[1])}`).sort();
+    return `${ends.join("|")}|${w.thickness}`;
+  };
+  const current = new Set(shell.walls.map(key));
+  const before = new Set(base.walls.map(key));
+  const poly = (w: Shell["walls"][number]) => wallOutline(w).map((p) => toScreen(p).join(",")).join(" ");
+  const removed = base.walls.filter((w) => !current.has(key(w)));
+  const added = shell.walls.filter((w) => !before.has(key(w)));
+  return (
+    <g className="wall-changes">
+      {removed.map((w) => (
+        <polygon key={`r-${w.id}`} points={poly(w)} className="removed" />
+      ))}
+      {added.map((w) => (
+        <polygon key={`a-${w.id}`} points={poly(w)} className="added" />
+      ))}
+    </g>
+  );
+}
+
 export function PlanOverlay() {
   const plan = useOdaja((s) => s.viewMode === "plan");
   const view = useOdaja((s) => s.planView);
@@ -246,8 +335,11 @@ export function PlanOverlay() {
   if (!plan || !view || !shell || !toScreen) return null;
   return (
     <svg className="plan-overlay" width={view.width} height={view.height}>
+      <WallChanges shell={shell} toScreen={toScreen} />
+      <DoorSwings shell={shell} toScreen={toScreen} />
       <RoomLabels shell={shell} toScreen={toScreen} />
       <WallDims shell={shell} toScreen={toScreen} />
+      <IssueHighlights shell={shell} toScreen={toScreen} />
       <SelectionDims shell={shell} toScreen={toScreen} />
     </svg>
   );

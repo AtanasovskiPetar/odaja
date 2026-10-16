@@ -13,6 +13,7 @@ export interface ProjectSummary {
 export interface SceneSummary {
   path: string;
   name: string;
+  shell: string; // the shell file this scene uses
 }
 
 export interface Platform {
@@ -24,6 +25,7 @@ export interface Platform {
   createScene(name: string, content: SceneDoc): Promise<string>;
   renameScene(path: string, name: string): Promise<string>;
   deleteScene(path: string): Promise<void>;
+  copyShell(from: string, name: string): Promise<string>;
   readFile(path: string): Promise<string>;
   writeFile(path: string, text: string): Promise<void>;
   onFileChanged(callback: (path: string) => void): void;
@@ -69,6 +71,9 @@ export const platform: Platform = {
   },
   async deleteScene(path) {
     await post("/api/scenes/delete", { path });
+  },
+  async copyShell(from, name) {
+    return (await post<{ path: string }>("/api/shells/copy", { from, name })).path;
   },
   readFile: (path) => request<string>(fileUrl(path)),
   async writeFile(path, text) {

@@ -17,14 +17,23 @@ function clean(object: ObjectDoc): ObjectDoc {
   return Object.fromEntries(Object.entries(object).filter(([, v]) => v !== undefined)) as ObjectDoc;
 }
 
-export function moveObject(id: string, position: [number, number], room?: string) {
+// `attachedTo`: a wall id to attach to, null to detach, or leave out to keep.
+export function moveObject(id: string, position: [number, number], extra: { room?: string; attachedTo?: string | null } = {}) {
   return (doc: SceneDoc) =>
-    updateObject(doc, id, (o) => clean({ ...o, position: [round(position[0]), round(position[1])], room: room ?? o.room }));
+    updateObject(doc, id, (o) =>
+      clean({
+        ...o,
+        position: [round(position[0]), round(position[1])],
+        room: extra.room ?? o.room,
+        attachedTo: extra.attachedTo === undefined ? o.attachedTo : (extra.attachedTo ?? undefined),
+      }),
+    );
 }
 
 export function rotateObject(id: string, byDegrees: number) {
   return (doc: SceneDoc) =>
-    updateObject(doc, id, (o) => ({ ...o, rotation: (((o.rotation ?? 0) + byDegrees) % 360 + 360) % 360 }));
+    // A rotated object no longer stands flat against its wall.
+    updateObject(doc, id, (o) => clean({ ...o, rotation: (((o.rotation ?? 0) + byDegrees) % 360 + 360) % 360, attachedTo: undefined }));
 }
 
 export function setObjectProps(id: string, patch: ObjectPatch) {

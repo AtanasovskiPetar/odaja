@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { rotateObject } from "../model/operations";
-import { useOdaja } from "../store";
+import { useOdaja, type Tool } from "../store";
 import { Viewport } from "../three/Viewport";
-import { deleteSelected, duplicateSelected } from "./actions";
+import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
 import { AddPanel } from "./AddPanel";
 import { Inspector } from "./Inspector";
+import { IssuesPanel } from "./IssuesPanel";
 import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
 import { StartScreen } from "./StartScreen";
+import { StructureInspector } from "./StructureInspector";
+import { StructureLayer } from "./StructureLayer";
 
 function useShortcuts() {
   useEffect(() => {
@@ -22,24 +25,35 @@ function useShortcuts() {
         else s.undo();
         return;
       }
-      if (mod && e.key.toLowerCase() === "d") {
+      if (mod && e.key.toLowerCase() === "d" && s.mode === "furnish") {
         e.preventDefault();
         duplicateSelected();
         return;
       }
       if (mod) return;
+      const key = e.key.toLowerCase();
+
+      // Shared by both modes.
+      if (key === "t") return s.setViewMode("plan");
+      if (key === "p") return s.setViewMode("3d");
+      if (key === "e") return s.setMode(s.mode === "structure" ? "furnish" : "structure");
+
+      if (s.mode === "structure") {
+        // Escape and Enter belong to the structure layer (drawing).
+        const tools: Record<string, Tool> = { v: "select", w: "wall", r: "room", d: "door", n: "window" };
+        if (tools[key]) return s.setTool(tools[key]);
+        if (key === "h") return s.toggleHideFurniture();
+        if ((key === "delete" || key === "backspace") && s.structureSelection) {
+          e.preventDefault();
+          deleteStructureSelection();
+        }
+        return;
+      }
+
       const selected = s.scene?.objects.find((o) => o.id === s.selectedId);
-      switch (e.key.toLowerCase()) {
+      switch (key) {
         case "r":
           if (selected && !selected.locked) s.apply(rotateObject(selected.id, e.shiftKey ? 15 : 90));
-          break;
-        case "2":
-        case "t":
-          s.setViewMode("plan");
-          break;
-        case "3":
-        case "p":
-          s.setViewMode("3d");
           break;
         case "c":
           s.toggleWallsCut();
@@ -66,6 +80,7 @@ function Sidebar() {
   const scene = useOdaja((s) => s.scene);
   const selectedId = useOdaja((s) => s.selectedId);
   const select = useOdaja((s) => s.select);
+  const structure = useOdaja((s) => s.mode === "structure");
   const [adding, setAdding] = useState(false);
 
   return (
@@ -81,6 +96,13 @@ function Sidebar() {
 
       <ScenesSection />
 
+      {structure ? (
+        <>
+          <RoomsSection />
+          <StructureInspector />
+        </>
+      ) : (
+        <>
       <section className="grow">
         <div className="section-head">
           <h2>{adding ? "Add object" : "Objects"}</h2>
@@ -107,11 +129,99 @@ function Sidebar() {
       </section>
 
       <Inspector />
+        </>
+      )}
     </aside>
   );
 }
 
+function RoomsSection() {
+  const shell = useOdaja((s) => s.shell);
+  const selection = useOdaja((s) => s.structureSelection);
+  const selectStructure = useOdaja((s) => s.selectStructure);
+  if (!shell) return <section className="grow" />;
+  const isSelected = (kind: string, id: string) => selection?.kind === kind && "id" in selection && selection.id === id;
+  return (
+    <section className="grow">
+      <h2>Rooms</h2>
+      {shell.rooms.length === 0 ? (
+        <p className="muted empty-hint">No rooms yet. Draw walls, then click inside an enclosed area and choose Make room.</p>
+      ) : (
+        <ul className="list">
+          {shell.rooms.map((r) => (
+            <li key={r.id}>
+              <button className={isSelected("room", r.id) ? "active" : ""} onClick={() => selectStructure({ kind: "room", id: r.id })}>
+                {r.name}
+                <span className="muted">{r.id}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <h2 className="spaced">Walls</h2>
+      <ul className="list">
+        {shell.walls.map((w) => (
+          <li key={w.id}>
+            <button className={isSelected("wall", w.id) ? "active" : ""} onClick={() => selectStructure({ kind: "wall", id: w.id })}>
+              {w.id}
+              <span className="muted">
+                {w.thickness} cm
+                {(() => {
+                  const n = shell.openings.filter((o) => o.wall === w.id).length;
+                  return n ? ` · ${n} opening${n > 1 ? "s" : ""}` : "";
+                })()}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+const TOOLS: { tool: Tool; label: string; key: string }[] = [
+  { tool: "select", label: "Select", key: "V" },
+  { tool: "wall", label: "Wall", key: "W" },
+  { tool: "room", label: "Room", key: "R" },
+  { tool: "door", label: "Door", key: "D" },
+  { tool: "window", label: "Window", key: "N" },
+];
+
+function StructureToolbar() {
+  const tool = useOdaja((s) => s.tool);
+  const setTool = useOdaja((s) => s.setTool);
+  const thickness = useOdaja((s) => s.wallThickness);
+  const setThickness = useOdaja((s) => s.setWallThickness);
+  const hideFurniture = useOdaja((s) => s.hideFurniture);
+  const toggleHideFurniture = useOdaja((s) => s.toggleHideFurniture);
+  return (
+    <div className="toolbar secondary">
+      {TOOLS.map((t) => (
+        <button key={t.tool} className={tool === t.tool ? "active" : ""} onClick={() => setTool(t.tool)} title={`${t.label} (${t.key})`}>
+          {t.label}
+        </button>
+      ))}
+      <span className="sep" />
+      <label className="inline-field" title="Thickness of new walls">
+        Wall
+        <select value={thickness} onChange={(e) => setThickness(Number(e.target.value))}>
+          {[8, 10, 12, 15, 20, 25, 30].map((t) => (
+            <option key={t} value={t}>
+              {t} cm
+            </option>
+          ))}
+        </select>
+      </label>
+      <button className={hideFurniture ? "active" : ""} onClick={toggleHideFurniture} title="Hide furniture (H)">
+        Hide furniture
+      </button>
+    </div>
+  );
+}
+
 function Toolbar() {
+  const mode = useOdaja((s) => s.mode);
+  const setMode = useOdaja((s) => s.setMode);
   const wallsCut = useOdaja((s) => s.wallsCut);
   const toggleWallsCut = useOdaja((s) => s.toggleWallsCut);
   const viewMode = useOdaja((s) => s.viewMode);
@@ -120,9 +230,19 @@ function Toolbar() {
   const redo = useOdaja((s) => s.redo);
   const canUndo = useOdaja((s) => s.undoStack.length > 0);
   const canRedo = useOdaja((s) => s.redoStack.length > 0);
+  const hasBase = useOdaja((s) => s.baseShell !== null);
+  const showChanges = useOdaja((s) => s.showChanges);
+  const toggleShowChanges = useOdaja((s) => s.toggleShowChanges);
 
   return (
     <div className="toolbar">
+      <button className={mode === "furnish" ? "active" : ""} onClick={() => setMode("furnish")} title="Arrange furniture (E toggles)">
+        Furnish
+      </button>
+      <button className={mode === "structure" ? "active" : ""} onClick={() => setMode("structure")} title="Edit walls, doors, windows and rooms (E toggles)">
+        Structure
+      </button>
+      <span className="sep" />
       <button className={viewMode === "plan" ? "active" : ""} onClick={() => setViewMode("plan")} title="Floor plan with dimensions (T)">
         Plan
       </button>
@@ -132,6 +252,11 @@ function Toolbar() {
       {viewMode === "3d" && (
         <button className={wallsCut ? "active" : ""} onClick={toggleWallsCut} title="Cut walls at 110 cm (C)">
           Cut walls
+        </button>
+      )}
+      {hasBase && viewMode === "plan" && (
+        <button className={showChanges ? "active" : ""} onClick={toggleShowChanges} title="Show walls removed (red) and added (green) compared with shell.json">
+          Changes
         </button>
       )}
       <span className="sep" />
@@ -159,6 +284,7 @@ function Errors() {
 export function App() {
   const load = useOdaja((s) => s.load);
   const status = useOdaja((s) => s.status);
+  const editingStructure = useOdaja((s) => s.mode === "structure" && s.viewMode === "plan");
   useEffect(() => {
     load();
   }, [load]);
@@ -172,7 +298,12 @@ export function App() {
       <main className="viewport">
         <Viewport />
         <PlanOverlay />
-        <Toolbar />
+        {editingStructure && <StructureLayer />}
+        <div className="toolbars">
+          <Toolbar />
+          {editingStructure && <StructureToolbar />}
+        </div>
+        <IssuesPanel />
         <Errors />
       </main>
     </div>

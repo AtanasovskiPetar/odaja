@@ -7,6 +7,7 @@
       "id": "kitchen-base-run",
       "name": "Kitchen base cabinets",
       "room": "living",
+      "attachedTo": "wall-south",
       "position": [162.5, 657.5],
       "parts": [
         { "name": "plinth", "shape": "box", "size": [300, 52, 10], "at": [0, 4, 0], "material": "black" },
@@ -25,6 +26,7 @@
       "id": "fridge",
       "name": "Fridge",
       "room": "living",
+      "attachedTo": "wall-south",
       "position": [342.5, 656.5],
       "parts": [
         { "name": "body", "shape": "box", "size": [60, 62, 200], "material": "white", "radius": 2 },
@@ -106,6 +108,7 @@
       "id": "sofa",
       "name": "Sofa",
       "room": "living",
+      "attachedTo": "wall-living-east",
       "position": [446, 150],
       "rotation": 270,
       "parts": [
@@ -157,6 +160,7 @@
       "id": "tv-unit",
       "name": "TV unit with TV",
       "room": "living",
+      "attachedTo": "wall-west",
       "position": [32.5, 150],
       "rotation": 90,
       "parts": [
@@ -169,7 +173,8 @@
       "id": "bed",
       "name": "Double bed 160x200",
       "room": "bedroom",
-      "position": [787.5, 220],
+      "attachedTo": "wall-east",
+      "position": [784, 220],
       "rotation": 270,
       "parts": [
         { "name": "frame", "shape": "box", "size": [166, 206, 30], "material": "oak", "radius": 1 },
@@ -211,6 +216,7 @@
       "id": "nightstand-left",
       "name": "Nightstand",
       "room": "bedroom",
+      "attachedTo": "wall-east",
       "position": [867.5, 100],
       "rotation": 270,
       "parts": [{ "shape": "box", "size": [40, 40, 50], "material": "walnut", "radius": 1 }]
@@ -219,6 +225,7 @@
       "id": "nightstand-right",
       "name": "Nightstand",
       "room": "bedroom",
+      "attachedTo": "wall-east",
       "position": [867.5, 340],
       "rotation": 270,
       "parts": [{ "shape": "box", "size": [40, 40, 50], "material": "walnut", "radius": 1 }]
@@ -227,6 +234,7 @@
       "id": "wardrobe",
       "name": "Wardrobe",
       "room": "bedroom",
+      "attachedTo": "wall-living-east",
       "position": [536, 210],
       "rotation": 90,
       "parts": [
@@ -238,6 +246,7 @@
       "id": "toilet",
       "name": "Toilet",
       "room": "bathroom",
+      "attachedTo": "wall-south",
       "position": [700, 652],
       "parts": [
         { "name": "bowl", "shape": "cylinder", "radius": 18, "height": 40, "at": [0, -6, 0], "material": "porcelain" },
@@ -263,6 +272,7 @@
       "id": "vanity",
       "name": "Vanity with basin",
       "room": "bathroom",
+      "attachedTo": "wall-bedroom-south",
       "position": [730, 448.5],
       "rotation": 180,
       "parts": [

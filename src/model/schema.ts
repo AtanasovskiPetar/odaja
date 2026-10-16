@@ -39,6 +39,10 @@ export const OpeningSchema = z.object({
   width: z.number().positive(),
   height: z.number().positive(),
   sill: z.number().min(0).default(0),
+  // Doors: which end of the opening the hinge is at (seen along the wall from
+  // its `from` point), and which side of the wall the door swings into.
+  hinge: z.enum(["start", "end"]).default("start"),
+  swing: z.enum(["left", "right"]).default("left"),
 });
 
 export const RoomSchema = z.object({
@@ -80,6 +84,8 @@ export const ObjectSchema = z
     elevation: z.number().default(0),
     rotation: z.number().default(0),
     room: id.optional(),
+    // The wall this object stands against; it moves when that wall moves.
+    attachedTo: id.optional(),
     locked: z.boolean().default(false),
     notes: z.string().optional(),
     template: z.string().optional(),
@@ -102,10 +108,18 @@ export const ObjectSchema = z
     parts: o.parts ?? z.array(PartSchema).parse(buildTemplate(o.template!, o.params) ?? []),
   }));
 
+export const DEFAULT_SHELL = "shell.json";
+
 export const SceneSchema = z.object({
   version: z.literal(1),
   name: z.string(),
   description: z.string().optional(),
+  // Which walls this scene uses. Defaults to the shared shell.json; a scene
+  // that changes walls (a renovation option) points at its own shells/*.json.
+  shell: z
+    .string()
+    .regex(/^(shell\.json|shells\/[^/]+\.json)$/, 'shell is "shell.json" or "shells/<name>.json"')
+    .optional(),
   objects: z.array(ObjectSchema).default([]),
 });
 
@@ -120,3 +134,4 @@ export type PartInput = z.input<typeof PartSchema>;
 export type SceneObject = z.infer<typeof ObjectSchema>;
 export type Scene = z.infer<typeof SceneSchema>;
 export type SceneDoc = z.input<typeof SceneSchema>;
+export type ShellDoc = z.input<typeof ShellSchema>;

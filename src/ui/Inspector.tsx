@@ -8,7 +8,7 @@ import { deleteSelected, duplicateSelected } from "./actions";
 
 // Text input that commits on Enter or blur and reverts on Escape, so typing
 // doesn't create an undo step per keystroke.
-function Field({
+export function Field({
   label,
   value,
   onCommit,
@@ -137,6 +137,12 @@ export function Inspector() {
             ))}
           </select>
         </label>
+        {object.attachedTo && (
+          <div className="attached">
+            Against <strong>{object.attachedTo}</strong>, moves with it
+            <button onClick={() => set({ attachedTo: undefined })}>Detach</button>
+          </div>
+        )}
         <label className="check">
           <input type="checkbox" checked={object.locked} onChange={(e) => set({ locked: e.target.checked || undefined })} />
           Locked (can't be moved or deleted)

@@ -7,6 +7,7 @@ import { shellBounds } from "../model/geometry";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { gizmo, ObjectsView } from "./ObjectsView";
+import { planCamera } from "./planCamera";
 import { ShellView } from "./ShellView";
 
 // Room around the flat in plan view for the dimension lines, in metres.
@@ -20,6 +21,11 @@ function CameraRig() {
   const size = useThree((s) => s.size);
   const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
   const hasShell = shell !== null;
+
+  useEffect(() => {
+    planCamera.camera = camera;
+    planCamera.controls = controls;
+  }, [camera, controls]);
 
   // Frame the whole flat when the view changes (not on every resize or edit).
   useEffect(() => {
@@ -66,6 +72,7 @@ function PlanViewSync() {
 export function Viewport() {
   const select = useOdaja((s) => s.select);
   const plan = useOdaja((s) => s.viewMode === "plan");
+  const structure = useOdaja((s) => s.mode === "structure");
   return (
     <Canvas shadows onPointerMissed={() => performance.now() - gizmo.lastUsed > 300 && select(null)}>
       <PerspectiveCamera makeDefault={!plan} fov={45} near={0.05} far={200} />
@@ -82,6 +89,7 @@ export function Viewport() {
       <ObjectsView />
       <OrbitControls
         makeDefault
+        enabled={!structure}
         enableRotate={!plan}
         zoomSpeed={plan ? 2 : 1}
         maxPolarAngle={Math.PI / 2 - 0.05}

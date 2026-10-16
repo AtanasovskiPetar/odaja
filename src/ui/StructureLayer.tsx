@@ -1,0 +1,545 @@
+// Interactive layer over the plan in Structure mode: drawing walls and rooms,
+// placing doors and windows, selecting and dragging walls, corners and
+// openings. It also handles pan and zoom while it's active (scroll to zoom,
+// right-drag, middle-drag or space+drag to pan).
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  dist,
+  doorSwing,
+  fitOpening,
+  freeSpans,
+  formatCm,
+  pointInPolygon,
+  pointOnWall,
+  projectOnWall,
+  wallLength,
+  wallOutline,
+  type Vec,
+} from "../model/geometry";
+import { enclosedArea } from "../model/rooms";
+import { ShellSchema, type Opening, type Shell, type ShellDoc, type Wall } from "../model/schema";
+import { addOpening, addRectRoom, addWalls, moveCorner, moveWall, OPENING_DEFAULTS, updateOpening } from "../model/shellOps";
+import { snapPoint, type Snap } from "../model/snap";
+import { M } from "../model/units";
+import { useOdaja, type PlanView } from "../store";
+import { panBy, zoomAt } from "../three/planCamera";
+
+const SNAP_PX = 10;
+const HIT_PX = 6;
+const DRAG_PX = 3;
+
+type Drag =
+  | { kind: "pan"; x: number; y: number }
+  | { kind: "corner"; point: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
+  | { kind: "wall"; id: string; start: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
+  | { kind: "opening"; id: string; grab: number; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
+  | { kind: "click"; startX: number; startY: number };
+
+type Hit = { kind: "wall" | "opening" | "room"; id: string } | { kind: "area"; polygon: Vec[] } | null;
+
+function useProjection(view: PlanView | null) {
+  return useMemo(() => {
+    if (!view) return null;
+    const pxPerCm = view.zoom / 100;
+    return {
+      pxPerCm,
+      toScreen: ([x, y]: Vec): Vec => [(M(x) - view.centerX) * view.zoom + view.width / 2, (M(y) - view.centerZ) * view.zoom + view.height / 2],
+      toPlan: (sx: number, sy: number): Vec => [
+        ((sx - view.width / 2) / view.zoom + view.centerX) * 100,
+        ((sy - view.height / 2) / view.zoom + view.centerZ) * 100,
+      ],
+    };
+  }, [view]);
+}
+
+function hitTest(shell: Shell, p: Vec, tol: number): Hit {
+  for (const o of shell.openings) {
+    const wall = shell.walls.find((w) => w.id === o.wall);
+    if (!wall) continue;
+    const proj = projectOnWall(wall, p);
+    if (proj.along >= o.offset && proj.along <= o.offset + o.width && proj.across <= wall.thickness / 2 + tol) {
+      return { kind: "opening", id: o.id };
+    }
+  }
+  let best: { id: string; d: number } | null = null;
+  for (const wall of shell.walls) {
+    const proj = projectOnWall(wall, p);
+    if (proj.across <= wall.thickness / 2 + tol && (!best || proj.across < best.d)) best = { id: wall.id, d: proj.across };
+  }
+  if (best) return { kind: "wall", id: best.id };
+  const room = [...shell.rooms].reverse().find((r) => pointInPolygon(p, r.polygon));
+  if (room) return { kind: "room", id: room.id };
+  const area = enclosedArea(shell, p);
+  return area ? { kind: "area", polygon: area } : null;
+}
+
+const pts = (points: Vec[]) => points.map((p) => p.join(",")).join(" ");
+
+export function StructureLayer() {
+  const view = useOdaja((s) => s.planView);
+  const shell = useOdaja((s) => s.shell);
+  const shellDoc = useOdaja((s) => s.shellDoc);
+  const tool = useOdaja((s) => s.tool);
+  const thickness = useOdaja((s) => s.wallThickness);
+  const selection = useOdaja((s) => s.structureSelection);
+  const applyShell = useOdaja((s) => s.applyShell);
+  const selectStructure = useOdaja((s) => s.selectStructure);
+  const setTool = useOdaja((s) => s.setTool);
+  const proj = useProjection(view);
+
+  const [cursor, setCursor] = useState<Vec | null>(null); // raw plan position
+  const [chain, setChain] = useState<Vec[]>([]); // wall tool: points placed so far
+  const [rectStart, setRectStart] = useState<Vec | null>(null);
+  const [typed, setTyped] = useState("");
+  const [drag, setDragState] = useState<Drag | null>(null);
+  // Handlers read the drag from a ref: pointer events can arrive before React
+  // re-renders with the latest state.
+  const dragRef = useRef<Drag | null>(null);
+  const setDrag = (d: Drag | null) => {
+    dragRef.current = d;
+    setDragState(d);
+  };
+  const [hover, setHover] = useState<Hit>(null);
+  const space = useRef(false);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  // Reset drawing state when the tool changes.
+  useEffect(() => {
+    setChain([]);
+    setRectStart(null);
+    setTyped("");
+  }, [tool]);
+
+  const radius = proj ? SNAP_PX / proj.pxPerCm : 10;
+  const snap: Snap | null = useMemo(() => {
+    if (!cursor || !shell) return null;
+    if (tool === "wall") return snapPoint(cursor, shell, radius, chain.at(-1));
+    if (tool === "room") return snapPoint(cursor, shell, radius, undefined);
+    return null;
+  }, [cursor, shell, tool, chain, radius]);
+
+  // Wall the door/window tool would place on.
+  const openingPreview = useMemo(() => {
+    if (!cursor || !shell || (tool !== "door" && tool !== "window")) return null;
+    let best: { wall: Wall; along: number; across: number } | null = null;
+    for (const wall of shell.walls) {
+      const p = projectOnWall(wall, cursor);
+      if (p.across <= wall.thickness / 2 + radius * 2 && (!best || p.across < best.across)) best = { wall, along: p.along, across: p.across };
+    }
+    if (!best) return null;
+    const width = OPENING_DEFAULTS[tool].width;
+    const offset = fitOpening(best.wall, shell, best.along - width / 2, width);
+    if (offset === null) return { wall: best.wall, offset: null, width };
+    const span = freeSpans(best.wall, shell).find(([a, b]) => offset >= a - 0.01 && offset + width <= b + 0.01);
+    return { wall: best.wall, offset, width, span };
+  }, [cursor, shell, tool, radius]);
+
+  const commitWall = (from: Vec, to: Vec) => applyShell(addWalls([from, to], thickness));
+
+  // Next point along the current wall direction at a typed length.
+  const typedPoint = (from: Vec): Vec | null => {
+    const len = parseFloat(typed.replace(",", "."));
+    const target = snap?.point ?? cursor;
+    if (!(len > 0) || !target || dist(from, target) < 0.01) return null;
+    const d = dist(from, target);
+    return [from[0] + ((target[0] - from[0]) / d) * len, from[1] + ((target[1] - from[1]) / d) * len];
+  };
+
+  // Rectangle corner from typed inside sizes ("420x330"), towards the cursor.
+  const typedRect = (from: Vec): Vec | null => {
+    const m = typed.replace(",", ".").match(/^(\d+(?:\.\d+)?)\s*[x× ]\s*(\d+(?:\.\d+)?)$/i);
+    if (!m || !cursor) return null;
+    const sx = Math.sign(cursor[0] - from[0]) || 1;
+    const sy = Math.sign(cursor[1] - from[1]) || 1;
+    return [from[0] + sx * (Number(m[1]) + thickness), from[1] + sy * (Number(m[2]) + thickness)];
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (e.key === " ") {
+        space.current = e.type === "keydown";
+        return;
+      }
+      if (e.type !== "keydown") return;
+      const drawing = (tool === "wall" && chain.length > 0) || (tool === "room" && rectStart);
+      if (drawing && /^[0-9.,x× ]$/i.test(e.key)) {
+        setTyped((t) => t + e.key);
+        e.preventDefault();
+        e.stopPropagation();
+      } else if (drawing && e.key === "Backspace" && typed) {
+        setTyped((t) => t.slice(0, -1));
+        e.preventDefault();
+        e.stopPropagation();
+      } else if (e.key === "Enter") {
+        if (tool === "wall" && chain.length > 0) {
+          const p = typed ? typedPoint(chain.at(-1)!) : null;
+          if (p) {
+            commitWall(chain.at(-1)!, p);
+            setChain([...chain, p]);
+          } else {
+            setChain([]);
+          }
+          setTyped("");
+        } else if (tool === "room" && rectStart) {
+          const b = typedRect(rectStart);
+          if (b) {
+            applyShell(addRectRoom(rectStart, b, thickness));
+            setRectStart(null);
+          }
+          setTyped("");
+        }
+      } else if (e.key === "Escape") {
+        if (typed) setTyped("");
+        else if (chain.length > 0) setChain([]);
+        else if (rectStart) setRectStart(null);
+        else if (drag) setDrag(null);
+        else if (tool !== "select") setTool("select");
+        else selectStructure(null);
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    window.addEventListener("keyup", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.removeEventListener("keyup", onKey, true);
+    };
+  });
+
+  // Scroll to zoom. Attached natively so preventDefault works (React's
+  // wheel listener is passive).
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || !view) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const rect = svg.getBoundingClientRect();
+      if (e.ctrlKey || Math.abs(e.deltaY) >= Math.abs(e.deltaX)) {
+        zoomAt(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), e.clientX - rect.left, e.clientY - rect.top, view.width, view.height);
+      } else {
+        panBy(-e.deltaX, -e.deltaY);
+      }
+    };
+    svg.addEventListener("wheel", onWheel, { passive: false });
+    return () => svg.removeEventListener("wheel", onWheel);
+  }, [view]);
+
+  if (!proj || !view || !shell || !shellDoc) return null;
+  const { toScreen, toPlan } = proj;
+  const tol = HIT_PX / proj.pxPerCm;
+
+  const local = (e: ReactPointerEvent): [number, number] => {
+    const rect = svgRef.current!.getBoundingClientRect();
+    return [e.clientX - rect.left, e.clientY - rect.top];
+  };
+
+  const selectedWall = selection?.kind === "wall" ? shell.walls.find((w) => w.id === selection.id) : undefined;
+
+  const onPointerDown = (e: ReactPointerEvent) => {
+    const [sx, sy] = local(e);
+    try {
+      svgRef.current?.setPointerCapture(e.pointerId);
+    } catch {
+      // Pointer already gone; dragging still works while over the layer.
+    }
+    if (e.button === 1 || e.button === 2 || space.current) {
+      setDrag({ kind: "pan", x: sx, y: sy });
+      return;
+    }
+    if (e.button !== 0) return;
+    const p = toPlan(sx, sy);
+    if (tool === "select") {
+      // Corner handles of the selected wall.
+      if (selectedWall) {
+        for (const end of [selectedWall.from, selectedWall.to]) {
+          if (dist(toScreen(end), [sx, sy]) <= 8) {
+            setDrag({ kind: "corner", point: end, startX: sx, startY: sy, moved: false, preview: null });
+            return;
+          }
+        }
+      }
+      const hit = hitTest(shell, p, tol);
+      if (hit?.kind === "wall") {
+        selectStructure(hit);
+        setDrag({ kind: "wall", id: hit.id, start: p, startX: sx, startY: sy, moved: false, preview: null });
+        return;
+      }
+      if (hit?.kind === "opening") {
+        selectStructure(hit);
+        const o = shell.openings.find((x) => x.id === hit.id)!;
+        const wall = shell.walls.find((w) => w.id === o.wall)!;
+        setDrag({ kind: "opening", id: hit.id, grab: projectOnWall(wall, p).along - o.offset, startX: sx, startY: sy, moved: false, preview: null });
+        return;
+      }
+    }
+    setDrag({ kind: "click", startX: sx, startY: sy });
+  };
+
+  const onPointerMove = (e: ReactPointerEvent) => {
+    const [sx, sy] = local(e);
+    const p = toPlan(sx, sy);
+    setCursor(p);
+    const drag = dragRef.current;
+    if (!drag) {
+      if (tool === "select") setHover(hitTest(shell, p, tol));
+      return;
+    }
+    if (drag.kind === "pan") {
+      panBy(sx - drag.x, sy - drag.y);
+      setDrag({ ...drag, x: sx, y: sy });
+      return;
+    }
+    if (drag.kind === "click") return;
+    const moved = drag.moved || Math.hypot(sx - drag.startX, sy - drag.startY) > DRAG_PX;
+    if (!moved) return;
+    if (drag.kind === "corner") {
+      const others = { ...shell, walls: shell.walls.filter((w) => dist(w.from, drag.point) > 0.5 && dist(w.to, drag.point) > 0.5) };
+      const target = snapPoint(p, others, SNAP_PX / proj.pxPerCm).point;
+      const preview = moveCorner(drag.point, target)(shellDoc);
+      setDrag({ ...drag, moved, preview: preview === shellDoc ? drag.preview : preview });
+    } else if (drag.kind === "wall") {
+      const wall = shell.walls.find((w) => w.id === drag.id)!;
+      const len = wallLength(wall);
+      const n: Vec = [-(wall.to[1] - wall.from[1]) / len, (wall.to[0] - wall.from[0]) / len];
+      const along = Math.round((p[0] - drag.start[0]) * n[0] + (p[1] - drag.start[1]) * n[1]);
+      const preview = moveWall(drag.id, [n[0] * along, n[1] * along])(shellDoc);
+      setDrag({ ...drag, moved, preview: preview === shellDoc ? drag.preview : preview });
+    } else if (drag.kind === "opening") {
+      const o = shell.openings.find((x) => x.id === drag.id)!;
+      const wall = shell.walls.find((w) => w.id === o.wall)!;
+      const offset = Math.round(projectOnWall(wall, p).along - drag.grab);
+      const preview = updateOpening(drag.id, { offset })(shellDoc);
+      setDrag({ ...drag, moved, preview: preview === shellDoc ? drag.preview : preview });
+    }
+  };
+
+  const onPointerUp = (e: ReactPointerEvent) => {
+    const [sx, sy] = local(e);
+    const d = dragRef.current;
+    setDrag(null);
+    if (!d || d.kind === "pan") return;
+    if (d.kind !== "click" && d.moved) {
+      if (d.preview) {
+        const preview = d.preview;
+        applyShell(() => preview);
+      }
+      return;
+    }
+    if (Math.hypot(sx - d.startX, sy - d.startY) > DRAG_PX) return;
+    onClick(toPlan(sx, sy));
+  };
+
+  const onClick = (p: Vec) => {
+    if (tool === "select") {
+      const hit = hitTest(shell, p, tol);
+      selectStructure(hit);
+    } else if (tool === "wall") {
+      const point = snap?.point ?? p;
+      if (chain.length === 0) {
+        setChain([point]);
+      } else {
+        const last = chain.at(-1)!;
+        const target = typed ? (typedPoint(last) ?? point) : point;
+        if (dist(last, target) < 1) return;
+        commitWall(last, target);
+        setTyped("");
+        // Closing the loop on the first point ends the chain.
+        if (chain.length >= 2 && dist(target, chain[0]) < 0.5) setChain([]);
+        else setChain([...chain, target]);
+      }
+    } else if (tool === "room") {
+      const point = snap?.point ?? p;
+      if (!rectStart) {
+        setRectStart(point);
+      } else {
+        applyShell(addRectRoom(rectStart, typed ? (typedRect(rectStart) ?? point) : point, thickness));
+        setRectStart(null);
+        setTyped("");
+      }
+    } else if ((tool === "door" || tool === "window") && openingPreview?.offset != null) {
+      applyShell(addOpening(openingPreview.wall.id, tool, openingPreview.offset));
+    }
+  };
+
+  // --- drawing ---------------------------------------------------------
+
+  const outline = (wall: Wall) => pts(wallOutline(wall).map(toScreen));
+  const previewShell = drag && "preview" in drag && drag.preview ? ShellSchema.parse(drag.preview) : null;
+  const highlight = (h: Hit, className: string) => {
+    if (!h) return null;
+    if (h.kind === "wall") {
+      const wall = shell.walls.find((w) => w.id === h.id);
+      return wall && <polygon points={outline(wall)} className={className} />;
+    }
+    if (h.kind === "opening") {
+      const o = shell.openings.find((x) => x.id === h.id);
+      const wall = o && shell.walls.find((w) => w.id === o.wall);
+      return o && wall && <polygon points={pts(openingRect(wall, o).map(toScreen))} className={className} />;
+    }
+    const polygon = h.kind === "area" ? h.polygon : shell.rooms.find((r) => r.id === h.id)?.polygon;
+    return polygon && <polygon points={pts(polygon.map(toScreen))} className={`${className} area`} />;
+  };
+
+  const last = chain.at(-1);
+  const wallEnd = tool === "wall" && last ? (typed ? typedPoint(last) : null) ?? snap?.point : null;
+  const rectEnd = tool === "room" && rectStart ? (typed ? typedRect(rectStart) : null) ?? snap?.point : null;
+
+  return (
+    <svg
+      ref={svgRef}
+      className={`structure-layer tool-${tool} ${hover && tool === "select" ? "hovering" : ""} ${drag?.kind === "pan" ? "panning" : ""}`}
+      width={view.width}
+      height={view.height}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerLeave={() => setCursor(null)}
+      // Double-click ends a wall chain (its second click added nothing new).
+      onDoubleClick={() => tool === "wall" && setChain([])}
+      onContextMenu={(e) => e.preventDefault()}
+    >
+      {tool === "select" && !drag && highlight(hover, "hover")}
+      {highlight(selection, "selected")}
+
+      {/* Live preview of a drag. */}
+      {previewShell?.walls.map((w) => <polygon key={w.id} points={outline(w)} className="preview" />)}
+      {previewShell?.openings.map((o) => {
+        const wall = previewShell.walls.find((w) => w.id === o.wall);
+        return wall && <polygon key={o.id} points={pts(openingRect(wall, o).map(toScreen))} className="preview-opening" />;
+      })}
+
+      {/* Corner handles on the selected wall. */}
+      {tool === "select" &&
+        selectedWall &&
+        [selectedWall.from, selectedWall.to].map((p, i) => {
+          const [x, y] = toScreen(p);
+          return <circle key={i} cx={x} cy={y} r={5} className="handle" />;
+        })}
+
+      {/* Wall tool: placed points and the wall being drawn. */}
+      {tool === "wall" && last && wallEnd && <RubberBand from={last} to={wallEnd} thickness={thickness} toScreen={toScreen} typed={typed} />}
+      {tool === "wall" && chain.map((p, i) => <circle key={i} cx={toScreen(p)[0]} cy={toScreen(p)[1]} r={3.5} className="placed" />)}
+
+      {/* Room tool: rectangle with its inside size. */}
+      {tool === "room" && rectStart && rectEnd && <RectPreview a={rectStart} b={rectEnd} thickness={thickness} toScreen={toScreen} typed={typed} />}
+
+      {/* Door / window tool. */}
+      {openingPreview && (
+        <OpeningPreview wall={openingPreview.wall} offset={openingPreview.offset} width={openingPreview.width} span={openingPreview.span} type={tool as "door" | "window"} toScreen={toScreen} />
+      )}
+
+      {/* Snap marker and guides. */}
+      {snap && (tool === "wall" || tool === "room") && (
+        <g className={`snap snap-${snap.kind}`}>
+          {snap.guides.map(([a, b], i) => {
+            const [sa, sb] = [toScreen(a), toScreen(b)];
+            return <line key={i} x1={sa[0]} y1={sa[1]} x2={sb[0]} y2={sb[1]} className="guide" />;
+          })}
+          <SnapMarker at={toScreen(snap.point)} kind={snap.kind} />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function openingRect(wall: Wall, o: Opening): Vec[] {
+  const half = wall.thickness / 2 + 1;
+  return [
+    pointOnWall(wall, o.offset, -half),
+    pointOnWall(wall, o.offset + o.width, -half),
+    pointOnWall(wall, o.offset + o.width, half),
+    pointOnWall(wall, o.offset, half),
+  ];
+}
+
+function SnapMarker({ at: [x, y], kind }: { at: Vec; kind: Snap["kind"] }) {
+  if (kind === "end") return <rect x={x - 5} y={y - 5} width={10} height={10} className="marker" />;
+  if (kind === "wall") return <path d={`M${x - 6},${y + 5} L${x},${y - 6} L${x + 6},${y + 5} Z`} className="marker" />;
+  return <circle cx={x} cy={y} r={4} className="marker" />;
+}
+
+function RubberBand({ from, to, thickness, toScreen, typed }: { from: Vec; to: Vec; thickness: number; toScreen: (p: Vec) => Vec; typed: string }) {
+  const wall: Wall = { id: "preview", from, to, thickness };
+  const len = dist(from, to);
+  if (len < 0.5) return null;
+  const [a, b] = [toScreen(from), toScreen(to)];
+  const mid: Vec = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  const angle = Math.round((Math.atan2(to[1] - from[1], to[0] - from[0]) * 180) / Math.PI);
+  return (
+    <g className="rubber">
+      <polygon points={pts(wallOutline(wall).map(toScreen))} />
+      <text x={mid[0]} y={mid[1] - 14} textAnchor="middle" className="draw-label">
+        {typed ? `${typed}▌ cm` : `${formatCm(len)} cm · ${((angle % 360) + 360) % 360}°`}
+      </text>
+    </g>
+  );
+}
+
+function RectPreview({ a, b, thickness, toScreen, typed }: { a: Vec; b: Vec; thickness: number; toScreen: (p: Vec) => Vec; typed: string }) {
+  const [x0, x1] = [Math.min(a[0], b[0]), Math.max(a[0], b[0])];
+  const [y0, y1] = [Math.min(a[1], b[1]), Math.max(a[1], b[1])];
+  if (x1 - x0 < 1 || y1 - y0 < 1) return null;
+  const corners: Vec[] = [
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ];
+  const walls = corners.map((p, i): Wall => ({ id: `p${i}`, from: p, to: corners[(i + 1) % 4], thickness }));
+  const c = toScreen([(x0 + x1) / 2, (y0 + y1) / 2]);
+  const inside = `${formatCm(Math.max(0, x1 - x0 - thickness))} × ${formatCm(Math.max(0, y1 - y0 - thickness))}`;
+  return (
+    <g className="rubber">
+      {walls.map((w) => (
+        <polygon key={w.id} points={pts(wallOutline(w).map(toScreen))} />
+      ))}
+      <text x={c[0]} y={c[1]} textAnchor="middle" className="draw-label">
+        {typed ? `${typed}▌ (inside, cm)` : `${inside} inside`}
+      </text>
+    </g>
+  );
+}
+
+function OpeningPreview({
+  wall,
+  offset,
+  width,
+  span,
+  type,
+  toScreen,
+}: {
+  wall: Wall;
+  offset: number | null;
+  width: number;
+  span?: [number, number];
+  type: "door" | "window";
+  toScreen: (p: Vec) => Vec;
+}) {
+  if (offset === null) {
+    const [x, y] = toScreen(pointOnWall(wall, wallLength(wall) / 2));
+    return (
+      <text x={x} y={y - 12} textAnchor="middle" className="draw-label error">
+        No room for a {width} cm {type} here
+      </text>
+    );
+  }
+  const o: Opening = { id: "preview", wall: wall.id, type, offset, width, height: 0, sill: 0, hinge: "start", swing: "left" };
+  const label = (s0: number, s1: number) => {
+    if (s1 - s0 < 1) return null;
+    const [x, y] = toScreen(pointOnWall(wall, (s0 + s1) / 2, -(wall.thickness / 2 + 18)));
+    return (
+      <text x={x} y={y} textAnchor="middle" className="draw-label small">
+        {formatCm(s1 - s0)}
+      </text>
+    );
+  };
+  const swing = type === "door" ? doorSwing(wall, o) : null;
+  return (
+    <g className="rubber">
+      <polygon points={pts(openingRect(wall, o).map(toScreen))} className="opening-preview" />
+      {swing && <polygon points={pts(swing.sector.map(toScreen))} className="swing-preview" />}
+      {span && label(span[0], offset)}
+      {span && label(offset + width, span[1])}
+    </g>
+  );
+}

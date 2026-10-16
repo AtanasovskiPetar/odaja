@@ -12,11 +12,17 @@ immediately. To change the design, edit the files directly.
 | Path | Contents |
 |---|---|
 | `project.json` | Project name and the named **materials** (colours) |
-| `shell.json` | The flat itself: **walls**, **openings** (doors, windows) and **rooms** (floors) |
-| `scenes/*.json` | One file per layout or variant. Each scene holds the **objects** (furniture, fixtures) placed in the shared shell. |
+| `shell.json` | The flat as it is: **walls**, **openings** (doors, windows) and **rooms** (floors) |
+| `shells/*.json` | Other versions of the walls, for renovation options that move or remove walls |
+| `scenes/*.json` | One file per layout or variant. Each scene holds the **objects** (furniture, fixtures) and says which shell it uses. |
 
-All scenes share `shell.json`. To try a variant, copy a scene file to a new
-name (for example `scenes/option-island-kitchen.json`) and change its `name`.
+Scenes use `shell.json` unless they set `"shell": "shells/<name>.json"`. Scenes
+that share a shell all change when it changes. To try a furniture variant, copy a
+scene file to a new name (for example `scenes/option-island-kitchen.json`) and
+change its `name`. To try a **wall** change, also copy the shell to
+`shells/<name>.json` and point the new scene's `shell` at it. Never edit
+`shell.json` for an option: it records the flat as it is today, and the app
+compares options against it.
 Scene file names follow the scene's name in lowercase with dashes, the same way
 the app names them. Every project keeps at least one scene.
 
@@ -73,6 +79,12 @@ Material fields: `color` (`#rrggbb`, required), `roughness` 0–1 (default 0.8),
 - **Opening**: sits in the wall named by `wall`. `offset` is the distance along
   the wall from its `from` point to the opening's near edge. `type` is `door`,
   `window` or `opening`. `sill` is the height of the bottom edge (default 0).
+  An opening must fit between the wall's corners (and walls meeting it) without
+  overlapping another opening. Doors also have `hinge` (`start` or `end`: which
+  end of the opening, counted from the wall's `from` point) and `swing` (`left`
+  or `right`: the side of the wall the door opens into, as seen walking along
+  the wall from `from` to `to` on the plan with north up). Defaults are `start`
+  and `left`.
 - **Room**: a floor polygon (plan points) with a `name` and a `floor` material.
 
 ## scenes/*.json
@@ -82,6 +94,7 @@ Material fields: `color` (`#rrggbb`, required), `roughness` 0–1 (default 0.8),
   "version": 1,
   "name": "Current state",
   "description": "Optional longer description",
+  "shell": "shell.json",
   "objects": [
     {
       "id": "dining-table",
@@ -108,6 +121,7 @@ Material fields: `color` (`#rrggbb`, required), `roughness` 0–1 (default 0.8),
 | `elevation` | Height of the origin above the floor (default 0). Use it for wall cabinets, shelves, mirrors. |
 | `rotation` | Degrees clockwise from above (default 0, front facing north). |
 | `room` | Optional id of the room it belongs to. |
+| `attachedTo` | Optional id of the wall the object's back stands against. When that wall moves, the object moves with it. Set it for kitchen runs, wardrobes, toilets and anything else fixed to a wall, with the object's back (+y side) touching the wall face. |
 | `locked` | `true` stops it being dragged in the app (default false). |
 | `notes` | Free text, such as a product link, price or reminder. |
 | `parts` | The shapes that make up the object (at least one), unless it uses a `template`. |
@@ -177,6 +191,19 @@ walls measure inside wall faces, broken at openings and at interior walls. Each
 room shows its clear width × depth and area. Selecting an object shows its
 footprint and its distance to the nearest wall or object on each side. Ask the
 user to check there, or compute the same numbers from the files.
+
+## Checks the app runs
+
+The app lists **issues** for the open scene. They never block saving, but fix
+them unless the user wants them:
+
+- **Errors**: furniture inside a wall; an opening running into a corner,
+  another wall or another opening; an opening in a missing wall; a wall shorter
+  than 10 cm.
+- **Warnings**: furniture overlapping furniture; a door whose swing is blocked;
+  too little space in front of a toilet (60 cm), basin (70), shower (70),
+  kitchen units (90), tall cabinet or fridge (90), wardrobe (70) or washing
+  machine (70); furniture outside every room; `attachedTo` naming a missing wall.
 
 ## Rules for editing
 

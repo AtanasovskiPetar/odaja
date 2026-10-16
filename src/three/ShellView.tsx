@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import * as THREE from "three";
+import { wallPieces, type WallPiece } from "../model/geometry";
 import type { Opening, Room, Shell, Wall } from "../model/schema";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
@@ -10,37 +11,6 @@ import { useMaterials } from "./materials";
 const CUT_HEIGHT = 110;
 const PLAN_WALL = new THREE.MeshBasicMaterial({ color: "#3d3a36" });
 const PLAN_WINDOW = new THREE.MeshBasicMaterial({ color: "#ffffff" });
-
-interface WallPiece {
-  start: number; // cm along the wall from its `from` point
-  end: number;
-  bottom: number; // cm above the floor
-  top: number;
-  sill?: boolean; // the wall under a window
-}
-
-// Split a wall into solid boxes around its openings. Walls are extended by
-// half their thickness at both ends so corners close up.
-function wallPieces(wall: Wall, openings: Opening[], wallHeight: number): { solid: WallPiece[]; glass: WallPiece[] } {
-  const length = Math.hypot(wall.to[0] - wall.from[0], wall.to[1] - wall.from[1]);
-  const height = wall.height ?? wallHeight;
-  const ext = wall.thickness / 2;
-  const sorted = [...openings].sort((a, b) => a.offset - b.offset);
-  const solid: WallPiece[] = [];
-  const glass: WallPiece[] = [];
-  let cursor = -ext;
-  for (const o of sorted) {
-    const start = o.offset;
-    const end = o.offset + o.width;
-    if (start > cursor) solid.push({ start: cursor, end: start, bottom: 0, top: height });
-    if (o.sill > 0) solid.push({ start, end, bottom: 0, top: o.sill, sill: o.type === "window" });
-    if (o.sill + o.height < height) solid.push({ start, end, bottom: o.sill + o.height, top: height });
-    if (o.type === "window") glass.push({ start, end, bottom: o.sill, top: o.sill + o.height });
-    cursor = Math.max(cursor, end);
-  }
-  if (length + ext > cursor) solid.push({ start: cursor, end: length + ext, bottom: 0, top: height });
-  return { solid, glass };
-}
 
 function cut(pieces: WallPiece[], wallsCut: boolean): WallPiece[] {
   if (!wallsCut) return pieces;

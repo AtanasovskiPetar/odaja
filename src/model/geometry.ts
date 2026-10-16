@@ -1,6 +1,6 @@
 // 2D plan geometry (centimetres, x right, y down) used for measuring:
 // wall faces, distances to walls, object footprints and room sizes.
-import type { Room, SceneObject, Shell, Wall } from "./schema";
+import type { Opening, Room, SceneObject, Shell, Wall } from "./schema";
 
 export type Vec = [number, number];
 export interface Rect {
@@ -22,10 +22,13 @@ export function wallLength(wall: Wall) {
 
 export function wallDir(wall: Wall): Vec {
   const len = wallLength(wall);
+  // A zero-length wall (e.g. mid-drawing) has no direction; pick one.
+  if (len < 1e-9) return [1, 0];
   return [(wall.to[0] - wall.from[0]) / len, (wall.to[1] - wall.from[1]) / len];
 }
 
-// Unit normal pointing to the left of the wall's direction (on the plan, y down).
+// Unit normal of a wall: [-dy, dx]. On the plan as shown (y down, north up)
+// it points to the right of the direction from `from` to `to`.
 export function wallNormal(wall: Wall): Vec {
   const [dx, dy] = wallDir(wall);
   return [-dy, dx];
@@ -158,19 +161,20 @@ export function exteriorSide(wall: Wall, shell: Shell): 1 | -1 | 0 {
   return 0;
 }
 
-// Positions along a wall (cm from its `from` point) where its inside face
-// starts and stops: where it meets other walls, and the edges of its openings.
-// Consecutive pairs are the measurements a builder would take along the wall.
-export function wallChain(wall: Wall, shell: Shell): number[] {
+// Where a wall's faces are interrupted by other walls, as distances along it
+// from its `from` point: `start`/`end` where its face begins and ends at
+// corners, and `junctions` for walls meeting it part-way (each as the two
+// faces of the meeting wall).
+export function wallJunctions(wall: Wall, shell: Shell): { start: number; end: number; junctions: number[] } {
   const len = wallLength(wall);
   const dir = wallDir(wall);
   const normal = wallNormal(wall);
   let start = 0;
   let end = len;
-  const points: number[] = [];
+  const junctions: number[] = [];
 
   for (const other of shell.walls) {
-    if (other === wall) continue;
+    if (other === wall || other.id === wall.id) continue;
     for (const p of [other.from, other.to]) {
       const rel: Vec = [p[0] - wall.from[0], p[1] - wall.from[1]];
       const s = rel[0] * dir[0] + rel[1] * dir[1];
@@ -179,7 +183,7 @@ export function wallChain(wall: Wall, shell: Shell): number[] {
       const half = other.thickness / 2;
       if (s < EPS) start = Math.max(start, half);
       else if (s > len - EPS) end = Math.min(end, len - half);
-      else points.push(s - half, s + half);
+      else junctions.push(s - half, s + half);
     }
     // A wall touching this wall's end from the side (a corner where this wall
     // ends on the other's centreline) also trims this wall's face.
@@ -198,12 +202,63 @@ export function wallChain(wall: Wall, shell: Shell): number[] {
       else end = Math.min(end, len - other.thickness / 2);
     }
   }
+  return { start, end, junctions };
+}
 
+// Positions along a wall (cm from its `from` point) where its inside face
+// starts and stops: where it meets other walls, and the edges of its openings.
+// Consecutive pairs are the measurements a builder would take along the wall.
+export function wallChain(wall: Wall, shell: Shell): number[] {
+  const { start, end, junctions } = wallJunctions(wall, shell);
+  const points = [...junctions];
   for (const o of shell.openings) {
     if (o.wall === wall.id) points.push(o.offset, o.offset + o.width);
   }
   const all = [start, ...points.filter((s) => s > start + EPS && s < end - EPS), end].sort((a, b) => a - b);
   return all.filter((s, i) => i === 0 || s - all[i - 1] > EPS);
+}
+
+// Free stretches of a wall where an opening could go: between corners and
+// meeting walls, minus the other openings (except `ignore`).
+export function freeSpans(wall: Wall, shell: Shell, ignore?: string): [number, number][] {
+  const { start, end, junctions } = wallJunctions(wall, shell);
+  const blocked: [number, number][] = [];
+  for (let i = 0; i + 1 < junctions.length; i += 2) blocked.push([junctions[i], junctions[i + 1]]);
+  for (const o of shell.openings) {
+    if (o.wall === wall.id && o.id !== ignore) blocked.push([o.offset, o.offset + o.width]);
+  }
+  blocked.sort((a, b) => a[0] - b[0]);
+  const spans: [number, number][] = [];
+  let cursor = start;
+  for (const [a, b] of blocked) {
+    if (a > cursor) spans.push([cursor, Math.min(a, end)]);
+    cursor = Math.max(cursor, b);
+  }
+  if (end > cursor) spans.push([cursor, end]);
+  return spans.filter(([a, b]) => b - a > EPS);
+}
+
+// The allowed offset for an opening of `width` closest to `wanted`, or null
+// if it fits nowhere on the wall.
+export function fitOpening(wall: Wall, shell: Shell, wanted: number, width: number, ignore?: string): number | null {
+  let best: number | null = null;
+  for (const [a, b] of freeSpans(wall, shell, ignore)) {
+    if (b - a < width) continue;
+    const offset = Math.min(Math.max(wanted, a), b - width);
+    if (best === null || Math.abs(offset - wanted) < Math.abs(best - wanted)) best = offset;
+  }
+  return best;
+}
+
+// Closest point on a wall's centreline to p: distance along the wall (clamped
+// to the wall) and distance from the centreline.
+export function projectOnWall(wall: Wall, p: Vec): { along: number; across: number; point: Vec } {
+  const len = wallLength(wall);
+  const dir = wallDir(wall);
+  const rel: Vec = [p[0] - wall.from[0], p[1] - wall.from[1]];
+  const along = Math.min(len, Math.max(0, rel[0] * dir[0] + rel[1] * dir[1]));
+  const point = pointOnWall(wall, along);
+  return { along, across: dist(point, p), point };
 }
 
 export function rectEdges(r: Rect): [Vec, Vec][] {
@@ -232,4 +287,62 @@ export function clearances(rect: Rect, edges: [Vec, Vec][]) {
 export function formatCm(cm: number): string {
   const r = Math.round(cm * 10) / 10;
   return Number.isInteger(r) ? String(r) : r.toFixed(1);
+}
+
+// A door's leaf drawn open at 90°: the hinge on the wall face it swings to,
+// where its free edge sits when closed, and when open. "left"/"right" are
+// as seen walking along the wall from its `from` to its `to` point on the
+// plan (north up).
+export function doorSwing(wall: Wall, door: Opening) {
+  const n = wallNormal(wall);
+  // wallNormal points to the right of the direction of travel on a y-down plan.
+  const side = door.swing === "right" ? 1 : -1;
+  const face = (wall.thickness / 2) * side;
+  const hingeAt = door.hinge === "start" ? door.offset : door.offset + door.width;
+  const otherAt = door.hinge === "start" ? door.offset + door.width : door.offset;
+  const hinge = pointOnWall(wall, hingeAt, face);
+  const closed = pointOnWall(wall, otherAt, face);
+  const open = add(hinge, scale(n, door.width * side));
+  // The area the leaf sweeps, as a polygon (hinge plus points along the arc).
+  const sector: Vec[] = [hinge];
+  const a0 = Math.atan2(closed[1] - hinge[1], closed[0] - hinge[0]);
+  let a1 = Math.atan2(open[1] - hinge[1], open[0] - hinge[0]);
+  if (a1 - a0 > Math.PI) a1 -= 2 * Math.PI;
+  if (a0 - a1 > Math.PI) a1 += 2 * Math.PI;
+  for (let i = 0; i <= 8; i++) {
+    const a = a0 + ((a1 - a0) * i) / 8;
+    sector.push([hinge[0] + Math.cos(a) * door.width, hinge[1] + Math.sin(a) * door.width]);
+  }
+  return { hinge, closed, open, sector };
+}
+
+export interface WallPiece {
+  start: number; // cm along the wall from its `from` point
+  end: number;
+  bottom: number; // cm above the floor
+  top: number;
+  sill?: boolean; // the wall under a window
+}
+
+// Split a wall into solid boxes around its openings. Walls are extended by
+// half their thickness at both ends so corners close up.
+export function wallPieces(wall: Wall, openings: Opening[], wallHeight: number): { solid: WallPiece[]; glass: WallPiece[] } {
+  const length = wallLength(wall);
+  const height = wall.height ?? wallHeight;
+  const ext = wall.thickness / 2;
+  const sorted = [...openings].sort((a, b) => a.offset - b.offset);
+  const solid: WallPiece[] = [];
+  const glass: WallPiece[] = [];
+  let cursor = -ext;
+  for (const o of sorted) {
+    const start = o.offset;
+    const end = o.offset + o.width;
+    if (start > cursor) solid.push({ start: cursor, end: start, bottom: 0, top: height });
+    if (o.sill > 0) solid.push({ start, end, bottom: 0, top: o.sill, sill: o.type === "window" });
+    if (o.sill + o.height < height) solid.push({ start, end, bottom: o.sill + o.height, top: height });
+    if (o.type === "window") glass.push({ start, end, bottom: o.sill, top: o.sill + o.height });
+    cursor = Math.max(cursor, end);
+  }
+  if (length + ext > cursor) solid.push({ start: cursor, end: length + ext, bottom: 0, top: height });
+  return { solid, glass };
 }

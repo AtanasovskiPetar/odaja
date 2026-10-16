@@ -47,6 +47,7 @@ export function ScenesSection() {
                 title={`${scene.path} · double-click to rename`}
               >
                 {scene.name}
+                {scene.shell !== "shell.json" && <span className="tag" title={`Uses ${scene.shell}`}>own walls</span>}
               </button>
             )}
           </li>
@@ -55,8 +56,11 @@ export function ScenesSection() {
       {current && renaming === null && (
         <div className="scene-actions">
           <button onClick={() => setRenaming(current.path)}>Rename</button>
-          <button onClick={() => run(duplicateScene)} title="Copy this scene to try a variation">
+          <button onClick={() => run(() => duplicateScene(false))} title="Copy this scene's furniture; walls stay shared">
             Duplicate
+          </button>
+          <button onClick={() => run(() => duplicateScene(true))} title="Copy this scene with its own copy of the walls, to try wall changes (a renovation option)">
+            + own walls
           </button>
           <button
             className="danger"

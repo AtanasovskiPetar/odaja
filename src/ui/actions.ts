@@ -2,6 +2,7 @@
 import { roomAt, shellBounds, type Vec } from "../model/geometry";
 import { TEMPLATES_BY_ID, templateParams } from "../model/library";
 import { addObject, deleteObject, duplicateObject, uniqueId } from "../model/operations";
+import { deleteOpening, deleteRoom, deleteWall } from "../model/shellOps";
 import { round } from "../model/units";
 import { useOdaja } from "../store";
 
@@ -48,4 +49,11 @@ export function deleteSelected() {
   if (!object || object.locked) return;
   apply(deleteObject(object.id));
   select(null);
+}
+
+export function deleteStructureSelection() {
+  const { structureSelection: sel, applyShell, selectStructure } = useOdaja.getState();
+  if (!sel || sel.kind === "area") return;
+  applyShell(sel.kind === "wall" ? deleteWall(sel.id) : sel.kind === "opening" ? deleteOpening(sel.id) : deleteRoom(sel.id));
+  selectStructure(null);
 }
