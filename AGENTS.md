@@ -19,11 +19,14 @@ bun install
 bun run dev                                    # reopens the last project, or shows the start screen
 ODAJA_PROJECT=/path/to/project bun run dev     # opens a specific project folder
 ODAJA_HOME=/path bun run dev                   # where new projects are created (default ~/Documents/Odaja)
+bun run build && bun run start                 # the built app without Vite, at http://localhost:5180 (ODAJA_PORT)
 bun run typecheck
 bun run format-project <dir>                   # reformat a project's JSON the way the app saves it
 ```
 
-The app runs at http://localhost:5173. The furniture library is
+In development the app runs at http://localhost:5173; `bun run start` serves the
+built app and the same backend from `server/main.ts` (what the desktop app will
+run). The furniture library is
 `~/Documents/Odaja/Library` (`$ODAJA_HOME/Library`), served under `/api/library`.
 `public/draco/` holds the Draco decoder for compressed glTF files. Recently opened projects are remembered
 in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The start screen lists those and every project folder in
@@ -39,9 +42,9 @@ the copy too. To change the sample itself, open it deliberately with
 
 - **Tools** (`server/tools.ts`): one set of tools (get_overview, add_object,
   update_wall, screenshot, check_issues, …) that read and change the open
-  project. The dev server exposes them at `/api/tools` and `/api/tools/call`.
-  Screenshots are taken by the open app (the server asks it over the HMR
-  socket), so the app must be open in a browser.
+  project. The server exposes them at `/api/tools` and `/api/tools/call`.
+  Screenshots are taken by the open app (the server asks it over the event
+  stream), so the app must be open in a browser.
 - **MCP server** (`mcp/server.ts`): forwards Odaja's tools to any MCP client.
   The app must be running (`bun run dev`). To use Odaja from Claude Code:
   `claude mcp add odaja -- bun /path/to/odaja/mcp/server.ts` (set `ODAJA_URL`
@@ -111,7 +114,9 @@ project folders.
 | `src/platform.ts` | Host interface (file read/write/watch). Browser implementation now, Tauri later. |
 | `src/three/` | React Three Fiber rendering: shell (walls, openings, floors), objects, viewport |
 | `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `StructureLayer.tsx` is the interactive SVG for Structure mode (drawing, dragging, its own pan/zoom), `StructureInspector.tsx` edits walls/openings/rooms, `IssuesPanel.tsx` lists issues. `StartScreen.tsx` is the project picker, `ScenesSection.tsx` the scene list. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
-| `server/project-server.ts` | Vite plugin: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; pushes file-change events. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
+| `server/api.ts` | The backend, independent of Vite: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; watches the project and pushes events (file changes, screenshot and open-scene requests) on `/api/events` (Server-Sent Events); serves the tools, the library and the chat. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
+| `server/project-server.ts` | Vite plugin mounting `server/api.ts` at `/api` in development |
+| `server/main.ts` | Standalone server: the built app (`dist/`) plus `server/api.ts`, on 127.0.0.1 only, with a Host check against DNS rebinding |
 | `src/model/defaults.ts` | Starting content for new projects (materials, the rectangular-room shell) and scenes |
 | `examples/sample-flat/` | The sample flat: offered on the start screen as a copy, and the fixture for development |
 

@@ -1,6 +1,6 @@
-// Everything the app needs from the host environment. The browser build talks
-// to the dev server (server/project-server.ts); the Tauri build will provide a
-// native implementation of the same interface.
+// Everything the app needs from the host environment: Odaja's backend
+// (server/api.ts) over /api, served by Vite in development and by
+// server/main.ts standalone (and, later, inside the desktop app).
 import type { StarterRoom } from "./model/defaults";
 import type { LibraryItemDoc, SceneDoc } from "./model/schema";
 
@@ -56,6 +56,14 @@ export interface Platform {
   // Requests from the server: open a scene, take a screenshot.
   onOpenSceneRequest(callback: (path: string) => void): void;
   onScreenshotRequest(callback: (view: "plan" | "3d") => Promise<{ data: string; mimeType: string }>): void;
+}
+
+// Events from the server (file changes, requests from agents) arrive on one
+// shared stream. EventSource reconnects by itself if the server restarts.
+let events: EventSource | null = null;
+function onEvent<T>(name: string, callback: (data: T) => void) {
+  events ??= new EventSource("/api/events");
+  events.addEventListener(name, (e) => callback(JSON.parse((e as MessageEvent<string>).data) as T));
 }
 
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
@@ -134,16 +142,16 @@ export const platform: Platform = {
     return (await post<{ name: string }>("/api/library/add-material", { id })).name;
   },
   onFileChanged(callback) {
-    import.meta.hot?.on("odaja:file-changed", (data: { path: string }) => callback(data.path));
+    onEvent<{ path: string }>("file-changed", (data) => callback(data.path));
   },
   reportUiState(state) {
     post("/api/ui-state", state).catch(() => {});
   },
   onOpenSceneRequest(callback) {
-    import.meta.hot?.on("odaja:open-scene", (data: { path: string }) => callback(data.path));
+    onEvent<{ path: string }>("open-scene", (data) => callback(data.path));
   },
   onScreenshotRequest(callback) {
-    import.meta.hot?.on("odaja:screenshot", async (data: { id: string; view: "plan" | "3d" }) => {
+    onEvent<{ id: string; view: "plan" | "3d" }>("screenshot", async (data) => {
       try {
         const shot = await callback(data.view);
         await post("/api/screenshot-result", { id: data.id, ...shot });

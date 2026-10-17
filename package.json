@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "start": "bun server/main.ts",
     "typecheck": "tsc -b --noEmit",
     "format-project": "bun scripts/format-project.ts",
     "docs:templates": "bun scripts/docs-templates.ts"
