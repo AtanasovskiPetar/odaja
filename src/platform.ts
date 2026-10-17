@@ -1,7 +1,10 @@
-// Everything the app needs from the host environment: Odaja's backend
-// (server/api.ts) over /api, served by Vite in development and by
-// server/main.ts as the companion. The website will get a browser
-// implementation (docs/web-plan.md).
+// Everything the app needs from the host environment. Two hosts:
+//  - "server": Odaja's backend (server/api.ts) over /api, served by Vite in
+//    development and by server/main.ts as the companion: project folders on disk.
+//  - "browser": the website, where the home and library live in the browser's
+//    private file system (src/browser/).
+// initPlatform() picks one at startup; `platform` passes every call to it.
+import type { HomeSummary } from "./browser/homes";
 import type { StarterRoom } from "./model/defaults";
 import type { LibraryItemDoc, SceneDoc } from "./model/schema";
 
@@ -26,8 +29,19 @@ export interface LibraryEntry {
 
 type Body = string | Blob | ArrayBuffer;
 
+export interface ProjectList {
+  root: string;
+  current: string | null;
+  projects: ProjectSummary[];
+  sampleDir: string;
+  sampleCopied: boolean;
+  // The website: its one home, and the one it replaced (restorable once).
+  homes?: { current: HomeSummary | null; previous: HomeSummary | null; unsavedToFile: boolean };
+}
+
 export interface Platform {
-  listProjects(): Promise<{ root: string; current: string | null; projects: ProjectSummary[]; sampleDir: string; sampleCopied: boolean }>;
+  kind: "server" | "browser";
+  listProjects(): Promise<ProjectList>;
   openProject(dir: string): Promise<void>;
   // Opens the user's copy of the sample flat, making it (or remaking it when fresh).
   openSample(fresh: boolean): Promise<void>;
@@ -45,7 +59,8 @@ export interface Platform {
   listLibrary(): Promise<{ root: string; items: LibraryEntry[] }>;
   newLibraryItem(name: string): Promise<string>;
   writeLibraryFile(path: string, data: Body): Promise<void>;
-  libraryFileUrl(path: string): string;
+  // `version` makes the URL change when the file does (for caching).
+  libraryFileUrl(path: string, version?: number): string;
   deleteLibraryItem(id: string): Promise<void>;
   // Copy a library item's model into the open project; returns its path there.
   placeLibraryModel(id: string): Promise<string>;
@@ -86,9 +101,10 @@ const post = <T>(url: string, body: unknown) =>
   request<T>(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 
 const fileUrl = (path: string) => `/api/file?path=${encodeURIComponent(path)}`;
-const libraryFileUrl = (path: string) => `/api/library/file?path=${encodeURIComponent(path)}`;
+const libraryFileUrl = (path: string, version?: number) => `/api/library/file?path=${encodeURIComponent(path)}${version ? `&v=${version}` : ""}`;
 
-export const platform: Platform = {
+const serverPlatform: Platform = {
+  kind: "server",
   listProjects: () => request("/api/projects"),
   async openProject(dir) {
     await post("/api/projects/open", { dir });
@@ -162,3 +178,37 @@ export const platform: Platform = {
     });
   },
 };
+
+// --- choosing the host -----------------------------------------------------
+
+let host: Platform | null = null;
+// Listeners registered before the host is known (the store does this as it loads).
+const early: ((p: Platform) => void)[] = [];
+
+// Development and the companion answer /api/projects with JSON; the website
+// (static files) doesn't.
+export async function initPlatform(): Promise<void> {
+  if (host) return;
+  let server = false;
+  try {
+    const res = await fetch("/api/projects", { cache: "no-store" });
+    server = res.ok && (res.headers.get("Content-Type") ?? "").includes("application/json");
+  } catch {
+    // Not reachable: the website.
+  }
+  host = server ? serverPlatform : (await import("./browser/platform")).createBrowserPlatform();
+  for (const attach of early.splice(0)) attach(host);
+}
+
+export const platform: Platform = new Proxy({} as Platform, {
+  get(_, key: keyof Platform) {
+    if (host) {
+      const value = host[key];
+      return typeof value === "function" ? value.bind(host) : value;
+    }
+    if (typeof key === "string" && key.startsWith("on")) {
+      return (...args: unknown[]) => void early.push((p) => (p[key] as (...a: unknown[]) => void)(...args));
+    }
+    throw new Error(`Odaja isn't ready yet (platform.${String(key)})`);
+  },
+});

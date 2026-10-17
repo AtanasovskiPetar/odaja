@@ -100,7 +100,9 @@ The website's address can change without touching code; only users' data needs c
 
 Each phase leaves the app working, and ends with typecheck, build and a check in the browser.
 
-**1. Browser storage and the one-home website**
+**1. Browser storage and the one-home website** — done
+- Also built here: the library in browser storage (save, preview, place, add material). Phase 3 adds item and library files and the "Add to my library" offer on top.
+- "Save to file" isn't offered yet. The replace prompt says the home is kept as the previous one; **Save** joins it in phase 2.
 - **Platform:** a storage interface with an OPFS implementation, `BrowserPlatform`, and host detection.
 - **The home:** the current-home slot, the previous-home slot, autosave, the unsaved-changes dot and the replace prompt.
 - **The start screen** for the website: new (room / floor plan / blank), sample, open file.

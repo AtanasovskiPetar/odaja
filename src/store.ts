@@ -17,7 +17,7 @@ import {
   type Shell,
   type ShellDoc,
 } from "./model/schema";
-import { platform, type ProjectSummary, type SceneSummary } from "./platform";
+import { platform, type ProjectList, type ProjectSummary, type SceneSummary } from "./platform";
 
 export type ViewMode = "3d" | "plan" | "walk";
 
@@ -72,6 +72,8 @@ interface OdajaState {
   projects: ProjectSummary[];
   sampleDir: string;
   sampleCopied: boolean;
+  // The website's home and the one it replaced (null in dev and the companion).
+  homes: ProjectList["homes"] | null;
   projectDir: string | null;
   projectDoc: ProjectDoc | null;
   project: Project | null;
@@ -348,6 +350,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     projects: [],
     sampleDir: "",
     sampleCopied: false,
+    homes: null,
     mode: "furnish",
     tool: "select",
     hideFurniture: false,
@@ -379,8 +382,8 @@ export const useOdaja = create<OdajaState>((set, get) => {
     },
 
     async refreshProjects() {
-      const { root, projects, sampleDir, sampleCopied } = await platform.listProjects();
-      set({ projectsRoot: root, projects, sampleDir, sampleCopied, ...(get().status === "loading" ? { status: "start" } : {}) });
+      const { root, projects, sampleDir, sampleCopied, homes } = await platform.listProjects();
+      set({ projectsRoot: root, projects, sampleDir, sampleCopied, homes: homes ?? null, ...(get().status === "loading" ? { status: "start" } : {}) });
     },
 
     async openProject(dir) {

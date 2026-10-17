@@ -4,6 +4,27 @@ import { useChat } from "./chat/chatStore";
 import { PLAN_ACCEPT, savePlanFile } from "./planImage";
 import { LogoMark } from "./icons";
 import { ThemeSwitch } from "./ThemeSwitch";
+import { platform } from "../platform";
+
+// On the website, starting something new replaces the home kept in the
+// browser; it is set aside as the previous home, so this asks first.
+function ConfirmReplace({ name, action, onCancel, onConfirm }: { name: string; action: string; onCancel: () => void; onConfirm?: () => void }) {
+  return (
+    <div className="confirm-replace" role="alertdialog" aria-label="Replace your home?">
+      <p>
+        This replaces <strong>{name}</strong> in this browser. It's kept as your previous home, so you can bring it back.
+      </p>
+      <div className="actions">
+        <button type={onConfirm ? "button" : "submit"} className="primary" onClick={onConfirm} autoFocus>
+          {action}
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
 
 // Small drawings for the three ways to start: a room, a plan sheet, a blank sheet.
 const GLYPH = { width: 30, height: 30, viewBox: "0 0 30 30", fill: "none", stroke: "currentColor", strokeLinejoin: "round" as const, "aria-hidden": true };
@@ -75,6 +96,9 @@ function NewProject() {
   const [height, setHeight] = useState("260");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const web = platform.kind === "browser";
+  const keptHome = useOdaja((s) => s.homes?.current);
+  const [confirming, setConfirming] = useState(false);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -88,14 +112,24 @@ function NewProject() {
       setError("Choose the floor plan: an image or a PDF.");
       return;
     }
+    if (web && keptHome && !confirming) {
+      setConfirming(true);
+      return;
+    }
     setBusy(true);
     try {
       await createProject(name, start === "room" ? room : undefined);
       if (start === "plan" && plan) {
-        // The plan becomes the background, and the chat gets it ready to send.
         const { underlay, blob } = await savePlanFile(plan);
         applyProject((doc) => ({ ...doc, underlay }));
-        startDraft(PLAN_DRAFT, [new File([blob], plan.name, { type: blob.type })]);
+        if (web) {
+          // No chat on the website yet: start by setting the plan's scale, then trace.
+          useOdaja.getState().setUnderlayPanel(true);
+          useOdaja.getState().setUnderlayTool("calibrate");
+        } else {
+          // The plan becomes the background, and the chat gets it ready to send.
+          startDraft(PLAN_DRAFT, [new File([blob], plan.name, { type: blob.type })]);
+        }
       }
     } catch (err) {
       setError((err as Error).message);
@@ -126,7 +160,7 @@ function NewProject() {
             <PlanGlyph />
           </span>
           <strong>From a floor plan</strong>
-          <span>A photo or PDF of the plan. It sits underneath, and the chat draws the walls over it.</span>
+          <span>{web ? "A photo or PDF of the plan. It sits underneath for you to trace the walls." : "A photo or PDF of the plan. It sits underneath, and the chat draws the walls over it."}</span>
         </label>
         <label className={start === "empty" ? "active" : ""}>
           <input type="radio" checked={start === "empty"} onChange={() => setStart("empty")} />
@@ -134,7 +168,7 @@ function NewProject() {
             <BlankGlyph />
           </span>
           <strong>A blank sheet</strong>
-          <span>No walls yet. Draw them yourself, or describe them to the chat.</span>
+          <span>{web ? "No walls yet. Draw them yourself." : "No walls yet. Draw them yourself, or describe them to the chat."}</span>
         </label>
       </div>
 
@@ -172,10 +206,14 @@ function NewProject() {
       )}
 
       {error && <div className="inline-error">{error}</div>}
-      <button className="primary" type="submit" disabled={busy || !name.trim()}>
-        {busy ? "Setting up…" : "Create project"}
-      </button>
-      <p className="hint">Saved in {tildePath(root)}/{name.trim() || "…"}</p>
+      {confirming && keptHome ? (
+        <ConfirmReplace name={keptHome.name} action={busy ? "Setting up…" : "Replace and create"} onCancel={() => setConfirming(false)} />
+      ) : (
+        <button className="primary" type="submit" disabled={busy || !name.trim()}>
+          {busy ? "Setting up…" : "Create project"}
+        </button>
+      )}
+      <p className="hint">{web ? "Kept in this browser, saved as you work." : `Saved in ${tildePath(root)}/${name.trim() || "…"}`}</p>
     </form>
   );
 }
@@ -269,6 +307,76 @@ function ProjectList() {
   );
 }
 
+// The website's "Carry on": the home kept in this browser, the sample, and
+// the previous home (the one last replaced), which can be brought back.
+function BrowserHomes() {
+  const homes = useOdaja((s) => s.homes);
+  const openProject = useOdaja((s) => s.openProject);
+  const openSample = useOdaja((s) => s.openSample);
+  const [confirmSample, setConfirmSample] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const kept = homes?.current ?? null;
+  const previous = homes?.previous ?? null;
+
+  const run = async (action: () => Promise<void>) => {
+    setError(null);
+    setBusy(true);
+    try {
+      await action();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <h2>Carry on</h2>
+      {kept ? (
+        <ul className="project-list">
+          <li>
+            <button onClick={() => run(() => openProject("current"))} disabled={busy}>
+              <span className="thumb">
+                <ProjectGlyph />
+              </span>
+              <strong>{kept.name}</strong>
+              <span className="muted">Kept in this browser</span>
+              <span className="muted when">{timeAgo(kept.modified)}</span>
+            </button>
+          </li>
+        </ul>
+      ) : (
+        <p className="muted empty-hint">Nothing here yet. Start a new home, or look around the sample flat first.</p>
+      )}
+      {confirmSample && kept ? (
+        <ConfirmReplace name={kept.name} action="Open the sample" onCancel={() => setConfirmSample(false)} onConfirm={() => run(() => openSample(false))} />
+      ) : (
+        <div className="sample-row">
+          <button className="sample-open" disabled={busy} onClick={() => (kept ? setConfirmSample(true) : run(() => openSample(false)))}>
+            <span className="thumb">
+              <SampleGlyph />
+            </span>
+            <strong>Try the sample flat</strong>
+            <span className="muted">A furnished two-room flat to explore. Change anything.</span>
+          </button>
+        </div>
+      )}
+      {previous && (
+        <div className="previous-home">
+          <span>
+            Previous home: <strong>{previous.name}</strong>
+          </span>
+          <button className="link" disabled={busy} onClick={() => run(() => openProject("previous"))} title="Swap it back in; the current home becomes the previous one">
+            Bring it back
+          </button>
+        </div>
+      )}
+      {error && <div className="inline-error">{error}</div>}
+    </div>
+  );
+}
+
 export function StartScreen() {
   return (
     <div className="start">
@@ -286,7 +394,7 @@ export function StartScreen() {
       </header>
       <div className="start-grid">
         <NewProject />
-        <ProjectList />
+        {platform.kind === "browser" ? <BrowserHomes /> : <ProjectList />}
       </div>
     </div>
   );

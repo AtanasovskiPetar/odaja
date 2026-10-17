@@ -1922,6 +1922,50 @@ button.link.danger {
   line-height: 1.35;
 }
 
+.confirm-replace {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 var(--r) var(--r) 0;
+  background: var(--accent-wash);
+  font-size: 12.5px;
+  line-height: 1.45;
+  animation: appear var(--settle) var(--ease) both;
+}
+
+.confirm-replace p {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+.confirm-replace .actions {
+  margin-top: 10px;
+}
+
+.confirm-replace button.primary {
+  width: auto;
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 12.5px;
+}
+
+.previous-home {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.previous-home strong {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+
 .open-path {
   display: flex;
   gap: 6px;

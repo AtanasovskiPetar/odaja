@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { rotateObject } from "../model/operations";
 import { duplicateParts, mirrorParts, removeParts } from "../model/partOps";
+import { platform } from "../platform";
 import { useOdaja, type Tool } from "../store";
 import { Viewport } from "../three/Viewport";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
@@ -61,7 +62,7 @@ function useShortcuts() {
       }
       if (mod && e.key.toLowerCase() === "j") {
         e.preventDefault();
-        useChat.getState().toggle();
+        if (platform.kind !== "browser") useChat.getState().toggle();
         return;
       }
       if (mod && e.key.toLowerCase() === "d" && s.editingObjectId) {
@@ -205,7 +206,7 @@ function Sidebar() {
         {adding ? (
           <AddPanel onClose={() => setAdding(false)} />
         ) : scene?.objects.length === 0 ? (
-          <p className="muted empty-hint">An empty room. Add furniture, or ask the chat to furnish it.</p>
+          <p className="muted empty-hint">{platform.kind === "browser" ? "An empty room. Add furniture to start." : "An empty room. Add furniture, or ask the chat to furnish it."}</p>
         ) : (
           <ul className="list">
             {scene?.objects.map((o) => (
@@ -402,8 +403,12 @@ function Toolbar() {
       <button className="icon-only" onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)">
         <IconRedo size={17} />
       </button>
-      <span className="sep" />
-      <ChatToggle />
+      {platform.kind !== "browser" && (
+        <>
+          <span className="sep" />
+          <ChatToggle />
+        </>
+      )}
     </div>
   );
 }
