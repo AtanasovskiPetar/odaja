@@ -15,6 +15,7 @@ import { ScenesSection } from "./ScenesSection";
 import { StartScreen } from "./StartScreen";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
+import { WalkOverlay, WalkStartPicker } from "./WalkOverlay";
 
 function useShortcuts() {
   useEffect(() => {
@@ -41,6 +42,16 @@ function useShortcuts() {
       }
       if (mod) return;
       const key = e.key.toLowerCase();
+
+      // While walking, the walk controls own the keyboard (W A S D Q E…);
+      // only view switches and undo apply.
+      if (s.viewMode === "walk") {
+        if (key === "t") s.setViewMode("plan");
+        if (key === "p") s.setViewMode("3d");
+        return;
+      }
+      if (key === "escape" && s.pickingWalkStart) return s.setPickingWalkStart(false);
+      if (key === "k") return s.viewMode === "plan" ? s.setPickingWalkStart(true) : s.startWalk(null);
 
       // Shared by both modes.
       if (key === "t") return s.setViewMode("plan");
@@ -245,6 +256,9 @@ function Toolbar() {
   const toggleWallsCut = useOdaja((s) => s.toggleWallsCut);
   const viewMode = useOdaja((s) => s.viewMode);
   const setViewMode = useOdaja((s) => s.setViewMode);
+  const picking = useOdaja((s) => s.pickingWalkStart);
+  const setPicking = useOdaja((s) => s.setPickingWalkStart);
+  const startWalk = useOdaja((s) => s.startWalk);
   const undo = useOdaja((s) => s.undo);
   const redo = useOdaja((s) => s.redo);
   const canUndo = useOdaja((s) => s.undoStack.length > 0);
@@ -267,6 +281,13 @@ function Toolbar() {
       </button>
       <button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")} title="3D view (P)">
         3D
+      </button>
+      <button
+        className={viewMode === "walk" || picking ? "active" : ""}
+        onClick={() => (viewMode === "plan" ? setPicking(true) : startWalk(null))}
+        title="Walk through the flat at eye height (K). From the plan, click where to stand."
+      >
+        Walk
       </button>
       {viewMode === "3d" && (
         <button className={wallsCut ? "active" : ""} onClick={toggleWallsCut} title="Cut walls at 110 cm (C)">
@@ -355,6 +376,8 @@ export function App() {
         <Viewport />
         <PlanOverlay />
         {editingStructure && <StructureLayer />}
+        <WalkStartPicker />
+        <WalkOverlay />
         <div className="toolbars">
           <Toolbar />
           {editingStructure && <StructureToolbar />}

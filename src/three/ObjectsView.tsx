@@ -64,7 +64,8 @@ function ObjectView({ object, ghost }: { object: SceneObject; ghost: boolean }) 
   const [x, y] = object.position;
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
-    if (ghost) return;
+    // While walking, clicks are for looking around.
+    if (ghost || useOdaja.getState().viewMode === "walk") return;
     e.stopPropagation();
     select(object.id);
   };

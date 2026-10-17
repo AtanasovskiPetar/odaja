@@ -10,6 +10,7 @@ import { gizmo, ObjectsView } from "./ObjectsView";
 import { viewport } from "./capture";
 import { planCamera } from "./planCamera";
 import { ShellView } from "./ShellView";
+import { WalkControls } from "./WalkControls";
 
 // Room around the flat in plan view for the dimension lines, in metres.
 const PLAN_MARGIN = 2.2;
@@ -30,7 +31,7 @@ function CameraRig() {
 
   // Frame the whole flat when the view changes (not on every resize or edit).
   useEffect(() => {
-    if (!controls) return;
+    if (!controls || viewMode === "walk") return;
     const b = shell ? shellBounds(shell) : null;
     const [cx, cz] = b ? [M((b.minX + b.maxX) / 2), M((b.minY + b.maxY) / 2)] : [0, 0];
     const [w, d] = b ? [M(b.maxX - b.minX), M(b.maxY - b.minY)] : [10, 10];
@@ -85,23 +86,25 @@ export function Viewport() {
   const select = useOdaja((s) => s.select);
   const plan = useOdaja((s) => s.viewMode === "plan");
   const structure = useOdaja((s) => s.mode === "structure");
+  const walk = useOdaja((s) => s.viewMode === "walk");
   return (
     <Canvas shadows onPointerMissed={() => performance.now() - gizmo.lastUsed > 300 && select(null)}>
       <PerspectiveCamera makeDefault={!plan} fov={45} near={0.05} far={200} />
       <OrthographicCamera makeDefault={plan} near={0.1} far={200} />
-      <color attach="background" args={[plan ? "#f4f2ee" : "#eceae6"]} />
-      <hemisphereLight args={["#ffffff", "#b8b0a4", plan ? 2.2 : 1.4]} />
+      <color attach="background" args={[plan ? "#f4f2ee" : walk ? "#dfe8ef" : "#eceae6"]} />
+      <hemisphereLight args={["#ffffff", "#b8b0a4", plan ? 2.2 : walk ? 2.0 : 1.4]} />
       <directionalLight position={[6, 12, 4]} intensity={plan ? 0.8 : 1.6} castShadow={!plan} shadow-mapSize={[2048, 2048]}>
         <orthographicCamera attach="shadow-camera" args={[-10, 10, 10, -10, 0.5, 40]} />
       </directionalLight>
-      {!plan && (
+      {!plan && !walk && (
         <Grid args={[60, 60]} cellSize={0.1} sectionSize={1} cellColor="#d6d2cb" sectionColor="#bdb7ad" fadeDistance={40} position={[0, -0.002, 0]} infiniteGrid />
       )}
       <ShellView />
       <ObjectsView />
+      {walk && <WalkControls />}
       <OrbitControls
         makeDefault
-        enabled={!structure}
+        enabled={!structure && !walk}
         enableRotate={!plan}
         zoomSpeed={plan ? 2 : 1}
         maxPolarAngle={Math.PI / 2 - 0.05}

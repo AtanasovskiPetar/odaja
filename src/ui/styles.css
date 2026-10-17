@@ -1600,3 +1600,111 @@ button.primary:disabled {
   font-size: 12px;
   white-space: nowrap;
 }
+
+/* Walk */
+
+.walk-picker {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+  background: rgba(194, 84, 27, 0.04);
+}
+
+.walk-banner {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 8px 14px;
+  border-radius: 12px;
+  background: rgba(43, 41, 38, 0.88);
+  color: #fff;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.walk-banner button,
+.walk-help button {
+  padding: 4px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 7px;
+  background: none;
+  color: #fff;
+  font-size: 12px;
+}
+
+/* Sits right of the mini-map (180 + padding) and left of the issues badge. */
+.walk-help {
+  position: absolute;
+  left: 220px;
+  right: 130px;
+  bottom: 14px;
+  margin: 0 auto;
+  width: fit-content;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  background: rgba(43, 41, 38, 0.78);
+  color: #f3efe8;
+  font-size: 12px;
+}
+
+.walk-help kbd {
+  display: inline-block;
+  min-width: 18px;
+  margin: 0 1px;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  text-align: center;
+}
+
+.walk-help label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.walk-help select {
+  padding: 2px 4px;
+  border-radius: 6px;
+  border: none;
+  font: inherit;
+}
+
+.mini-map {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(251, 250, 248, 0.92);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+}
+
+.mini-map .mm-room {
+  fill: #e9e2d6;
+}
+
+.mini-map .mm-wall {
+  fill: #3d3a36;
+}
+
+.mini-map .mm-cone {
+  fill: rgba(194, 84, 27, 0.25);
+}
+
+.mini-map .mm-me {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 6;
+}

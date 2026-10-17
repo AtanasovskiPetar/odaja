@@ -16,7 +16,15 @@ import {
 } from "./model/schema";
 import { platform, type ProjectSummary, type SceneSummary } from "./platform";
 
-export type ViewMode = "3d" | "plan";
+export type ViewMode = "3d" | "plan" | "walk";
+
+// Where you stand and look while walking: plan cm, and yaw in radians
+// (0 = looking north, growing counter-clockwise seen from above).
+export interface WalkPose {
+  x: number;
+  y: number;
+  yaw: number;
+}
 // Furnish: move furniture, walls are fixed. Structure: edit walls, doors,
 // windows and rooms, furniture is faded and fixed.
 export type EditMode = "furnish" | "structure";
@@ -91,6 +99,12 @@ interface OdajaState {
   viewMode: ViewMode;
   frameRequest: number;
   planView: PlanView | null;
+  // Walking: where to start (picked on the plan), the current pose (for the
+  // mini-map), eye height in cm, and whether the next plan click picks a start.
+  walkStart: { position: [number, number]; heading: [number, number] } | null;
+  walkPose: WalkPose | null;
+  eyeHeight: number;
+  pickingWalkStart: boolean;
   // Live position of an object while it is being dragged (not saved yet).
   dragPreview: { id: string; position: [number, number] } | null;
   undoStack: UndoEntry[];
@@ -120,6 +134,10 @@ interface OdajaState {
   setViewMode(mode: ViewMode): void;
   setPlanView(view: PlanView): void;
   setDragPreview(preview: OdajaState["dragPreview"]): void;
+  startWalk(start: OdajaState["walkStart"]): void;
+  setPickingWalkStart(picking: boolean): void;
+  setWalkPose(pose: WalkPose | null): void;
+  setEyeHeight(cm: number): void;
   apply(change: (doc: SceneDoc) => SceneDoc): void;
   applyShell(change: (doc: ShellDoc) => ShellDoc): Promise<void>;
   undo(): void;
@@ -308,6 +326,10 @@ export const useOdaja = create<OdajaState>((set, get) => {
     viewMode: "3d",
     frameRequest: 0,
     planView: null,
+    walkStart: null,
+    walkPose: null,
+    eyeHeight: 160,
+    pickingWalkStart: false,
 
     async load() {
       const { current } = await platform.listProjects();
@@ -454,7 +476,9 @@ export const useOdaja = create<OdajaState>((set, get) => {
       set((s) => ({
         viewMode,
         frameRequest: s.frameRequest + 1,
-        ...(viewMode === "3d" && s.mode === "structure" ? { mode: "furnish" as const, tool: "select" as const, structureSelection: null } : {}),
+        ...(viewMode !== "plan" && s.mode === "structure" ? { mode: "furnish" as const, tool: "select" as const, structureSelection: null } : {}),
+        ...(viewMode !== "walk" ? { walkPose: null } : {}),
+        pickingWalkStart: false,
       }));
     },
 
@@ -464,6 +488,24 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
     setDragPreview(dragPreview) {
       set({ dragPreview });
+    },
+
+    // Walk from a picked spot, or from the default start (null).
+    startWalk(walkStart) {
+      set({ walkStart, pickingWalkStart: false, selectedId: null });
+      get().setViewMode("walk");
+    },
+
+    setPickingWalkStart(pickingWalkStart) {
+      set({ pickingWalkStart });
+    },
+
+    setWalkPose(walkPose) {
+      set({ walkPose });
+    },
+
+    setEyeHeight(eyeHeight) {
+      set({ eyeHeight });
     },
 
     apply(change) {

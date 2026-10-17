@@ -20,7 +20,8 @@ function cut(pieces: WallPiece[], wallsCut: boolean): WallPiece[] {
 function WallView({ wall, openings, shell }: { wall: Wall; openings: Opening[]; shell: Shell }) {
   const material = useMaterials();
   const plan = useOdaja((s) => s.viewMode === "plan");
-  const wallsCut = useOdaja((s) => s.wallsCut) || plan;
+  const walk = useOdaja((s) => s.viewMode === "walk");
+  const wallsCut = (useOdaja((s) => s.wallsCut) && !walk) || plan;
   const { solid, glass } = wallPieces(wall, openings, shell.wallHeight);
   const angle = Math.atan2(wall.to[1] - wall.from[1], wall.to[0] - wall.from[0]);
   const dir: [number, number] = [Math.cos(angle), Math.sin(angle)];
@@ -57,6 +58,18 @@ function WallView({ wall, openings, shell }: { wall: Wall; openings: Opening[]; 
   );
 }
 
+const CEILING = new THREE.MeshStandardMaterial({ color: "#f6f4f0", roughness: 0.95, side: THREE.DoubleSide });
+
+// Ceilings are only drawn when walking (they'd hide everything from above).
+// They don't cast shadows, so daylight still reaches the rooms.
+function RoomCeiling({ room, height }: { room: Room; height: number }) {
+  const geometry = useMemo(() => {
+    const shape = new THREE.Shape(room.polygon.map(([x, y]) => new THREE.Vector2(M(x), -M(y))));
+    return new THREE.ShapeGeometry(shape);
+  }, [room.polygon]);
+  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, M(height), 0]} material={CEILING} receiveShadow />;
+}
+
 function RoomFloor({ room }: { room: Room }) {
   const material = useMaterials();
   const geometry = useMemo(() => {
@@ -71,12 +84,14 @@ function RoomFloor({ room }: { room: Room }) {
 
 export function ShellView() {
   const shell = useOdaja((s) => s.shell);
+  const walk = useOdaja((s) => s.viewMode === "walk");
   if (!shell) return null;
   return (
     <group>
       {shell.rooms.map((room) => (
         <RoomFloor key={room.id} room={room} />
       ))}
+      {walk && shell.rooms.map((room) => <RoomCeiling key={`c-${room.id}`} room={room} height={shell.wallHeight} />)}
       {shell.walls.map((wall) => (
         <WallView key={wall.id} wall={wall} shell={shell} openings={shell.openings.filter((o) => o.wall === wall.id)} />
       ))}

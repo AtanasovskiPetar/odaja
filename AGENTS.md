@@ -79,6 +79,9 @@ project folders.
 | `server/tools.ts` | AI tools shared by the chat and the MCP server |
 | `server/chat/` | Chat backend: providers and models, settings, conversations, the three runners, HTTP routes |
 | `mcp/server.ts` | MCP server forwarding Odaja's tools to MCP clients |
+| `src/model/walk.ts` | Walk view: what blocks you (walls at body height, furniture taller than 45 cm), sliding collision, default start |
+| `src/three/WalkControls.tsx` | First-person controls (pointer-lock or drag look, W A S D, Q/E turn, Shift) |
+| `src/ui/WalkOverlay.tsx` | Picking a start on the plan, mini-map, controls hint, eye height |
 | `src/three/capture.ts` | Viewport screenshots (plan view includes the dimension overlay) |
 | `src/ui/chat/` | Chat panel, model picker, connection settings |
 | `src/three/modelImport.ts` | Loading model files (GLB/glTF, FBX, OBJ+MTL, DAE, 3DS, USDZ/USD, 3MF, STL, PLY, WRL), units/up-axis/facing normalisation, simplification, GLB export |
