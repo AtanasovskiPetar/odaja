@@ -13,8 +13,9 @@ const KEY_LINKS: Partial<Record<ProviderInfo["id"], string>> = {
 function ProviderRow({ provider, onSaved }: { provider: ProviderInfo; onSaved: () => void }) {
   const [key, setKey] = useState("");
   const [url, setUrl] = useState(provider.baseUrl ?? "");
+  const [command, setCommand] = useState(provider.commandPath ?? "");
   const [busy, setBusy] = useState(false);
-  const save = async (patch: { key?: string; baseUrl?: string }) => {
+  const save = async (patch: { key?: string; baseUrl?: string; commandPath?: string }) => {
     setBusy(true);
     try {
       await saveProviderSettings(provider.id, patch);
@@ -33,6 +34,19 @@ function ProviderRow({ provider, onSaved }: { provider: ProviderInfo; onSaved: (
       <div className="muted provider-status">{provider.status}</div>
       {provider.kind === "subscription" && (
         <p className="hint">Uses the Claude Code installed on this Mac with your own sign-in. No API key, and usage counts toward your plan.</p>
+      )}
+      {provider.kind === "subscription" && (!provider.ready || provider.commandPath) && (
+        <div className="provider-field">
+          <input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="Path to claude, e.g. ~/.local/bin/claude" spellCheck={false} />
+          <button disabled={busy || command === (provider.commandPath ?? "")} onClick={() => save({ commandPath: command })}>
+            Save
+          </button>
+          {provider.commandPath && (
+            <button disabled={busy} onClick={() => save({ commandPath: "" })} title="Find Claude Code by itself again">
+              Reset
+            </button>
+          )}
+        </div>
       )}
       {provider.kind === "api-key" && (
         <div className="provider-field">

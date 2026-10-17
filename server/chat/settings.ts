@@ -11,6 +11,8 @@ export interface ChatSettings {
   keys: Partial<Record<ProviderId, string>>;
   baseUrls: Partial<Record<ProviderId, string>>;
   defaultModel?: { provider: ProviderId; model: string };
+  // Where Claude Code is, when it isn't found by itself.
+  claudePath?: string;
 }
 
 export const SETTINGS_FILE = process.env.ODAJA_HOME
@@ -25,7 +27,7 @@ export const DEFAULT_BASE_URLS: Partial<Record<ProviderId, string>> = {
 export async function readSettings(): Promise<ChatSettings> {
   try {
     const s = JSON.parse(await fs.readFile(SETTINGS_FILE, "utf8"));
-    return { keys: s.keys ?? {}, baseUrls: s.baseUrls ?? {}, defaultModel: s.defaultModel };
+    return { keys: s.keys ?? {}, baseUrls: s.baseUrls ?? {}, defaultModel: s.defaultModel, claudePath: s.claudePath };
   } catch {
     return { keys: {}, baseUrls: {} };
   }

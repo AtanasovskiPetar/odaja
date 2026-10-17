@@ -12,6 +12,7 @@ export interface ProviderInfo {
   status: string;
   keyHint?: string;
   baseUrl?: string;
+  commandPath?: string;
   defaultModel: string;
 }
 
@@ -261,7 +262,7 @@ export const useChat = create<ChatState>((set, get) => {
   };
 });
 
-export async function saveProviderSettings(provider: ProviderId, patch: { key?: string; baseUrl?: string }) {
+export async function saveProviderSettings(provider: ProviderId, patch: { key?: string; baseUrl?: string; commandPath?: string }) {
   await api("/chat/settings", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ provider, ...patch }) });
 }
 

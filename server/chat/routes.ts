@@ -55,6 +55,10 @@ export async function handleChat(route: string, url: URL, req: IncomingMessage, 
           if (body.key.trim()) settings.keys[provider] = body.key.trim();
           else delete settings.keys[provider];
         }
+        if (provider === "claude-code" && typeof body.commandPath === "string") {
+          if (body.commandPath.trim()) settings.claudePath = body.commandPath.trim();
+          else delete settings.claudePath;
+        }
         if (typeof body.baseUrl === "string") {
           if (body.baseUrl.trim()) settings.baseUrls[provider] = body.baseUrl.trim();
           else delete settings.baseUrls[provider];

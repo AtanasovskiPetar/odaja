@@ -5,7 +5,6 @@
 //   - Claude Code: the user's own installed Claude Code (their subscription),
 //     driven in headless stream-json mode with Odaja's MCP server.
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
-import path from "node:path";
 import Anthropic from "@anthropic-ai/sdk";
 import { dynamicTool, jsonSchema, stepCountIs, streamText, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
@@ -14,6 +13,7 @@ import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { callTool, inputJsonSchema, TOOLS, type ToolContext, type ToolResult } from "../tools";
 import { transcript, type AssistantItem, type Conversation, type ImageInput } from "./conversations";
 import { SYSTEM_PROMPT } from "./prompt";
+import { claudeCommand, mcpCommand } from "../env";
 import { baseUrl, type ChatSettings, type ProviderId } from "./settings";
 
 export type ChatEvent =
@@ -248,7 +248,6 @@ interface ClaudeProcess {
 }
 
 const processes = new Map<string, ClaudeProcess>();
-const MCP_SERVER = path.resolve("mcp/server.ts");
 
 // Close idle Claude Code sessions after a while; they resume when needed.
 setInterval(() => {
@@ -265,9 +264,9 @@ export function stopAllClaudeCode() {
   processes.clear();
 }
 
-function startClaudeCode(conv: Conversation, ctx: RunContext): ClaudeProcess {
+function startClaudeCode(conv: Conversation, ctx: RunContext, claude: string): ClaudeProcess {
   // The chat id lets Odaja's tools use the photos shared in this chat.
-  const mcpConfig = { mcpServers: { odaja: { command: "bun", args: [MCP_SERVER], env: { ODAJA_URL: ctx.odajaUrl, ODAJA_CHAT_ID: conv.id } } } };
+  const mcpConfig = { mcpServers: { odaja: { ...mcpCommand(), env: { ODAJA_URL: ctx.odajaUrl, ODAJA_CHAT_ID: conv.id } } } };
   const args = [
     "-p",
     "--input-format", "stream-json",
@@ -289,7 +288,7 @@ function startClaudeCode(conv: Conversation, ctx: RunContext): ClaudeProcess {
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
   delete env.ANTHROPIC_AUTH_TOKEN;
-  const proc = spawn("claude", args, { cwd: ctx.projectDir, env });
+  const proc = spawn(claude, args, { cwd: ctx.projectDir, env });
   const entry: ClaudeProcess = { proc, model: conv.model, lastUsed: Date.now() };
   let buffer = "";
   let stderr = "";
@@ -326,7 +325,7 @@ async function runClaudeCode(conv: Conversation, input: UserInput, ctx: RunConte
     processes.delete(conv.id);
     entry = undefined;
   }
-  entry ??= startClaudeCode(conv, ctx);
+  entry ??= startClaudeCode(conv, ctx, await claudeCommand());
   const current = entry;
   current.lastUsed = Date.now();
 

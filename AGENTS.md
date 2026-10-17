@@ -20,6 +20,7 @@ bun run dev                                    # reopens the last project, or sh
 ODAJA_PROJECT=/path/to/project bun run dev     # opens a specific project folder
 ODAJA_HOME=/path bun run dev                   # where new projects are created (default ~/Documents/Odaja)
 bun run build && bun run start                 # the built app without Vite, at http://localhost:5180 (ODAJA_PORT)
+bun run package:server                         # build/odaja-server (one binary, no Bun needed) + build/resources/
 bun run typecheck
 bun run format-project <dir>                   # reformat a project's JSON the way the app saves it
 ```
@@ -45,10 +46,12 @@ the copy too. To change the sample itself, open it deliberately with
   project. The server exposes them at `/api/tools` and `/api/tools/call`.
   Screenshots are taken by the open app (the server asks it over the event
   stream), so the app must be open in a browser.
-- **MCP server** (`mcp/server.ts`): forwards Odaja's tools to any MCP client.
-  The app must be running (`bun run dev`). To use Odaja from Claude Code:
-  `claude mcp add odaja -- bun /path/to/odaja/mcp/server.ts` (set `ODAJA_URL`
-  if the app isn't on http://localhost:5173).
+- **MCP server** (`mcp/run.ts`, started by `mcp/server.ts` or as
+  `odaja-server mcp`): forwards Odaja's tools to any MCP client. The app must
+  be running. To use Odaja from Claude Code:
+  `claude mcp add odaja -- bun /path/to/odaja/mcp/server.ts`. It finds the
+  running app through `~/.odaja/server.json` (written by the standalone
+  server), else http://localhost:5173; `ODAJA_URL` overrides both.
 - **In-app chat** (`server/chat/`, `src/ui/chat/`): a chat panel (⌘J) with a
   model picker. Connections:
   - *Claude Code (subscription)*: drives the user's own installed, signed-in
@@ -56,7 +59,8 @@ the copy too. To change the sample itself, open it deliberately with
     (`--tools "" --strict-mcp-config --allowedTools "mcp__odaja__*"
     --permission-mode dontAsk`), with `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`
     removed so the subscription is used. Odaja never reads Claude credentials.
-    For personal use only.
+    `claude` is looked up on the login shell's PATH; the chat settings can set
+    its path by hand. For personal use only.
   - *Anthropic API*: the official `@anthropic-ai/sdk`, streaming tool loop
     (default model `claude-opus-5-5`, server-side refusal fallback on).
   - *OpenAI, Gemini, OpenRouter, Ollama, LM Studio*: the Vercel AI SDK.
@@ -116,7 +120,10 @@ project folders.
 | `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `StructureLayer.tsx` is the interactive SVG for Structure mode (drawing, dragging, its own pan/zoom), `StructureInspector.tsx` edits walls/openings/rooms, `IssuesPanel.tsx` lists issues. `StartScreen.tsx` is the project picker, `ScenesSection.tsx` the scene list. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
 | `server/api.ts` | The backend, independent of Vite: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; watches the project and pushes events (file changes, screenshot and open-scene requests) on `/api/events` (Server-Sent Events); serves the tools, the library and the chat. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
 | `server/project-server.ts` | Vite plugin mounting `server/api.ts` at `/api` in development |
-| `server/main.ts` | Standalone server: the built app (`dist/`) plus `server/api.ts`, on 127.0.0.1 only, with a Host check against DNS rebinding |
+| `server/main.ts` | Entry point of the standalone server and of the `odaja-server` binary: serves (`server/serve.ts`), or runs the MCP server with `mcp`. Packaged, it finds its files in `resources/` next to it (`ODAJA_APP_ROOT`). |
+| `server/serve.ts` | Standalone web server: the built app (`dist/`) plus `server/api.ts` on 127.0.0.1 only, Host check against DNS rebinding, port 5180 or a free one, announced in `~/.odaja/server.json` (`server/discovery.ts`) |
+| `server/env.ts` | The machine: compiled or not, the login shell's PATH (apps from the Dock get a bare one), the `claude` command (chat settings can set its path) and how to start the MCP server |
+| `scripts/package-server.ts` | `bun run package:server [bun-target]`: compiles the server binary and lays out `build/resources/` |
 | `src/model/defaults.ts` | Starting content for new projects (materials, the rectangular-room shell) and scenes |
 | `examples/sample-flat/` | The sample flat: offered on the start screen as a copy, and the fixture for development |
 

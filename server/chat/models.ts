@@ -2,6 +2,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import Anthropic from "@anthropic-ai/sdk";
+import { claudeCommand } from "../env";
 import { baseUrl, type ChatSettings, type ProviderId } from "./settings";
 
 const run = promisify(execFile);
@@ -15,6 +16,7 @@ export interface ProviderInfo {
   status: string;
   keyHint?: string; // last characters of the saved key
   baseUrl?: string;
+  commandPath?: string; // Claude Code: the path set by hand, if any
   defaultModel: string; // "" = first model in the list
 }
 
@@ -28,10 +30,11 @@ export interface ModelInfo {
 const hint = (key?: string) => (key ? `…${key.slice(-4)}` : undefined);
 
 export async function claudeCodeStatus(): Promise<{ installed: boolean; loggedIn: boolean; detail: string }> {
+  const claude = await claudeCommand();
   try {
-    const { stdout: version } = await run("claude", ["--version"], { timeout: 10000 });
+    const { stdout: version } = await run(claude, ["--version"], { timeout: 10000 });
     try {
-      const { stdout } = await run("claude", ["auth", "status"], { timeout: 10000 });
+      const { stdout } = await run(claude, ["auth", "status"], { timeout: 10000 });
       const status = JSON.parse(stdout);
       if (status.authMethod === "claude.ai") {
         return { installed: true, loggedIn: true, detail: `${version.trim()} · ${status.subscriptionType ?? "subscription"}${status.orgName ? ` · ${status.orgName}` : ""}` };
@@ -41,7 +44,11 @@ export async function claudeCodeStatus(): Promise<{ installed: boolean; loggedIn
       return { installed: true, loggedIn: false, detail: 'Not signed in. Run "claude auth login" in a terminal.' };
     }
   } catch {
-    return { installed: false, loggedIn: false, detail: "Claude Code isn't installed (no claude command found)." };
+    return {
+      installed: false,
+      loggedIn: false,
+      detail: claude === "claude" ? "Claude Code wasn't found. Install it, or set where it is below." : `No Claude Code at ${claude}.`,
+    };
   }
 }
 
@@ -57,7 +64,7 @@ export async function listProviders(settings: ChatSettings): Promise<ProviderInf
     defaultModel,
   });
   return [
-    { id: "claude-code", name: "Claude Code (your subscription)", kind: "subscription", ready: cc.loggedIn, status: cc.detail, defaultModel: "default" },
+    { id: "claude-code", name: "Claude Code (your subscription)", kind: "subscription", ready: cc.loggedIn, status: cc.detail, commandPath: settings.claudePath, defaultModel: "default" },
     keyed("anthropic", "Anthropic API", "claude-opus-5-5"),
     keyed("openai", "OpenAI API", ""),
     keyed("google", "Google Gemini API", ""),
