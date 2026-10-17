@@ -26,8 +26,9 @@ bun run format-project <dir>                   # reformat a project's JSON the w
 ```
 
 In development the app runs at http://localhost:5173; `bun run start` serves the
-built app and the same backend from `server/main.ts` (what the desktop app will
-run). The furniture library is
+built app and the same backend from `server/main.ts`: the **companion** that
+power users download as `odaja-server` (real project folders, MCP). The plan
+for the website version is in [docs/web-plan.md](docs/web-plan.md). The furniture library is
 `~/Documents/Odaja/Library` (`$ODAJA_HOME/Library`), served under `/api/library`.
 `public/draco/` holds the Draco decoder for compressed glTF files. Recently opened projects are remembered
 in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The start screen lists those and every project folder in
@@ -115,7 +116,7 @@ project folders.
 | `src/model/geometry.ts` | 2D plan geometry: wall outlines, ray casts to walls, object footprints, room sizes, wall dimension chains |
 | `src/model/units.ts` | Plan (cm, y down) ↔ three.js (metres, Y up) conversion |
 | `src/store.ts` | Zustand store: loading, live reload, saving, modes and tools. Undo entries record before/after of every file a step touched, so a wall move and the attached furniture it carried (in every scene using that shell) undo together. |
-| `src/platform.ts` | Host interface (file read/write/watch). Browser implementation now, Tauri later. |
+| `src/platform.ts` | Host interface (file read/write/watch), implemented over `/api` (dev and companion); a browser-storage implementation comes with the website (docs/web-plan.md). |
 | `src/three/` | React Three Fiber rendering: shell (walls, openings, floors), objects, viewport |
 | `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `StructureLayer.tsx` is the interactive SVG for Structure mode (drawing, dragging, its own pan/zoom), `StructureInspector.tsx` edits walls/openings/rooms, `IssuesPanel.tsx` lists issues. `StartScreen.tsx` is the project picker, `ScenesSection.tsx` the scene list. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
 | `server/api.ts` | The backend, independent of Vite: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; watches the project and pushes events (file changes, screenshot and open-scene requests) on `/api/events` (Server-Sent Events); serves the tools, the library and the chat. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
@@ -135,4 +136,5 @@ project folders.
 - Edits made outside the app (agents, editors) are pushed onto the undo stack,
   so the user can undo them in the app.
 - Stack: Bun, Vite, React 19, React Three Fiber + drei, Zustand, Zod 4,
-  TypeScript. Tauri (desktop shell) comes later.
+  TypeScript. Odaja is heading for a local-first website plus the optional
+  companion; there is no desktop (Tauri) app.

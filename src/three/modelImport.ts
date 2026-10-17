@@ -20,6 +20,10 @@ import { MeshoptDecoder } from "three/examples/jsm/libs/meshopt_decoder.module.j
 import { MeshoptSimplifier } from "three/examples/jsm/libs/meshopt_simplifier.module.js";
 import { mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 
+// Relative to wherever the app is served (a domain root, or a sub-path like
+// GitHub Pages' /odaja/), so the decoder is found at any address.
+const DRACO_PATH = `${import.meta.env.BASE_URL}draco/`;
+
 export type Unit = "m" | "cm" | "mm" | "in";
 export type UpAxis = "y" | "z";
 
@@ -97,7 +101,7 @@ export async function loadModelFiles(files: File[]): Promise<LoadedModel> {
       case "glb":
       case "gltf": {
         const loader = new GLTFLoader(manager);
-        loader.setDRACOLoader(new DRACOLoader(manager).setDecoderPath("/draco/"));
+        loader.setDRACOLoader(new DRACOLoader(manager).setDecoderPath(DRACO_PATH));
         loader.setMeshoptDecoder(MeshoptDecoder);
         object = (await loader.loadAsync(mainUrl)).scene;
         break;
@@ -228,6 +232,6 @@ export async function toGLB(object: THREE.Object3D): Promise<ArrayBuffer> {
 // Loader for models stored in projects (always GLB, possibly compressed if
 // an agent or another tool wrote them).
 export function configureGLTF(loader: GLTFLoader) {
-  loader.setDRACOLoader(new DRACOLoader().setDecoderPath("/draco/"));
+  loader.setDRACOLoader(new DRACOLoader().setDecoderPath(DRACO_PATH));
   loader.setMeshoptDecoder(MeshoptDecoder);
 }

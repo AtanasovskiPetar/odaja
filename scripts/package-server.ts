@@ -3,7 +3,7 @@
 //   bun run package:server                     → build/odaja-server for this machine
 //   bun run package:server bun-darwin-x64      → for another platform (Bun target name)
 //
-// Output, ready to drop into the desktop app:
+// Output (the companion users download):
 //   build/odaja-server            the server binary (also the MCP server: `odaja-server mcp`)
 //   build/resources/dist/         the built app it serves
 //   build/resources/docs/         the format docs it copies into each project

@@ -1,5 +1,5 @@
-// Odaja without Vite, as one program (also what `bun build --compile` turns
-// into the server binary the desktop app runs):
+// Odaja without Vite, as one program: the companion. `bun build --compile`
+// turns it into the `odaja-server` binary (scripts/package-server.ts):
 //
 //   odaja-server        the app and its backend on a local port (server/serve.ts)
 //   odaja-server mcp    Odaja's MCP server on stdio, for Claude Code and others

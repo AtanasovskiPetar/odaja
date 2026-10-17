@@ -1,6 +1,7 @@
 // Everything the app needs from the host environment: Odaja's backend
 // (server/api.ts) over /api, served by Vite in development and by
-// server/main.ts standalone (and, later, inside the desktop app).
+// server/main.ts as the companion. The website will get a browser
+// implementation (docs/web-plan.md).
 import type { StarterRoom } from "./model/defaults";
 import type { LibraryItemDoc, SceneDoc } from "./model/schema";
 

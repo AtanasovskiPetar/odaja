@@ -106,7 +106,7 @@ export async function startServer() {
   port = (server.address() as AddressInfo).port;
   const url = `http://localhost:${port}`;
   await announce(url);
-  // The desktop app reads this line to know where to point its window.
+  // Shown in the terminal; scripts and launchers can read the address from it.
   console.log(`Odaja is running at ${url}`);
 
   const shutdown = async () => {
