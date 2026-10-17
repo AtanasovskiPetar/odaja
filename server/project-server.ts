@@ -38,8 +38,11 @@ const STATE_FILE = process.env.ODAJA_HOME
   ? path.join(PROJECTS_ROOT, ".odaja-state.json")
   : path.join(os.homedir(), ".odaja", "state.json");
 const MAX_RECENT = 12;
-// Always offered on the start screen.
+// The sample flat in the repo. It is never opened in place: "Try the sample
+// flat" copies it into the projects folder, so playing with it never changes
+// the repo. Only an explicit ODAJA_PROJECT opens the original (to improve it).
 const EXAMPLE_PROJECT = path.resolve("examples/sample-flat");
+const SAMPLE_NAME = "Sample flat";
 
 interface State {
   recent: string[];
@@ -184,8 +187,9 @@ export function odajaProjectServer(): Plugin {
     }
   }
 
-  async function openProject(dir: string) {
-    const abs = path.resolve(dir.replace(/^~(?=$|\/)/, os.homedir()));
+  async function openProject(dir: string, { allowExample = false } = {}) {
+    let abs = path.resolve(dir.replace(/^~(?=$|\/)/, os.homedir()));
+    if (abs === EXAMPLE_PROJECT && !allowExample) abs = await sampleCopy(false);
     if (!(await isProject(abs))) throw new HttpError(404, `not an Odaja project (no project.json): ${abs}`);
     if (projectDir && projectDir !== abs) server.watcher.unwatch(projectDir);
     if (projectDir !== abs) openScenePath = null;
@@ -211,20 +215,43 @@ export function odajaProjectServer(): Plugin {
     return dir;
   }
 
+  // The user's own copy of the sample flat: made on first use, or remade
+  // from the repo's version when `fresh` (their changes to it are replaced).
+  async function sampleCopy(fresh: boolean) {
+    const dir = path.join(PROJECTS_ROOT, SAMPLE_NAME);
+    const exists = await isProject(dir);
+    if (exists && !fresh) return dir;
+    if (await fs.stat(dir).catch(() => null)) {
+      if (!exists) throw new HttpError(409, `"${dir}" exists but isn't an Odaja project; move it away first`);
+      if (projectDir === dir) {
+        server.watcher.unwatch(dir);
+        projectDir = null;
+      }
+      await fs.rm(dir, { recursive: true });
+    }
+    await fs.cp(EXAMPLE_PROJECT, dir, {
+      recursive: true,
+      // Chats saved while developing stay behind.
+      filter: (src) => !src.split(path.sep).includes(".odaja"),
+    });
+    return dir;
+  }
+
   async function listProjects() {
     const state = await readState();
     const inRoot = await fs
       .readdir(PROJECTS_ROOT, { withFileTypes: true })
       .then((entries) => entries.filter((e) => e.isDirectory()).map((e) => path.join(PROJECTS_ROOT, e.name)))
       .catch(() => [] as string[]);
-    const dirs = [...new Set([...state.recent, ...inRoot, EXAMPLE_PROJECT])];
+    const dirs = [...new Set([...state.recent, ...inRoot])].filter((d) => d !== EXAMPLE_PROJECT);
     const summaries = (await Promise.all(dirs.map(projectSummary))).filter((p) => p !== null);
     const rank = (dir: string) => {
       const i = state.recent.indexOf(dir);
       return i === -1 ? Infinity : i;
     };
     summaries.sort((a, b) => rank(a.dir) - rank(b.dir) || b.modified - a.modified);
-    return { root: PROJECTS_ROOT, current: projectDir, projects: summaries };
+    const sampleDir = path.join(PROJECTS_ROOT, SAMPLE_NAME);
+    return { root: PROJECTS_ROOT, current: projectDir, projects: summaries, sampleDir, sampleCopied: await isProject(sampleDir) };
   }
 
   async function listScenes() {
@@ -386,7 +413,7 @@ export function odajaProjectServer(): Plugin {
       server = devServer;
       server.httpServer?.on("close", stopAllClaudeCode);
       const initial = process.env.ODAJA_PROJECT ?? (await readState()).recent[0];
-      if (initial) await openProject(initial).catch((err) => console.warn(`[odaja] ${err.message}`));
+      if (initial) await openProject(initial, { allowExample: Boolean(process.env.ODAJA_PROJECT) }).catch((err) => console.warn(`[odaja] ${err.message}`));
 
       server.watcher.add(AGENT_DOC_SOURCE);
       server.watcher.on("all", (_event, file) => {
@@ -426,6 +453,11 @@ export function odajaProjectServer(): Plugin {
             case "POST /projects/open": {
               const { dir } = await json();
               await openProject(String(dir));
+              return send(200, { dir: projectDir });
+            }
+            case "POST /projects/sample": {
+              const { fresh } = await json();
+              await openProject(await sampleCopy(Boolean(fresh)));
               return send(200, { dir: projectDir });
             }
             case "POST /projects/create": {

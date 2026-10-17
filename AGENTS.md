@@ -26,8 +26,14 @@ bun run format-project <dir>                   # reformat a project's JSON the w
 The app runs at http://localhost:5173. The furniture library is
 `~/Documents/Odaja/Library` (`$ODAJA_HOME/Library`), served under `/api/library`.
 `public/draco/` holds the Draco decoder for compressed glTF files. Recently opened projects are remembered
-in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The start screen lists those, every project folder in
-`~/Documents/Odaja`, and the sample project.
+in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The start screen lists those and every project folder in
+`~/Documents/Odaja`, and offers "Try the sample flat".
+
+The sample in `examples/sample-flat` is never opened in place: trying it
+copies it to `~/Documents/Odaja/Sample flat` (without `.odaja/`), and "Start
+over" replaces that copy with a fresh one. Opening the repo path redirects to
+the copy too. To change the sample itself, open it deliberately with
+`ODAJA_PROJECT=examples/sample-flat bun run dev`.
 
 ## AI integration
 
@@ -107,7 +113,7 @@ project folders.
 | `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `StructureLayer.tsx` is the interactive SVG for Structure mode (drawing, dragging, its own pan/zoom), `StructureInspector.tsx` edits walls/openings/rooms, `IssuesPanel.tsx` lists issues. `StartScreen.tsx` is the project picker, `ScenesSection.tsx` the scene list. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
 | `server/project-server.ts` | Vite plugin: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; pushes file-change events. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
 | `src/model/defaults.ts` | Starting content for new projects (materials, the rectangular-room shell) and scenes |
-| `examples/sample-flat/` | Sample project used in development |
+| `examples/sample-flat/` | The sample flat: offered on the start screen as a copy, and the fixture for development |
 
 ## Conventions
 

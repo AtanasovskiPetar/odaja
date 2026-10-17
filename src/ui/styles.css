@@ -1875,6 +1875,53 @@ button.link.danger {
   font-size: 11px;
 }
 
+.sample-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 -8px 14px;
+}
+
+.sample-open {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 40px 1fr;
+  align-items: center;
+  column-gap: 12px;
+  padding: 9px 8px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r);
+  background: none;
+  text-align: left;
+}
+
+.sample-open:hover {
+  border-style: solid;
+  background: var(--well);
+}
+
+.sample-open .thumb {
+  grid-row: span 2;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-s);
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+.sample-open strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sample-open .muted {
+  font-size: 11.5px;
+  line-height: 1.35;
+}
+
 .open-path {
   display: flex;
   gap: 6px;

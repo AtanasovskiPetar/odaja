@@ -26,8 +26,10 @@ export interface LibraryEntry {
 type Body = string | Blob | ArrayBuffer;
 
 export interface Platform {
-  listProjects(): Promise<{ root: string; current: string | null; projects: ProjectSummary[] }>;
+  listProjects(): Promise<{ root: string; current: string | null; projects: ProjectSummary[]; sampleDir: string; sampleCopied: boolean }>;
   openProject(dir: string): Promise<void>;
+  // Opens the user's copy of the sample flat, making it (or remaking it when fresh).
+  openSample(fresh: boolean): Promise<void>;
   createProject(name: string, room?: StarterRoom): Promise<void>;
   closeProject(): Promise<void>;
   listScenes(): Promise<{ dir: string; scenes: SceneSummary[] }>;
@@ -81,6 +83,9 @@ export const platform: Platform = {
   listProjects: () => request("/api/projects"),
   async openProject(dir) {
     await post("/api/projects/open", { dir });
+  },
+  async openSample(fresh) {
+    await post("/api/projects/sample", { fresh });
   },
   async createProject(name, room) {
     await post("/api/projects/create", { name, room });

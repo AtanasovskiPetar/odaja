@@ -70,6 +70,8 @@ interface OdajaState {
   status: "loading" | "start" | "project";
   projectsRoot: string;
   projects: ProjectSummary[];
+  sampleDir: string;
+  sampleCopied: boolean;
   projectDir: string | null;
   projectDoc: ProjectDoc | null;
   project: Project | null;
@@ -128,6 +130,7 @@ interface OdajaState {
 
   load(): Promise<void>;
   refreshProjects(): Promise<void>;
+  openSample(fresh: boolean): Promise<void>;
   openProject(dir: string): Promise<void>;
   createProject(name: string, room?: StarterRoom): Promise<void>;
   closeProject(): Promise<void>;
@@ -343,6 +346,8 @@ export const useOdaja = create<OdajaState>((set, get) => {
     status: "loading",
     projectsRoot: "",
     projects: [],
+    sampleDir: "",
+    sampleCopied: false,
     mode: "furnish",
     tool: "select",
     hideFurniture: false,
@@ -374,12 +379,17 @@ export const useOdaja = create<OdajaState>((set, get) => {
     },
 
     async refreshProjects() {
-      const { root, projects } = await platform.listProjects();
-      set({ projectsRoot: root, projects, ...(get().status === "loading" ? { status: "start" } : {}) });
+      const { root, projects, sampleDir, sampleCopied } = await platform.listProjects();
+      set({ projectsRoot: root, projects, sampleDir, sampleCopied, ...(get().status === "loading" ? { status: "start" } : {}) });
     },
 
     async openProject(dir) {
       await platform.openProject(dir);
+      await loadProject();
+    },
+
+    async openSample(fresh) {
+      await platform.openSample(fresh);
       await loadProject();
     },
 

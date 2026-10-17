@@ -180,8 +180,47 @@ function NewProject() {
   );
 }
 
+function SampleGlyph() {
+  return (
+    <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+      <path d="M4 4h16v16H4Z" strokeWidth={1.8} />
+      <path d="M12 4v9M12 13h8" strokeWidth={1.1} />
+      <path d="M6.5 7h3.5v2.5H6.5ZM14.5 15.5h3v2.5h-3Z" strokeWidth={1} fill="currentColor" fillOpacity={0.25} />
+    </svg>
+  );
+}
+
+function SampleRow({ onError }: { onError: (message: string) => void }) {
+  const copied = useOdaja((s) => s.sampleCopied);
+  const openSample = useOdaja((s) => s.openSample);
+  const open = (fresh: boolean) => openSample(fresh).catch((err) => onError((err as Error).message));
+  return (
+    <div className="sample-row">
+      <button className="sample-open" onClick={() => open(false)}>
+        <span className="thumb">
+          <SampleGlyph />
+        </span>
+        <strong>{copied ? "Your sample flat" : "Try the sample flat"}</strong>
+        <span className="muted">{copied ? "Pick up where you left off." : "A furnished two-room flat to explore. Change anything."}</span>
+      </button>
+      {copied && (
+        <button
+          className="link"
+          onClick={() => window.confirm("Start the sample flat over? Your changes to it will be replaced with a fresh copy.") && open(true)}
+          title="Replace your copy with a fresh one"
+        >
+          Start over
+        </button>
+      )}
+    </div>
+  );
+}
+
 function ProjectList() {
-  const projects = useOdaja((s) => s.projects);
+  const all = useOdaja((s) => s.projects);
+  const sampleDir = useOdaja((s) => s.sampleDir);
+  // The sample's copy has its own row below.
+  const projects = all.filter((p) => p.dir !== sampleDir);
   const openProject = useOdaja((s) => s.openProject);
   const [path, setPath] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -195,7 +234,7 @@ function ProjectList() {
     <div className="card">
       <h2>Carry on</h2>
       {projects.length === 0 ? (
-        <p className="muted empty-hint">Nothing here yet. Your projects will appear here.</p>
+        <p className="muted empty-hint">Nothing here yet. Your homes will appear here.</p>
       ) : (
         <ul className="project-list">
           {projects.map((p) => (
@@ -212,6 +251,7 @@ function ProjectList() {
           ))}
         </ul>
       )}
+      <SampleRow onError={setError} />
       <form
         className="open-path"
         onSubmit={(e) => {
