@@ -17,6 +17,7 @@ const INSTRUCTIONS = `Odaja is the user's 3D home-design app. These tools read a
 Start with get_overview. Units are cm on a top-down plan (x east, y south); rotation is degrees clockwise from above and 0 means an object's front faces north.
 Prefer built-in templates (list_templates) or the user's library (list_library); build from parts when nothing fits.
 Tiles, paint and floors: set_material, set_finish, get_quantities. Door and window types: style on add_opening/update_opening.
+Floor plans: set_background (scale_from a printed dimension, or ask the user for one), image_to_plan to read positions off the image, build_shell for all walls, openings and rooms at once, then screenshot the plan view to compare with the background.
 After changes, check_issues, and use screenshot to look at the result. Every change shows up live in the app and the user can undo it there.`;
 
 async function api(path: string, body?: unknown) {

@@ -1,5 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { useOdaja } from "../store";
+import { useChat } from "./chat/chatStore";
+import { PLAN_ACCEPT, savePlanFile } from "./planImage";
+
+const PLAN_DRAFT =
+  "Here's the floor plan of my flat. Build it in Odaja: walls, doors, windows and rooms. Take the scale from a dimension printed on the plan; if there isn't one, ask me for a measurement.";
 
 // Shortens /Users/name/… to ~/… for display.
 function tildePath(dir: string) {
@@ -19,7 +24,10 @@ function NewProject() {
   const createProject = useOdaja((s) => s.createProject);
   const root = useOdaja((s) => s.projectsRoot);
   const [name, setName] = useState("");
-  const [start, setStart] = useState<"room" | "empty">("room");
+  const [start, setStart] = useState<"room" | "plan" | "empty">("room");
+  const [plan, setPlan] = useState<File | null>(null);
+  const applyProject = useOdaja((s) => s.applyProject);
+  const startDraft = useChat((s) => s.startDraft);
   const [width, setWidth] = useState("400");
   const [depth, setDepth] = useState("300");
   const [height, setHeight] = useState("260");
@@ -34,9 +42,19 @@ function NewProject() {
       setError("Enter the room's width, depth and ceiling height in cm.");
       return;
     }
+    if (start === "plan" && !plan) {
+      setError("Choose the floor plan: an image or a PDF.");
+      return;
+    }
     setBusy(true);
     try {
       await createProject(name, start === "room" ? room : undefined);
+      if (start === "plan" && plan) {
+        // The plan becomes the background, and the chat gets it ready to send.
+        const { underlay, blob } = await savePlanFile(plan);
+        applyProject((doc) => ({ ...doc, underlay }));
+        startDraft(PLAN_DRAFT, [new File([blob], plan.name, { type: blob.type })]);
+      }
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -57,10 +75,15 @@ function NewProject() {
           <strong>One rectangular room</strong>
           <span>Four walls with these inside measurements. Add more walls later.</span>
         </label>
+        <label className={start === "plan" ? "active" : ""}>
+          <input type="radio" checked={start === "plan"} onChange={() => setStart("plan")} />
+          <strong>From a floor plan</strong>
+          <span>An image or PDF of the plan. It goes in the background and the chat builds the walls from it.</span>
+        </label>
         <label className={start === "empty" ? "active" : ""}>
           <input type="radio" checked={start === "empty"} onChange={() => setStart("empty")} />
           <strong>Empty</strong>
-          <span>No walls yet. Ask an agent to model your flat from a floor plan.</span>
+          <span>No walls yet. Draw them yourself or ask the chat.</span>
         </label>
       </div>
 
@@ -88,6 +111,13 @@ function NewProject() {
             </span>
           </label>
         </div>
+      )}
+
+      {start === "plan" && (
+        <label className="field">
+          <span>Floor plan</span>
+          <input type="file" accept={PLAN_ACCEPT} onChange={(e) => setPlan(e.target.files?.[0] ?? null)} />
+        </label>
       )}
 
       {error && <div className="inline-error">{error}</div>}

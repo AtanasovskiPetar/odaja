@@ -13,9 +13,12 @@ import { issuesFor } from "../src/model/issues";
 import { TEMPLATES, TEMPLATES_BY_ID, templateParams } from "../src/model/library";
 import { addObject, deleteObject, setObjectProps, setTemplateParams, uniqueId, type ObjectDoc } from "../src/model/operations";
 import { enclosedArea } from "../src/model/rooms";
+import { calibrate, defaultUnderlay, pixelToPlan } from "../src/model/underlay";
+import { fitOpening as fitOpeningIn, projectOnWall } from "../src/model/geometry";
 import {
   DEFAULT_SHELL,
   LibraryItemSchema,
+  UnderlaySchema,
   MaterialSchema,
   TILE_PATTERNS,
   ObjectSchema,
@@ -245,6 +248,20 @@ async function loadPicture(ctx: ToolContext, ref: string): Promise<Raster> {
 
 const fraction = z.array(z.number().min(0).max(1)).length(2);
 
+function describeUnderlay(u: z.infer<typeof UnderlaySchema>) {
+  const w = r1(u.width * u.scale);
+  const h = r1(u.height * u.scale);
+  return {
+    image: u.image,
+    pixels: [u.width, u.height],
+    cmPerPixel: Number(u.scale.toFixed(4)),
+    sizeOnPlan: [w, h],
+    center: u.center,
+    rotation: u.rotation,
+    note: "Image point (fx, fy) in 0..1 maps to the plan with image_to_plan. If the scale is a guess, set it with scale_from using a dimension printed on the plan, or ask the user for one real measurement.",
+  };
+}
+
 async function readProject(ctx: ToolContext) {
   return (await readJson(ctx, "project.json")) as { materials?: Record<string, unknown> } & Record<string, unknown>;
 }
@@ -279,6 +296,7 @@ export const TOOLS: ToolDef[] = [
         materials: Object.fromEntries(
           Object.entries(project.materials).map(([k, m]) => [k, m.tile ? `${m.color} tiles ${m.tile.size[0]}×${m.tile.size[1]} ${m.tile.pattern}${m.tile.image ? " (photo)" : ""}` : m.color]),
         ),
+        background: project.underlay ? describeUnderlay(project.underlay) : null,
         issues: issuesFor(s, shell).map((i) => `${i.severity}: ${i.message}`),
       };
     },
@@ -846,6 +864,199 @@ export const TOOLS: ToolDef[] = [
         await fs.writeFile(path.join(dir, "item.json"), JSON.stringify(item, null, 2) + "\n");
       }
       return { material, texture: rel, size, library: libraryId };
+    },
+  }),
+
+  tool({
+    name: "build_shell",
+    description:
+      "Build the flat's walls, doors, windows and rooms in one go (e.g. from a floor plan), replacing the current walls unless replace is false. Walls are centrelines [x, y] cm (x east, y south); outer walls ~25 thick, inner ~12. Wall ends within 3 cm are joined, and ends touching another wall snap onto it. Openings name their wall by id (or \"#n\" for the n-th wall in this call, from 0), with offset = cm from the wall's from point to the opening's near edge. Rooms take a polygon or a point inside walls that enclose them. Returns what was built and anything to fix (loose wall ends, openings that had to move, rooms that aren't enclosed).",
+    input: z.object({
+      scene: sceneArg,
+      replace: z.boolean().default(true),
+      wall_height: z.number().positive().optional(),
+      walls: z.array(z.object({ id: z.string().optional(), from: vec2, to: vec2, thickness: z.number().positive().optional() })),
+      openings: z
+        .array(
+          z.object({
+            wall: z.string(),
+            type: z.enum(["door", "window", "opening"]),
+            offset: z.number(),
+            width: z.number().positive(),
+            height: z.number().positive().optional(),
+            sill: z.number().min(0).optional(),
+            hinge: z.enum(["start", "end"]).optional(),
+            swing: z.enum(["left", "right"]).optional(),
+            style: joineryArgs.style,
+          }),
+        )
+        .optional(),
+      rooms: z.array(z.object({ name: z.string(), polygon: z.array(vec2).optional(), inside_point: vec2.optional(), floor: z.string().optional() })).optional(),
+    }),
+    async run(input, ctx) {
+      const notes: string[] = [];
+      const loaded = await loadScene(ctx, input.scene);
+      const base = input.replace ? { ...loaded.shellDoc, walls: [], openings: [], rooms: [] } : loaded.shellDoc;
+      const taken = new Set([...(base.walls ?? []), ...(base.openings ?? []), ...(base.rooms ?? [])].map((x) => x.id));
+      const freeId = (prefix: string, wanted?: string) => {
+        let id = wanted && /^[a-z0-9][a-z0-9-]*$/.test(wanted) && !taken.has(wanted) ? wanted : "";
+        for (let n = 1; !id; n++) if (!taken.has(`${prefix}-${n}`)) id = `${prefix}-${n}`;
+        taken.add(id);
+        return id;
+      };
+      // Walls, with nearby ends joined.
+      const walls = input.walls.map((w) => ({ id: freeId("wall", w.id), from: [...w.from] as Vec, to: [...w.to] as Vec, thickness: w.thickness ?? 12 }));
+      const ends = walls.flatMap((w) => [w.from, w.to]);
+      let joined = 0;
+      for (let i = 0; i < ends.length; i++) {
+        for (let j = i + 1; j < ends.length; j++) {
+          const d = Math.hypot(ends[i][0] - ends[j][0], ends[i][1] - ends[j][1]);
+          if (d > 0 && d <= 3) {
+            ends[j][0] = ends[i][0];
+            ends[j][1] = ends[i][1];
+            joined++;
+          }
+        }
+      }
+      // Ends close to another wall's line snap onto it (T-junctions).
+      for (const w of walls) {
+        for (const end of [w.from, w.to]) {
+          for (const other of walls) {
+            if (other === w) continue;
+            const p = projectOnWall({ ...other, id: other.id }, end);
+            if (p.across > 0.05 && p.across <= 3) {
+              end[0] = r1(p.point[0]);
+              end[1] = r1(p.point[1]);
+              joined++;
+            }
+          }
+        }
+      }
+      if (joined) notes.push(`Joined ${joined} wall end(s) that were within 3 cm.`);
+      const kept = walls.filter((w) => {
+        const ok = Math.hypot(w.to[0] - w.from[0], w.to[1] - w.from[1]) >= 10;
+        if (!ok) notes.push(`Skipped ${w.id}: shorter than 10 cm.`);
+        return ok;
+      });
+      let doc: ShellDoc = { ...base, wallHeight: input.wall_height ?? base.wallHeight, walls: [...(base.walls ?? []), ...kept.map((w) => ({ id: w.id, from: [r1(w.from[0]), r1(w.from[1])] as [number, number], to: [r1(w.to[0]), r1(w.to[1])] as [number, number], thickness: w.thickness }))] };
+      // Loose ends: not on another wall's line.
+      const shellNow = ShellSchema.parse(doc);
+      for (const w of shellNow.walls) {
+        for (const end of [w.from, w.to]) {
+          const connected = shellNow.walls.some((o) => o !== w && projectOnWall(o, end).across < 0.5);
+          if (!connected) notes.push(`${w.id} has a loose end at [${end[0]}, ${end[1]}]: it doesn't meet another wall.`);
+        }
+      }
+      // Openings, fitted onto their walls.
+      for (const o of input.openings ?? []) {
+        const idx = /^#(\d+)$/.exec(o.wall);
+        const wallId = idx ? kept[Number(idx[1])]?.id : o.wall;
+        const shell = ShellSchema.parse(doc);
+        const wall = shell.walls.find((w) => w.id === wallId);
+        if (!wall) {
+          notes.push(`Skipped a ${o.type}: no wall "${o.wall}".`);
+          continue;
+        }
+        const fit = fitOpeningIn(wall, shell, o.offset, o.width);
+        if (fit === null) {
+          notes.push(`Skipped a ${o.width} cm ${o.type} on ${wall.id}: it doesn't fit there.`);
+          continue;
+        }
+        if (Math.abs(fit - o.offset) > 1) notes.push(`Moved a ${o.type} on ${wall.id} from offset ${o.offset} to ${r1(fit)} so it fits.`);
+        const defaults = o.type === "window" ? { height: 140, sill: 90 } : { height: 210, sill: 0 };
+        const opening = Object.fromEntries(
+          Object.entries({ id: freeId(o.type), wall: wall.id, type: o.type, offset: r1(fit), width: o.width, height: o.height ?? defaults.height, sill: (o.sill ?? defaults.sill) || undefined, hinge: o.hinge, swing: o.swing, style: o.style }).filter(([, v]) => v !== undefined),
+        );
+        doc = { ...doc, openings: [...(doc.openings ?? []), opening as unknown as NonNullable<ShellDoc["openings"]>[number]] };
+      }
+      // Rooms.
+      for (const r of input.rooms ?? []) {
+        let polygon = r.polygon as Vec[] | undefined;
+        if (!polygon && r.inside_point) {
+          polygon = enclosedArea(ShellSchema.parse(doc), r.inside_point as Vec) ?? undefined;
+          if (!polygon) {
+            notes.push(`Room "${r.name}": the walls around [${r.inside_point.join(", ")}] don't enclose an area; check for gaps.`);
+            continue;
+          }
+        }
+        if (!polygon) {
+          notes.push(`Room "${r.name}": give polygon or inside_point.`);
+          continue;
+        }
+        doc = { ...doc, rooms: [...(doc.rooms ?? []), { id: freeId(slugify(r.name).replace(/[^a-z0-9-]/g, "") || "room"), name: r.name, polygon: polygon.map((p) => [r1(p[0]), r1(p[1])] as [number, number]), floor: r.floor ?? "oak" }] };
+      }
+      const { shell } = await changeShell(ctx, input.scene, () => doc);
+      const b = shellBounds(shell);
+      return {
+        built: { walls: shell.walls.length, openings: shell.openings.length, rooms: shell.rooms.length },
+        outline: b && { width: r1(b.maxX - b.minX), depth: r1(b.maxY - b.minY) },
+        toFix: notes.length ? notes : "Nothing; all walls connect. Take a plan screenshot to compare with the floor plan.",
+      };
+    },
+  }),
+
+  tool({
+    name: "set_background",
+    description:
+      "Show a floor plan image under the Plan view (it never changes the design) and/or set its scale and position. photo: a chat photo to use (\"photo-1\"). scale_from: two points on the image as fractions (0..1, x right, y down) and their real distance in cm, e.g. the ends of a dimension line. center: plan cm where the image's middle goes; rotation degrees clockwise. If the project already has a background (get_overview shows it) leave out photo; a photo of the same plan keeps the existing image unless replace is true. Returns how image points map to the plan.",
+    input: z.object({
+      photo: z.string().optional(),
+      replace: z.boolean().optional(),
+      scale_from: z.object({ a: fraction, b: fraction, length_cm: z.number().positive() }).optional(),
+      center: vec2.optional(),
+      rotation: z.number().optional(),
+      opacity: z.number().min(0.1).max(1).optional(),
+      visible: z.boolean().optional(),
+    }),
+    async run(input, ctx) {
+      const project = await readProject(ctx);
+      let underlay = project.underlay as z.input<typeof UnderlaySchema> | undefined;
+      let kept = false;
+      if (input.photo) {
+        const m = /^photo-(\d+)$/.exec(input.photo);
+        const photos = ctx.photos ? await ctx.photos() : [];
+        const photo = m ? photos[Number(m[1]) - 1] : undefined;
+        if (!photo) throw new ToolError(`no ${input.photo} in this chat`);
+        const bytes = Buffer.from(photo.data, "base64");
+        const raster = await decode(bytes);
+        // The chat's copy of a plan that is already the background (e.g. from
+        // the start screen) is a smaller version of the same image: keep the
+        // sharper original. Image fractions mean the same on both.
+        kept = Boolean(underlay && !input.replace && Math.abs(raster.width / raster.height - underlay.width / underlay.height) < 0.01);
+        if (!kept) {
+          const ext = photo.mimeType === "image/png" ? "png" : "jpg";
+          const rel = `assets/plans/plan-${createHash("sha256").update(bytes).digest("hex").slice(0, 8)}.${ext}`;
+          await fs.mkdir(path.dirname(projectPath(ctx, rel)), { recursive: true });
+          await fs.writeFile(projectPath(ctx, rel), bytes);
+          underlay = defaultUnderlay(rel, raster.width, raster.height);
+        }
+      }
+      if (!underlay) throw new ToolError("there's no background yet; pass photo");
+      if (input.scale_from) {
+        const { a, b, length_cm } = input.scale_from;
+        const u = UnderlaySchema.parse(underlay);
+        const pa = pixelToPlan(u, [a[0] * u.width, a[1] * u.height]);
+        const pb = pixelToPlan(u, [b[0] * u.width, b[1] * u.height]);
+        underlay = calibrate(underlay, pa, pb, length_cm);
+      }
+      underlay = Object.fromEntries(
+        Object.entries({ ...underlay, center: input.center ?? underlay.center, rotation: input.rotation ?? underlay.rotation, opacity: input.opacity ?? underlay.opacity, visible: input.visible ?? underlay.visible }).filter(([, v]) => v !== undefined),
+      ) as typeof underlay;
+      await writeJson(ctx, "project.json", { ...project, underlay });
+      const result = describeUnderlay(UnderlaySchema.parse(underlay));
+      return kept ? { ...result, kept: "This plan was already the background (same proportions), so its sharper original was kept. Pass replace: true to use the photo instead." } : result;
+    },
+  }),
+
+  tool({
+    name: "image_to_plan",
+    description: "Convert points on the floor plan background image (fractions 0..1, x right, y down) to plan coordinates in cm, using its current scale and position. Use it to place walls exactly where the plan shows them.",
+    input: z.object({ points: z.array(fraction).min(1).max(200) }),
+    async run({ points }, ctx) {
+      const project = await readProject(ctx);
+      if (!project.underlay) throw new ToolError("there's no floor plan background; use set_background first");
+      const u = UnderlaySchema.parse(project.underlay);
+      return points.map(([fx, fy]) => pixelToPlan(u, [fx * u.width, fy * u.height]).map(r1));
     },
   }),
 

@@ -176,6 +176,8 @@ export function ChatPanel() {
   const setSettingsOpen = useChat((s) => s.setSettingsOpen);
   const refreshChats = useChat((s) => s.refreshChats);
   const projectDir = useOdaja((s) => s.projectDir);
+  const draft = useChat((s) => s.draft);
+  const takeDraft = useChat((s) => s.takeDraft);
   const [text, setText] = useState("");
   const [images, setImages] = useState<ImageInput[]>([]);
   const [listOpen, setListOpen] = useState(false);
@@ -187,6 +189,16 @@ export function ChatPanel() {
     openChat(null);
     refreshChats();
   }, [projectDir, openChat, refreshChats]);
+
+  // A draft from elsewhere in the app fills the message box, for the user to
+  // read and send.
+  useEffect(() => {
+    if (!draft) return;
+    const taken = takeDraft();
+    if (!taken) return;
+    setText(taken.text);
+    Promise.all(taken.files.map(toImageInput)).then((converted) => setImages(converted));
+  }, [draft, takeDraft]);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });

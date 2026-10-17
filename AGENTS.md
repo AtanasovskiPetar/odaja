@@ -90,6 +90,7 @@ project folders.
 | `src/model/walk.ts` | Walk view: what blocks you (walls at body height, furniture taller than 45 cm), sliding collision, default start |
 | `src/three/WalkControls.tsx` | First-person controls (pointer-lock or drag look, W A S D, Q/E turn, Shift) |
 | `src/ui/WalkOverlay.tsx` | Picking a start on the plan, mini-map, controls hint, eye height |
+| `src/model/underlay.ts`, `src/three/UnderlayView.tsx`, `src/ui/UnderlayPanel.tsx`, `src/ui/planImage.ts` | Floor plan background: image ↔ plan maths and scale from one known length; the image under the plan view; the panel (scale, move, rotate, opacity); loading images and PDFs (first page) into `assets/plans/` |
 | `src/three/capture.ts` | Viewport screenshots (plan view includes the dimension overlay) |
 | `src/ui/chat/` | Chat panel, model picker, connection settings |
 | `src/three/modelImport.ts` | Loading model files (GLB/glTF, FBX, OBJ+MTL, DAE, 3DS, USDZ/USD, 3MF, STL, PLY, WRL), units/up-axis/facing normalisation, simplification, GLB export |

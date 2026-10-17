@@ -55,7 +55,11 @@ interface ChatState {
   chatId: string | null;
   turns: Turn[];
   busy: boolean;
+  // Text and files to put in the message box (e.g. a floor plan to build from).
+  draft: { text: string; files: File[] } | null;
   toggle(): void;
+  startDraft(text: string, files: File[]): void;
+  takeDraft(): { text: string; files: File[] } | null;
   setSettingsOpen(open: boolean): void;
   init(): Promise<void>;
   loadProviders(): Promise<void>;
@@ -124,11 +128,23 @@ export const useChat = create<ChatState>((set, get) => {
     chatId: null,
     turns: [],
     busy: false,
+    draft: null,
 
     toggle() {
       const open = !get().open;
       set({ open });
       if (open && get().providers.length === 0) get().init();
+    },
+
+    startDraft(text, files) {
+      set({ open: true, draft: { text, files } });
+      if (get().providers.length === 0) get().init();
+    },
+
+    takeDraft() {
+      const draft = get().draft;
+      if (draft) set({ draft: null });
+      return draft;
     },
 
     setSettingsOpen(settingsOpen) {

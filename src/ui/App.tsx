@@ -19,6 +19,7 @@ import { ScenesSection } from "./ScenesSection";
 import { StartScreen } from "./StartScreen";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
+import { UnderlayPanel, UnderlayToolLayer } from "./UnderlayPanel";
 import { WalkOverlay, WalkStartPicker } from "./WalkOverlay";
 
 function useShortcuts() {
@@ -308,6 +309,8 @@ function Toolbar() {
   const canUndo = useOdaja((s) => s.undoStack.length > 0);
   const canRedo = useOdaja((s) => s.redoStack.length > 0);
   const hasBase = useOdaja((s) => s.baseShell !== null);
+  const underlayOpen = useOdaja((s) => s.underlayPanel);
+  const setUnderlayPanel = useOdaja((s) => s.setUnderlayPanel);
   const showChanges = useOdaja((s) => s.showChanges);
   const toggleShowChanges = useOdaja((s) => s.toggleShowChanges);
 
@@ -336,6 +339,11 @@ function Toolbar() {
       {viewMode === "3d" && (
         <button className={wallsCut ? "active" : ""} onClick={toggleWallsCut} title="Cut walls at 110 cm (C)">
           Cut walls
+        </button>
+      )}
+      {viewMode === "plan" && (
+        <button className={underlayOpen ? "active" : ""} onClick={() => setUnderlayPanel(!underlayOpen)} title="Floor plan image under the plan, to check and trace walls">
+          Background
         </button>
       )}
       {hasBase && viewMode === "plan" && (
@@ -426,6 +434,8 @@ export function App() {
         <Viewport />
         <PlanOverlay />
         {editingStructure && <StructureLayer />}
+        <UnderlayToolLayer />
+        <UnderlayPanel />
         <WalkStartPicker />
         <WalkOverlay />
         <div className="toolbars">

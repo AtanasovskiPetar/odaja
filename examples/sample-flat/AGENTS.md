@@ -16,6 +16,7 @@ immediately. To change the design, edit the files directly.
 | `shells/*.json` | Other versions of the walls, for renovation options that move or remove walls |
 | `assets/models/*.glb` | 3D models used by objects (imported files are converted to GLB) |
 | `assets/textures/*` | Photo textures used by tile materials |
+| `assets/plans/*` | Floor plan images shown under the plan view (PDFs are saved as their first page) |
 | `.odaja/` | App data such as saved chat conversations. Leave it alone. |
 | `scenes/*.json` | One file per layout or variant. Each scene holds the **objects** (furniture, fixtures) and says which shell it uses. |
 
@@ -72,6 +73,23 @@ is expected, `#rrggbb` also works.
 tiles. `color` is the tile colour. A **photo texture** uses
 `"tile": { "size": [w, h], "image": "assets/textures/<file>.jpg" }`, where
 `size` is how much real surface the image shows; it repeats as is.
+
+### Floor plan background
+
+`underlay` puts a floor plan image under the plan view, for tracing and
+checking walls. It never changes the design.
+
+```json
+"underlay": { "image": "assets/plans/flat-m1x2.png", "width": 2400, "height": 1700,
+  "scale": 0.52, "center": [620, 440], "rotation": 0, "opacity": 0.5, "visible": true }
+```
+
+`width` and `height` are the image's size in pixels, `scale` is centimetres per
+pixel, `center` is where the image's centre sits on the plan (cm) and
+`rotation` turns it clockwise in degrees. A plan point is
+`center + rotate(rotation, (pixel - [width, height] / 2) * scale)`. Set the
+scale from one known length: measure it in pixels on the image and divide the
+real length by it.
 
 ## shell.json
 

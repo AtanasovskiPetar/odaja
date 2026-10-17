@@ -3,7 +3,12 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { shellBounds } from "../model/geometry";
+import { boundsOf, shellBounds } from "../model/geometry";
+import type { Underlay } from "../model/schema";
+import { pixelToPlan } from "../model/underlay";
+
+const underlayBounds = (u: Underlay) =>
+  boundsOf(([[0, 0], [u.width, 0], [u.width, u.height], [0, u.height]] as [number, number][]).map((p) => pixelToPlan(u, p)));
 import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { gizmo, ObjectsView } from "./ObjectsView";
@@ -11,6 +16,7 @@ import { viewport } from "./capture";
 import { planCamera } from "./planCamera";
 import { ShapeEditorView } from "./ShapeEditorView";
 import { ShellView } from "./ShellView";
+import { UnderlayView } from "./UnderlayView";
 import { WalkControls } from "./WalkControls";
 
 // Room around the flat in plan view for the dimension lines, in metres.
@@ -23,7 +29,9 @@ function CameraRig() {
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
+  const underlay = useOdaja((s) => s.project?.underlay);
   const hasShell = shell !== null;
+  const hasUnderlay = Boolean(underlay);
 
   // Frame something on request (the shape editor focusing on an object).
   const focus = useOdaja((s) => s.focus);
@@ -44,7 +52,8 @@ function CameraRig() {
   // Frame the whole flat when the view changes (not on every resize or edit).
   useEffect(() => {
     if (!controls || viewMode === "walk") return;
-    const b = shell ? shellBounds(shell) : null;
+    // No walls yet: frame the floor plan background instead.
+    const b = (shell && shellBounds(shell)) || (underlay ? underlayBounds(underlay) : null);
     const [cx, cz] = b ? [M((b.minX + b.maxX) / 2), M((b.minY + b.maxY) / 2)] : [0, 0];
     const [w, d] = b ? [M(b.maxX - b.minX), M(b.maxY - b.minY)] : [10, 10];
     controls.target.set(cx, 0, cz);
@@ -57,7 +66,7 @@ function CameraRig() {
       camera.position.set(cx + w * 0.3, Math.max(w, d) * 1.05, cz + Math.max(w, d) * 1.05);
     }
     controls.update();
-  }, [viewMode, frameRequest, controls, camera, hasShell]);
+  }, [viewMode, frameRequest, controls, camera, hasShell, hasUnderlay]);
 
   return null;
 }
@@ -117,6 +126,7 @@ export function Viewport() {
         <Grid args={[60, 60]} cellSize={0.1} sectionSize={1} cellColor="#d6d2cb" sectionColor="#bdb7ad" fadeDistance={40} position={[0, -0.02, 0]} infiniteGrid />
       )}
       <ShellView />
+      <UnderlayView />
       <ObjectsView />
       <ShapeEditorView />
       {walk && <WalkControls />}

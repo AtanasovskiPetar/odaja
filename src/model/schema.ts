@@ -32,11 +32,26 @@ export const MaterialSchema = z.object({
   tile: TileSchema.optional(),
 });
 
+// A floor plan image shown under the Plan view, to check and trace walls.
+// It never changes the design. `scale` is cm per image pixel; `center` is
+// where the image's middle sits on the plan; `rotation` turns it clockwise.
+export const UnderlaySchema = z.object({
+  image: z.string().regex(/^assets\/plans\/[^/]+\.(png|jpg|jpeg|webp)$/, "image is a file under assets/plans/"),
+  width: z.number().positive().describe("image width, px"),
+  height: z.number().positive().describe("image height, px"),
+  scale: z.number().positive().describe("cm per pixel"),
+  center: point2,
+  rotation: z.number().default(0),
+  opacity: z.number().min(0).max(1).default(0.5),
+  visible: z.boolean().default(true),
+});
+
 export const ProjectSchema = z.object({
   version: z.literal(1),
   name: z.string(),
   units: z.literal("cm"),
   materials: z.record(z.string(), MaterialSchema).default({}),
+  underlay: UnderlaySchema.optional(),
 });
 
 export const WallSchema = z.object({
@@ -231,6 +246,8 @@ export const SceneSchema = z.object({
 
 export type Material = z.infer<typeof MaterialSchema>;
 export type Tile = z.infer<typeof TileSchema>;
+export type Underlay = z.infer<typeof UnderlaySchema>;
+export type UnderlayDoc = z.input<typeof UnderlaySchema>;
 export type Finish = z.infer<typeof FinishSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 export type ProjectDoc = z.input<typeof ProjectSchema>;

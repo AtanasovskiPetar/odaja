@@ -110,6 +110,9 @@ interface OdajaState {
   editingObjectId: string | null;
   partSelection: number[];
   partTool: "move" | "rotate" | "size";
+  // Floor plan background: panel open, and the active tool on the plan.
+  underlayPanel: boolean;
+  underlayTool: "calibrate" | "move" | null;
   // Camera request to frame something (world metres).
   focus: { center: [number, number, number]; radius: number; at: number } | null;
   // Walking: where to start (picked on the plan), the current pose (for the
@@ -158,6 +161,8 @@ interface OdajaState {
   selectParts(indices: number[]): void;
   setPartTool(tool: OdajaState["partTool"]): void;
   focusOn(center: [number, number, number], radius: number): void;
+  setUnderlayPanel(open: boolean): void;
+  setUnderlayTool(tool: OdajaState["underlayTool"]): void;
   apply(change: (doc: SceneDoc) => SceneDoc): void;
   applyShell(change: (doc: ShellDoc) => ShellDoc): Promise<void>;
   undo(): void;
@@ -354,6 +359,8 @@ export const useOdaja = create<OdajaState>((set, get) => {
     editingObjectId: null,
     partSelection: [],
     partTool: "move",
+    underlayPanel: false,
+    underlayTool: null,
     focus: null,
     walkStart: null,
     walkPose: null,
@@ -521,6 +528,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
         ...(viewMode !== "plan" && s.mode === "structure" ? { mode: "furnish" as const, tool: "select" as const, structureSelection: null } : {}),
         ...(viewMode !== "walk" ? { walkPose: null } : {}),
         ...(viewMode !== "3d" ? { editingObjectId: null, partSelection: [] } : {}),
+        ...(viewMode !== "plan" ? { underlayPanel: false, underlayTool: null } : {}),
         pickingWalkStart: false,
       }));
     },
@@ -586,6 +594,15 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
     setPartTool(partTool) {
       set({ partTool });
+    },
+
+    setUnderlayPanel(underlayPanel) {
+      set({ underlayPanel, underlayTool: null });
+      if (underlayPanel && get().viewMode !== "plan") get().setViewMode("plan");
+    },
+
+    setUnderlayTool(underlayTool) {
+      set({ underlayTool });
     },
 
     focusOn(center, radius) {
