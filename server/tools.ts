@@ -16,6 +16,8 @@ import { enclosedArea } from "../src/model/rooms";
 import {
   DEFAULT_SHELL,
   LibraryItemSchema,
+  MaterialSchema,
+  TILE_PATTERNS,
   ObjectSchema,
   PartSchema,
   ProjectSchema,
@@ -38,7 +40,10 @@ import {
   updateWall,
 } from "../src/model/shellOps";
 import { slugify } from "../src/model/defaults";
+import { quantities } from "../src/model/finishes";
+import { addFinish, clearRoomWalls, finishRoomWalls, removeFinishes, setRoomFloor } from "../src/model/finishOps";
 import { createHash } from "node:crypto";
+import { adjust, autoColor, crop, decode, encodeJpeg, fit, getEdit, rectify, rotate, seamless, storeEdit, type Raster } from "./photos";
 
 export type ToolContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 export interface ToolResult {
@@ -52,6 +57,9 @@ export interface ToolContext {
   libraryRoot: string;
   screenshot(view: "plan" | "3d"): Promise<{ data: string; mimeType: string }>;
   openScene(path: string): void;
+  // Photos shared in the chat this tool call comes from (photo-1, photo-2, …),
+  // if it comes from an Odaja chat.
+  photos?(): Promise<{ mimeType: string; data: string }[]>;
 }
 
 export interface ToolDef<S extends z.ZodType = z.ZodType> {
@@ -192,6 +200,44 @@ function describeObject(o: ReturnType<typeof SceneSchema.parse>["objects"][numbe
   };
 }
 
+// Joinery settings shared by add_opening and update_opening.
+const joineryArgs = {
+  style: z
+    .enum(["single", "double", "sliding", "pocket", "folding", "glass", "fixed", "casement", "double-casement", "tilt-turn"])
+    .optional()
+    .describe("doors: single, double, sliding, pocket, folding, glass; windows: casement, double-casement, tilt-turn, sliding, fixed"),
+  frame: z.number().min(0).max(30).optional().describe("frame width, cm"),
+  frame_material: z.string().optional().describe("material name or #rrggbb"),
+  panes: z.array(z.number().int().min(1).max(8)).length(2).optional().describe("glazing bars [columns, rows]"),
+  open: z.number().min(0).max(110).optional().describe("how far a hinged door is drawn open, degrees"),
+};
+
+const tileArgs = z.object({
+  size: vec2.describe("[width, height] of one tile, cm; for a photo texture, how much surface the image shows"),
+  grout: z.number().min(0).max(5).optional().describe("joint width, cm (default 0.2)"),
+  grout_color: z.string().optional().describe("#rrggbb"),
+  pattern: z.enum(TILE_PATTERNS).optional().describe("grid, brick (½ offset), third (⅓ offset), vertical, herringbone (planks), diagonal (square tiles)"),
+  variation: z.number().min(0).max(1).optional().describe("colour variation between tiles, 0..1"),
+});
+
+// A photo from the chat ("photo-2") or an earlier edit ("edit-1").
+async function loadPicture(ctx: ToolContext, ref: string): Promise<Raster> {
+  const edit = getEdit(ref);
+  if (edit) return edit;
+  const m = /^photo-(\d+)$/.exec(ref);
+  if (!m) throw new ToolError(`"${ref}" isn't a photo (photo-1, photo-2, …) or an edit (edit-1, …)`);
+  const photos = ctx.photos ? await ctx.photos() : [];
+  const photo = photos[Number(m[1]) - 1];
+  if (!photo) throw new ToolError(photos.length ? `there's no ${ref}; this chat has ${photos.length} photo(s)` : "no photos are available here; photos must be shared in Odaja's chat");
+  return decode(photo.data);
+}
+
+const fraction = z.array(z.number().min(0).max(1)).length(2);
+
+async function readProject(ctx: ToolContext) {
+  return (await readJson(ctx, "project.json")) as { materials?: Record<string, unknown> } & Record<string, unknown>;
+}
+
 // --- tools ----------------------------------------------------------------
 
 export const TOOLS: ToolDef[] = [
@@ -217,7 +263,10 @@ export const TOOLS: ToolDef[] = [
         walls: shell.walls.map((w) => ({ id: w.id, from: w.from, to: w.to, thickness: w.thickness })),
         openings: shell.openings.map((o) => ({ id: o.id, wall: o.wall, type: o.type, offset: o.offset, width: o.width, height: o.height, sill: o.sill || undefined, hinge: o.type === "door" ? o.hinge : undefined, swing: o.type === "door" ? o.swing : undefined })),
         objects: s.objects.map(describeObject),
-        materials: Object.keys(project.materials),
+        finishes: s.finishes,
+        materials: Object.fromEntries(
+          Object.entries(project.materials).map(([k, m]) => [k, m.tile ? `${m.color} tiles ${m.tile.size[0]}×${m.tile.size[1]} ${m.tile.pattern}${m.tile.image ? " (photo)" : ""}` : m.color]),
+        ),
         issues: issuesFor(s, shell).map((i) => `${i.severity}: ${i.message}`),
       };
     },
@@ -254,6 +303,10 @@ export const TOOLS: ToolDef[] = [
         try {
           const item = LibraryItemSchema.parse(JSON.parse(await fs.readFile(path.join(ctx.libraryRoot, e.name, "item.json"), "utf8")));
           const o = item.object;
+          if (!o) {
+            items.push({ id: e.name, name: item.name, category: item.category, notes: item.notes, kind: "material", tile: item.material?.tile });
+            continue;
+          }
           items.push({ id: e.name, name: item.name, category: item.category, notes: item.notes, kind: o.model ? "model" : o.template ? `template:${o.template}` : "parts", size: o.model?.size, params: o.params });
         } catch {
           // Skip broken items.
@@ -294,6 +347,7 @@ export const TOOLS: ToolDef[] = [
           throw new ToolError(`no library item "${input.library_item}"`);
         })));
         const o = item.object;
+        if (!o) throw new ToolError(`"${input.library_item}" is a material, not furniture; use add_material_from_library`);
         let model;
         if (o.model) {
           const data = await fs.readFile(path.join(dir, "model.glb"));
@@ -474,10 +528,17 @@ export const TOOLS: ToolDef[] = [
       width: z.number().positive().optional(),
       height: z.number().positive().optional(),
       sill: z.number().min(0).optional(),
+      ...joineryArgs,
     }),
-    async run({ scene, wall, type, offset, width, height, sill }, ctx) {
+    async run({ scene, wall, type, offset, width, height, sill, style, frame, frame_material, panes, open }, ctx) {
       const before = new Set((await loadScene(ctx, scene)).shell.openings.map((o) => o.id));
-      const { shell } = await changeShell(ctx, scene, addOpening(wall, type, offset, { ...(width ? { width } : {}), ...(height ? { height } : {}), ...(sill !== undefined ? { sill } : {}) }));
+      const { shell } = await changeShell(ctx, scene, (doc) => {
+        const next = addOpening(wall, type, offset, { ...(width ? { width } : {}), ...(height ? { height } : {}), ...(sill !== undefined ? { sill } : {}) })(doc);
+        const added = (next.openings ?? []).find((o) => !before.has(o.id));
+        if (!added) return next;
+        const extra = Object.fromEntries(Object.entries({ style, frame, frameMaterial: frame_material, panes, open }).filter(([, v]) => v !== undefined));
+        return Object.keys(extra).length ? updateOpening(added.id, extra)(next) : next;
+      });
       return { added: shell.openings.filter((o) => !before.has(o.id)) };
     },
   }),
@@ -495,8 +556,10 @@ export const TOOLS: ToolDef[] = [
       type: z.enum(["door", "window", "opening"]).optional(),
       hinge: z.enum(["start", "end"]).optional(),
       swing: z.enum(["left", "right"]).optional(),
+      ...joineryArgs,
     }),
-    async run({ scene, id, ...patch }, ctx) {
+    async run({ scene, id, frame_material, ...patch }, ctx) {
+      if (frame_material !== undefined) Object.assign(patch, { frameMaterial: frame_material });
       const { shell } = await changeShell(ctx, scene, updateOpening(id, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))));
       return { opening: shell.openings.find((o) => o.id === id) };
     },
@@ -538,6 +601,197 @@ export const TOOLS: ToolDef[] = [
       if (!polygon) throw new ToolError("give inside_point or polygon");
       const { shell } = await changeShell(ctx, input.scene, addRoom(polygon, input.name, input.floor));
       return { added: shell.rooms.at(-1) };
+    },
+  }),
+
+  tool({
+    name: "set_material",
+    description:
+      "Create or change a project material (by name): paint colour, roughness (0 glossy … 1 matt), or tiles/planks drawn by Odaja (size, grout, pattern, colour variation). Tiles use `color` as the tile colour. Pass tile: null to make it plain again. Photo textures are made with save_texture.",
+    input: z.object({
+      name: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase-kebab name"),
+      color: z.string().optional().describe("#rrggbb"),
+      roughness: z.number().min(0).max(1).optional(),
+      tile: tileArgs.nullable().optional(),
+    }),
+    async run({ name, color, roughness, tile }, ctx) {
+      const project = await readProject(ctx);
+      const current = (project.materials?.[name] ?? { color: "#e9e6e1" }) as Record<string, unknown>;
+      const next: Record<string, unknown> = { ...current };
+      if (color) next.color = color;
+      if (roughness !== undefined) next.roughness = roughness;
+      if (tile === null) delete next.tile;
+      else if (tile) {
+        const prev = (current.tile ?? {}) as Record<string, unknown>;
+        next.tile = Object.fromEntries(
+          Object.entries({ ...prev, size: tile.size, grout: tile.grout ?? prev.grout, groutColor: tile.grout_color ?? prev.groutColor, pattern: tile.pattern ?? prev.pattern, variation: tile.variation ?? prev.variation }).filter(([, v]) => v !== undefined),
+        );
+      }
+      const check = MaterialSchema.safeParse(next);
+      if (!check.success) throw new ToolError(check.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; "));
+      await writeJson(ctx, "project.json", { ...project, materials: { ...(project.materials ?? {}), [name]: next } });
+      return { material: name, ...next };
+    },
+  }),
+
+  tool({
+    name: "set_finish",
+    description:
+      "Put a finish (tiles, paint, panelling: a material name) on surfaces of the scene. surface 'room_walls' covers every wall side facing a room (e.g. bathroom tiles up to top=200), 'floor' sets a room's floor, 'wall' one side of one wall ('left'/'right' as seen walking from the wall's from to its to point; get_overview shows rooms and walls). Heights are cm from the floor; from/to are cm along the wall. Doors and windows are cut out. Replaces earlier finishes on the same surfaces.",
+    input: z.object({
+      scene: sceneArg,
+      surface: z.enum(["room_walls", "floor", "wall"]),
+      material: z.string(),
+      room: z.string().optional().describe("for room_walls and floor"),
+      wall: z.string().optional(),
+      side: z.enum(["left", "right"]).optional(),
+      bottom: z.number().min(0).optional(),
+      top: z.number().min(0).optional(),
+      from: z.number().optional(),
+      to: z.number().optional(),
+    }),
+    async run(input, ctx) {
+      const project = await readProject(ctx);
+      if (!project.materials?.[input.material]) throw new ToolError(`no material "${input.material}"; create it with set_material first`);
+      const loaded = await loadScene(ctx, input.scene);
+      const result = await changeScene(ctx, input.scene, (doc) => {
+        if (input.surface === "floor") {
+          if (!input.room) throw new ToolError("give room");
+          return setRoomFloor(input.room, input.material)(doc);
+        }
+        if (input.surface === "room_walls") {
+          if (!loaded.shell.rooms.some((r) => r.id === input.room)) throw new ToolError(`no room "${input.room}"`);
+          return finishRoomWalls(loaded.shell, input.room!, input.material, input.bottom ?? 0, input.top)(doc);
+        }
+        if (!input.wall || !input.side) throw new ToolError("give wall and side");
+        const sameSide = (doc.finishes ?? []).filter((f) => f.wall === input.wall && f.side === input.side && (f.from ?? -Infinity) < (input.to ?? Infinity) && (f.to ?? Infinity) > (input.from ?? -Infinity)).map((f) => f.id);
+        return addFinish({ surface: "wall", wall: input.wall, side: input.side, material: input.material, bottom: input.bottom, top: input.top, from: input.from, to: input.to })(removeFinishes(sameSide)(doc));
+      });
+      return { finishes: result.scene.finishes };
+    },
+  }),
+
+  tool({
+    name: "remove_finish",
+    description: "Remove finishes: one by id, all wall finishes of a room (room), or a room's floor finish (room + floor: true).",
+    input: z.object({ scene: sceneArg, id: z.string().optional(), room: z.string().optional(), floor: z.boolean().optional() }),
+    async run({ scene, id, room, floor }, ctx) {
+      const loaded = await loadScene(ctx, scene);
+      await changeScene(ctx, scene, (doc) => {
+        if (id) return removeFinishes([id])(doc);
+        if (room && floor) return setRoomFloor(room, null)(doc);
+        if (room) return clearRoomWalls(loaded.shell, room)(doc);
+        throw new ToolError("give id or room");
+      });
+      return "removed";
+    },
+  }),
+
+  tool({
+    name: "get_quantities",
+    description: "What to buy for the scene's finishes: area per surface and material, and tile counts including 10% for cuts.",
+    input: z.object({ scene: sceneArg }),
+    async run({ scene }, ctx) {
+      const { scene: s, shell } = await loadScene(ctx, scene);
+      const project = ProjectSchema.parse(await readJson(ctx, "project.json"));
+      const lines = quantities(s, shell, project.materials);
+      return lines.length ? lines : "This scene has no finishes yet.";
+    },
+  }),
+
+  tool({
+    name: "add_material_from_library",
+    description: "Copy a material (e.g. a tile the user saved) from the user's library into this project, so finishes can use it. Returns the material's name in the project.",
+    input: z.object({ item: z.string().describe("library item id from list_library (kind: material)") }),
+    async run({ item }, ctx) {
+      const dir = path.join(ctx.libraryRoot, item);
+      const parsed = LibraryItemSchema.parse(JSON.parse(await fs.readFile(path.join(dir, "item.json"), "utf8").catch(() => {
+        throw new ToolError(`no library item "${item}"`);
+      })));
+      if (!parsed.material) throw new ToolError(`"${item}" is furniture, not a material`);
+      const material = structuredClone(parsed.material) as Record<string, unknown> & { tile?: { image?: string } };
+      if (material.tile?.image) {
+        const rel = `assets/textures/${item}${path.extname(material.tile.image)}`;
+        await fs.mkdir(path.dirname(projectPath(ctx, rel)), { recursive: true });
+        await fs.copyFile(path.join(dir, material.tile.image), projectPath(ctx, rel));
+        material.tile.image = rel;
+      }
+      const project = await readProject(ctx);
+      let name = item;
+      for (let n = 2; project.materials?.[name]; n++) name = `${item}-${n}`;
+      await writeJson(ctx, "project.json", { ...project, materials: { ...(project.materials ?? {}), [name]: material } });
+      return { material: name };
+    },
+  }),
+
+  tool({
+    name: "edit_photo",
+    description:
+      "Prepare part of a photo from the chat as a texture (e.g. a tile) before keeping it. Positions are fractions of the image (0..1, x right, y down). Steps run in this order: rotate, then corners (straighten a surface photographed at an angle: its four corners clockwise from top-left) or crop [x, y, width, height], then auto_color (remove colour casts, even out levels), brightness/contrast (-1..1), seamless (blend edges so it repeats). Returns a preview and an edit id; check the preview, adjust if needed, then save_texture. Nothing is saved by this tool.",
+    input: z.object({
+      photo: z.string().describe('"photo-2" or an earlier "edit-1"'),
+      rotate: z.union([z.literal(0), z.literal(90), z.literal(180), z.literal(270)]).optional(),
+      corners: z.array(fraction).length(4).optional(),
+      crop: z.array(z.number().min(0).max(1)).length(4).optional(),
+      auto_color: z.boolean().optional(),
+      brightness: z.number().min(-1).max(1).optional(),
+      contrast: z.number().min(-1).max(1).optional(),
+      seamless: z.boolean().optional(),
+    }),
+    async run(input, ctx) {
+      let r = await loadPicture(ctx, input.photo);
+      if (input.rotate) r = rotate(r, input.rotate);
+      if (input.corners) r = rectify(r, input.corners.map(([x, y]) => [x * r.width, y * r.height] as [number, number]));
+      else if (input.crop) r = crop(r, input.crop[0] * r.width, input.crop[1] * r.height, input.crop[2] * r.width, input.crop[3] * r.height);
+      if (input.auto_color) r = autoColor(r);
+      r = adjust(r, input.brightness ?? 0, input.contrast ?? 0);
+      r = await fit(r, 1600);
+      if (input.seamless) r = seamless(r);
+      const id = storeEdit(r);
+      const preview = await encodeJpeg(await fit(r, 768), 85);
+      return {
+        content: [
+          { type: "image", data: preview.toString("base64"), mimeType: "image/jpeg" },
+          { type: "text", text: `${id}: ${r.width}×${r.height} px. Not saved yet; use save_texture with source "${id}" when it looks right.` },
+        ],
+      };
+    },
+  }),
+
+  tool({
+    name: "save_texture",
+    description:
+      "Keep a photo or edit as a texture material in the project (and optionally in the user's library for other projects). size is how much real surface the image shows in cm: for one tile with its grout, the tile size (e.g. [30, 60]); for a patch of floor, that patch. Then use the material with set_finish.",
+    input: z.object({
+      source: z.string().describe('"edit-1" (preferred) or "photo-2"'),
+      material: z.string().regex(/^[a-z0-9][a-z0-9-]*$/, "lowercase-kebab name"),
+      size: vec2,
+      roughness: z.number().min(0).max(1).optional(),
+      library: z.object({ name: z.string(), category: z.string().optional() }).optional().describe("also save to the user's library under this name"),
+    }),
+    async run({ source, material, size, roughness, library }, ctx) {
+      const r = await fit(await loadPicture(ctx, source), 1600);
+      const jpeg = await encodeJpeg(r, 90);
+      const rel = `assets/textures/${material}-${createHash("sha256").update(jpeg).digest("hex").slice(0, 8)}.jpg`;
+      await fs.mkdir(path.dirname(projectPath(ctx, rel)), { recursive: true });
+      await fs.writeFile(projectPath(ctx, rel), jpeg);
+      const tile = { size: size as [number, number], image: rel };
+      const mat = { color: "#ffffff", roughness: roughness ?? 0.5, tile };
+      const project = await readProject(ctx);
+      await writeJson(ctx, "project.json", { ...project, materials: { ...(project.materials ?? {}), [material]: mat } });
+      let libraryId: string | undefined;
+      if (library) {
+        const stem = slugify(library.name);
+        await fs.mkdir(ctx.libraryRoot, { recursive: true });
+        libraryId = stem;
+        for (let n = 2; await fs.stat(path.join(ctx.libraryRoot, libraryId)).catch(() => null); n++) libraryId = `${stem}-${n}`;
+        const dir = path.join(ctx.libraryRoot, libraryId);
+        await fs.mkdir(dir);
+        await fs.writeFile(path.join(dir, "texture.jpg"), jpeg);
+        const item = { version: 1, name: library.name, category: library.category ?? "Materials", material: { ...mat, tile: { size, image: "texture.jpg" } } };
+        await fs.writeFile(path.join(dir, "item.json"), JSON.stringify(item, null, 2) + "\n");
+      }
+      return { material, texture: rel, size, library: libraryId };
     },
   }),
 

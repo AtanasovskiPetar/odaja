@@ -266,7 +266,8 @@ export function stopAllClaudeCode() {
 }
 
 function startClaudeCode(conv: Conversation, ctx: RunContext): ClaudeProcess {
-  const mcpConfig = { mcpServers: { odaja: { command: "bun", args: [MCP_SERVER], env: { ODAJA_URL: ctx.odajaUrl } } } };
+  // The chat id lets Odaja's tools use the photos shared in this chat.
+  const mcpConfig = { mcpServers: { odaja: { command: "bun", args: [MCP_SERVER], env: { ODAJA_URL: ctx.odajaUrl, ODAJA_CHAT_ID: conv.id } } } };
   const args = [
     "-p",
     "--input-format", "stream-json",

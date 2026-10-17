@@ -27,6 +27,7 @@ function place(object: Omit<ObjectDoc, "id" | "position" | "room">) {
 export async function placeLibraryEntry(entry: LibraryEntry) {
   const { item } = entry;
   const o = item.object;
+  if (!o) return addLibraryMaterial(entry);
   const model = o.model ? { src: await platform.placeLibraryModel(entry.id), size: o.model.size } : undefined;
   place({
     name: item.name,
@@ -109,4 +110,13 @@ export async function finishImport(loaded: LoadedModel, options: ImportOptions) 
     await platform.writeFile(src, glb);
     place({ name: options.name, model: { src, size } });
   }
+}
+
+// A material item (e.g. a tile) from the library: copy it into the project's
+// materials, with its texture, so finishes can use it.
+export async function addLibraryMaterial(entry: LibraryEntry) {
+  const material = entry.item.material;
+  if (!material) return;
+  const name = await platform.addLibraryMaterial(entry.id);
+  useOdaja.getState().setNotice(`Added the material “${name}” to this project. Use it under Structure → finishes.`);
 }

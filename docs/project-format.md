@@ -15,6 +15,7 @@ immediately. To change the design, edit the files directly.
 | `shell.json` | The flat as it is: **walls**, **openings** (doors, windows) and **rooms** (floors) |
 | `shells/*.json` | Other versions of the walls, for renovation options that move or remove walls |
 | `assets/models/*.glb` | 3D models used by objects (imported files are converted to GLB) |
+| `assets/textures/*` | Photo textures used by tile materials |
 | `.odaja/` | App data such as saved chat conversations. Leave it alone. |
 | `scenes/*.json` | One file per layout or variant. Each scene holds the **objects** (furniture, fixtures) and says which shell it uses. |
 
@@ -54,7 +55,23 @@ the app names them. Every project keeps at least one scene.
 
 Material fields: `color` (`#rrggbb`, required), `roughness` 0–1 (default 0.8),
 `metalness` 0–1 (default 0), `opacity` 0–1 (default 1). Walls use the material
-`wall` unless they name another. Windows use `glass`.
+`wall` unless they name another. Windows use `glass`. Anywhere a material name
+is expected, `#rrggbb` also works.
+
+**Tiles, planks and panels** add `tile`:
+
+```json
+"bath-tile": { "color": "#dfe6ea", "roughness": 0.3,
+  "tile": { "size": [30, 60], "grout": 0.3, "groutColor": "#f2f2f0", "pattern": "brick", "variation": 0 } }
+```
+
+`size` is one tile in cm, `grout` the joint width in cm (default 0.2),
+`pattern` one of `grid`, `brick` (½ offset), `third` (⅓ offset), `vertical`
+(tiles standing), `herringbone` (planks; length a multiple of the width) or
+`diagonal` (square tiles at 45°), `variation` 0–1 shade differences between
+tiles. `color` is the tile colour. A **photo texture** uses
+`"tile": { "size": [w, h], "image": "assets/textures/<file>.jpg" }`, where
+`size` is how much real surface the image shows; it repeats as is.
 
 ## shell.json
 
@@ -81,6 +98,12 @@ Material fields: `color` (`#rrggbb`, required), `roughness` 0–1 (default 0.8),
 - **Opening**: sits in the wall named by `wall`. `offset` is the distance along
   the wall from its `from` point to the opening's near edge. `type` is `door`,
   `window` or `opening`. `sill` is the height of the bottom edge (default 0).
+  Joinery (optional): `style`: doors `single` (default), `double`, `sliding`
+  (on the wall face), `pocket` (slides into the wall), `folding`, `glass`;
+  windows `casement` (default), `double-casement`, `tilt-turn`, `sliding`,
+  `fixed`. `frame` width in cm, `frameMaterial` (material name or `#rrggbb`),
+  `panes` glazing bars as `[columns, rows]`, `open` how far a hinged door is
+  drawn open in degrees.
   An opening must fit between the wall's corners (and walls meeting it) without
   overlapping another opening. Doors also have `hinge` (`start` or `end`: which
   end of the opening, counted from the wall's `from` point) and `swing` (`left`
@@ -112,6 +135,24 @@ Material fields: `color` (`#rrggbb`, required), `roughness` 0–1 (default 0.8),
   ]
 }
 ```
+
+### Finishes
+
+Tiles, paint and floors chosen for a scene live in its `finishes` list (so
+options can differ):
+
+```json
+"finishes": [
+  { "id": "finish-1", "surface": "wall", "wall": "wall-east", "side": "right", "material": "bath-tile", "from": 426, "to": 687.5, "top": 200 },
+  { "id": "floor-1", "surface": "floor", "room": "living", "material": "oak-herringbone" }
+]
+```
+
+A wall finish covers one side of a wall: `side` is `left` or `right` as seen
+walking along the wall from its `from` to its `to` point on the plan. `from`
+and `to` (cm along the wall) and `bottom` and `top` (cm above the floor) limit
+it; leave them out for the whole face. Doors and windows are cut out
+automatically. A floor finish replaces the room's own `floor` in this scene.
 
 ### Objects
 
@@ -202,6 +243,13 @@ walls measure inside wall faces, broken at openings and at interior walls. Each
 room shows its clear width × depth and area. Selecting an object shows its
 footprint and its distance to the nearest wall or object on each side. Ask the
 user to check there, or compute the same numbers from the files.
+
+## Photos
+
+Photos shared in Odaja's chat are named `photo-1`, `photo-2`, … in that
+conversation. Agents use them through tools (edit_photo, save_texture) and
+keep only finished results (texture images under `assets/textures/`), never
+the raw photos.
 
 ## Checks the app runs
 

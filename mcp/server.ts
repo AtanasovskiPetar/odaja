@@ -10,10 +10,13 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 
 const BASE = (process.env.ODAJA_URL ?? "http://localhost:5173").replace(/\/$/, "");
+// Set when Odaja's own chat starts Claude Code, so tools can use its photos.
+const CHAT_ID = process.env.ODAJA_CHAT_ID;
 
 const INSTRUCTIONS = `Odaja is the user's 3D home-design app. These tools read and change the open project.
 Start with get_overview. Units are cm on a top-down plan (x east, y south); rotation is degrees clockwise from above and 0 means an object's front faces north.
 Prefer built-in templates (list_templates) or the user's library (list_library); build from parts when nothing fits.
+Tiles, paint and floors: set_material, set_finish, get_quantities. Door and window types: style on add_opening/update_opening.
 After changes, check_issues, and use screenshot to look at the result. Every change shows up live in the app and the user can undo it there.`;
 
 async function api(path: string, body?: unknown) {
@@ -36,7 +39,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   try {
-    return await api("/tools/call", { name: request.params.name, input: request.params.arguments ?? {} });
+    return await api("/tools/call", { name: request.params.name, input: request.params.arguments ?? {}, chatId: CHAT_ID });
   } catch (err) {
     return { content: [{ type: "text", text: (err as Error).message }], isError: true };
   }

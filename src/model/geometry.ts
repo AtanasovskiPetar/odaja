@@ -346,3 +346,22 @@ export function wallPieces(wall: Wall, openings: Opening[], wallHeight: number):
   if (length + ext > cursor) solid.push({ start: cursor, end: length + ext, bottom: 0, top: height });
   return { solid, glass };
 }
+
+// Swing areas of a door by type: one for a single or glass door, two
+// half-width ones for a double door, one small one for a folding door, none
+// for sliding and pocket doors.
+export function doorSwings(wall: Wall, door: Opening) {
+  const style = door.style ?? "single";
+  const half = door.width / 2;
+  switch (style) {
+    case "double":
+      return [doorSwing(wall, { ...door, width: half, hinge: "start" }), doorSwing(wall, { ...door, offset: door.offset + half, width: half, hinge: "end" })];
+    case "folding":
+      return [doorSwing(wall, { ...door, width: half, offset: door.hinge === "start" ? door.offset : door.offset + half })];
+    case "sliding":
+    case "pocket":
+      return [];
+    default:
+      return [doorSwing(wall, door)];
+  }
+}

@@ -70,11 +70,15 @@ function MyLibrary({ onPlaced }: { onPlaced: () => void }) {
               <button onClick={() => place(entry)} title={[entry.item.name, entry.item.notes].filter(Boolean).join("\n")}>
                 {entry.preview ? (
                   <img src={`${platform.libraryFileUrl(`${entry.id}/preview.png`)}&v=${entry.modified}`} alt="" />
+                ) : entry.item.material?.tile?.image ? (
+                  <img src={`${platform.libraryFileUrl(`${entry.id}/${entry.item.material.tile.image}`)}&v=${entry.modified}`} alt="" className="texture" />
+                ) : entry.item.material ? (
+                  <span className="no-preview" style={{ background: entry.item.material.color }} />
                 ) : (
                   <span className="no-preview" />
                 )}
                 <span className="card-name">{entry.item.name}</span>
-                <span className="card-category">{entry.item.category}</span>
+                <span className="card-category">{entry.item.material ? "Material · adds to project" : entry.item.category}</span>
               </button>
               <button className="card-remove" onClick={() => remove(entry)} title="Remove from library">
                 ×

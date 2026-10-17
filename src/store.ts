@@ -9,6 +9,7 @@ import {
   SceneSchema,
   ShellSchema,
   type Project,
+  type ProjectDoc,
   type Scene,
   type SceneDoc,
   type Shell,
@@ -52,7 +53,7 @@ export interface FileError {
 
 // A dialog over the app: importing model files, or saving an object to the
 // library.
-export type Dialog = { kind: "import"; files: File[] } | { kind: "save"; objectId: string } | null;
+export type Dialog = { kind: "import"; files: File[] } | { kind: "save"; objectId: string } | { kind: "materials"; focus?: string } | null;
 
 // One undoable step: the before/after content of every file it touched.
 interface FileEdit {
@@ -68,6 +69,7 @@ interface OdajaState {
   projectsRoot: string;
   projects: ProjectSummary[];
   projectDir: string | null;
+  projectDoc: ProjectDoc | null;
   project: Project | null;
   scenes: SceneSummary[];
   scenePath: string | null;
@@ -94,6 +96,8 @@ interface OdajaState {
   dialog: Dialog;
   // Bumped when the furniture library changes, so lists reload.
   libraryVersion: number;
+  // A short message shown briefly at the bottom of the view.
+  notice: string | null;
   wallThickness: number;
   wallsCut: boolean;
   viewMode: ViewMode;
@@ -130,6 +134,8 @@ interface OdajaState {
   focusIssue(key: string | null): void;
   openDialog(dialog: Dialog): void;
   libraryChanged(): void;
+  setNotice(message: string | null): void;
+  applyProject(change: (doc: ProjectDoc) => ProjectDoc): void;
   toggleWallsCut(): void;
   setViewMode(mode: ViewMode): void;
   setPlanView(view: PlanView): void;
@@ -168,6 +174,7 @@ function lastScene(dir: string): string | undefined {
 // Per-project state, cleared when switching projects.
 const EMPTY_PROJECT = {
   projectDir: null,
+  projectDoc: null,
   project: null,
   scenes: [],
   scenePath: null,
@@ -226,6 +233,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     const s = get();
     if (path === s.scenePath) set({ sceneDoc: doc as SceneDoc, scene: SceneSchema.parse(doc) });
     if (path === s.shellPath) set({ shellDoc: doc as ShellDoc, shell: ShellSchema.parse(doc) });
+    if (path === "project.json") set({ projectDoc: doc as ProjectDoc, project: ProjectSchema.parse(doc) });
     write(path, doc);
   }
 
@@ -260,7 +268,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     const { dir, scenes } = await platform.listScenes();
     set({ ...EMPTY_PROJECT, status: "project", projectDir: dir, scenes, mode: "furnish", tool: "select", viewMode: "3d", frameRequest: get().frameRequest + 1 });
     const project = await loadFile("project.json", ProjectSchema);
-    set({ project: project?.data ?? null });
+    set({ project: project?.data ?? null, projectDoc: project?.raw ?? null });
     const remembered = lastScene(dir);
     const first = scenes.find((sc) => sc.path === remembered) ?? scenes[0];
     if (first) await get().openScene(first.path);
@@ -279,8 +287,10 @@ export const useOdaja = create<OdajaState>((set, get) => {
     if (s.status !== "project") return;
     if (path.startsWith("scenes/")) await refreshScenes();
     if (path === "project.json") {
+      const text = await platform.readFile(path).catch(() => null);
+      if (text === null || text === lastWritten.get(path)) return;
       const loaded = await loadFile(path, ProjectSchema);
-      if (loaded) set({ project: loaded.data });
+      if (loaded) set({ project: loaded.data, projectDoc: loaded.raw });
       return;
     }
     const isScene = path === s.scenePath;
@@ -321,6 +331,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     focusedIssue: null,
     dialog: null,
     libraryVersion: 0,
+    notice: null,
     wallThickness: 12,
     wallsCut: false,
     viewMode: "3d",
@@ -464,6 +475,19 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
     libraryChanged() {
       set((s) => ({ libraryVersion: s.libraryVersion + 1 }));
+    },
+
+    setNotice(notice) {
+      set({ notice });
+      if (notice) setTimeout(() => get().notice === notice && set({ notice: null }), 5000);
+    },
+
+    // Change project.json (materials, name), undoably.
+    applyProject(change) {
+      const { projectDoc } = get();
+      if (!projectDoc) return;
+      const next = change(projectDoc);
+      if (next !== projectDoc) commit([{ path: "project.json", before: projectDoc, after: next }]);
     },
 
     toggleWallsCut() {

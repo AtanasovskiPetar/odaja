@@ -6,7 +6,7 @@ import { useMemo, type ReactNode } from "react";
 import {
   add,
   clearances,
-  doorSwing,
+  doorSwings,
   exteriorSide,
   formatCm,
   objectFootprint,
@@ -171,7 +171,9 @@ function WallDims({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
   );
 }
 
-// Door leaves drawn open, with their swing arc, as on an architect's plan.
+// Door symbols as on an architect's plan: leaves drawn open with their swing
+// arcs (two for double doors), a leaf on the wall face and an arrow for
+// sliding doors, a dashed leaf inside the wall for pocket doors.
 function DoorSwings({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
   return (
     <g className="door-swings">
@@ -179,17 +181,34 @@ function DoorSwings({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
         if (o.type !== "door") return null;
         const wall = shell.walls.find((w) => w.id === o.wall);
         if (!wall) return null;
-        const { hinge, closed, open } = doorSwing(wall, o);
-        const [h, c, op] = [toScreen(hinge), toScreen(closed), toScreen(open)];
-        const r = Math.hypot(c[0] - h[0], c[1] - h[1]);
-        // Sweep direction: the arc goes from the open leaf back to the closed position.
-        const cross = (op[0] - h[0]) * (c[1] - h[1]) - (op[1] - h[1]) * (c[0] - h[0]);
-        return (
-          <g key={o.id}>
-            <line x1={h[0]} y1={h[1]} x2={op[0]} y2={op[1]} className="leaf" />
-            <path d={`M ${op[0]} ${op[1]} A ${r} ${r} 0 0 ${cross > 0 ? 1 : 0} ${c[0]} ${c[1]}`} className="arc" />
-          </g>
-        );
+        const style = o.style ?? "single";
+        if (style === "sliding" || style === "pocket") {
+          const side = o.swing === "right" ? 1 : -1;
+          const z = style === "sliding" ? side * (wall.thickness / 2 + 3) : 0;
+          const shift = (o.hinge === "start" ? -0.5 : 0.5) * o.width;
+          const a = toScreen(pointOnWall(wall, o.offset + shift, z));
+          const b = toScreen(pointOnWall(wall, o.offset + o.width + shift, z));
+          const arrowFrom = toScreen(pointOnWall(wall, o.offset + o.width * 0.35, z + side * 6));
+          const arrowTo = toScreen(pointOnWall(wall, o.offset + o.width * 0.35 + shift * 0.6, z + side * 6));
+          return (
+            <g key={o.id}>
+              <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} className={style === "pocket" ? "leaf pocket" : "leaf"} />
+              <line x1={arrowFrom[0]} y1={arrowFrom[1]} x2={arrowTo[0]} y2={arrowTo[1]} className="arrow" markerEnd="url(#odaja-arrow)" />
+            </g>
+          );
+        }
+        return doorSwings(wall, o).map(({ hinge, closed, open }, i) => {
+          const [h, c, op] = [toScreen(hinge), toScreen(closed), toScreen(open)];
+          const r = Math.hypot(c[0] - h[0], c[1] - h[1]);
+          // Sweep direction: the arc goes from the open leaf back to the closed position.
+          const cross = (op[0] - h[0]) * (c[1] - h[1]) - (op[1] - h[1]) * (c[0] - h[0]);
+          return (
+            <g key={`${o.id}-${i}`}>
+              <line x1={h[0]} y1={h[1]} x2={op[0]} y2={op[1]} className="leaf" />
+              <path d={`M ${op[0]} ${op[1]} A ${r} ${r} 0 0 ${cross > 0 ? 1 : 0} ${c[0]} ${c[1]}`} className="arc" />
+            </g>
+          );
+        });
       })}
     </g>
   );
@@ -335,6 +354,11 @@ export function PlanOverlay() {
   if (!plan || !view || !shell || !toScreen) return null;
   return (
     <svg className="plan-overlay" width={view.width} height={view.height}>
+      <defs>
+        <marker id="odaja-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+          <path d="M 0 0 L 10 5 L 0 10 z" fill="#3d3a36" />
+        </marker>
+      </defs>
       <WallChanges shell={shell} toScreen={toScreen} />
       <DoorSwings shell={shell} toScreen={toScreen} />
       <RoomLabels shell={shell} toScreen={toScreen} />

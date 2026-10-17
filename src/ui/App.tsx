@@ -9,7 +9,9 @@ import { ChatPanel } from "./chat/ChatPanel";
 import { useChat } from "./chat/chatStore";
 import { ImportDialog } from "./ImportDialog";
 import { IssuesPanel } from "./IssuesPanel";
+import { MaterialsDialog } from "./MaterialsDialog";
 import { SaveToLibraryDialog } from "./SaveToLibraryDialog";
+import { QuantitiesSection } from "./FinishesInspector";
 import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
 import { StartScreen } from "./StartScreen";
@@ -195,6 +197,7 @@ function RoomsSection() {
           </li>
         ))}
       </ul>
+      <QuantitiesSection />
     </section>
   );
 }
@@ -234,6 +237,9 @@ function StructureToolbar() {
       </label>
       <button className={hideFurniture ? "active" : ""} onClick={toggleHideFurniture} title="Hide furniture (H)">
         Hide furniture
+      </button>
+      <button onClick={() => useOdaja.getState().openDialog({ kind: "materials" })} title="Colours, paints, tiles">
+        Materials
       </button>
     </div>
   );
@@ -308,6 +314,11 @@ function Toolbar() {
   );
 }
 
+function Notice() {
+  const notice = useOdaja((s) => s.notice);
+  return notice ? <div className="notice">{notice}</div> : null;
+}
+
 function Errors() {
   const errors = useOdaja((s) => s.errors);
   if (errors.length === 0) return null;
@@ -327,6 +338,7 @@ function Dialogs() {
   const dialog = useOdaja((s) => s.dialog);
   if (dialog?.kind === "import") return <ImportDialog files={dialog.files} />;
   if (dialog?.kind === "save") return <SaveToLibraryDialog objectId={dialog.objectId} />;
+  if (dialog?.kind === "materials") return <MaterialsDialog focus={dialog.focus} />;
   return null;
 }
 
@@ -382,6 +394,7 @@ export function App() {
           <Toolbar />
           {editingStructure && <StructureToolbar />}
         </div>
+        <Notice />
         <IssuesPanel />
         <Errors />
       </main>

@@ -1,7 +1,7 @@
 // HTTP routes for the in-app chat, mounted under /api/chat by the dev server.
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ToolContext } from "../tools";
-import { deleteConversation, listConversations, loadConversation, newConversation, saveConversation, type ImageInput } from "./conversations";
+import { conversationPhotos, deleteConversation, listConversations, liveConversations, loadConversation, newConversation, saveConversation, type ImageInput } from "./conversations";
 import { listModels, listProviders } from "./models";
 import { runTurn, type ChatEvent } from "./runners";
 import { readSettings, writeSettings, type ProviderId } from "./settings";
@@ -11,7 +11,8 @@ const running = new Map<string, AbortController>();
 
 interface Deps {
   projectDir(): string | null;
-  tools: ToolContext;
+  // Tool context for a given chat (so tools can use the chat's photos).
+  toolsFor(chatId: string): ToolContext;
   odajaUrl(): string;
   json(): Promise<Record<string, unknown>>;
   send(status: number, body: unknown): void;
@@ -98,7 +99,14 @@ export async function handleChat(route: string, url: URL, req: IncomingMessage, 
       conv.provider = provider;
       conv.model = model;
       if (conv.turns.length === 0) conv.title = (text || "Image").slice(0, 60);
+      // Name new photos so the model can refer to them in tools.
+      const before = conversationPhotos(conv).length;
+      const names = images.map((_, i) => `photo-${before + i + 1}`);
       conv.turns.push({ role: "user", text, images: images.length ? images : undefined, at: Date.now() });
+      liveConversations.set(conv.id, conv);
+      const modelText = names.length
+        ? `${text}\n\n[Attached: ${names.join(", ")}. To use a photo for a texture, pass these names to edit_photo or save_texture.]`
+        : text;
 
       // Stream events to the app as server-sent events.
       res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
@@ -117,10 +125,10 @@ export async function handleChat(route: string, url: URL, req: IncomingMessage, 
       };
       let items: Awaited<ReturnType<typeof runTurn>> = [];
       try {
-        items = await runTurn(conv, { text, images }, {
+        items = await runTurn(conv, { text: modelText, images }, {
           emit,
           signal: controller.signal,
-          tools: deps.tools,
+          tools: deps.toolsFor(conv.id),
           settings: await readSettings(),
           projectDir,
           odajaUrl: deps.odajaUrl(),
@@ -133,6 +141,7 @@ export async function handleChat(route: string, url: URL, req: IncomingMessage, 
         }
       } finally {
         running.delete(conv.id);
+        liveConversations.delete(conv.id);
       }
       conv.turns.push({
         role: "assistant",

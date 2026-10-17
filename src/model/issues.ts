@@ -5,7 +5,7 @@
 // there's an obvious one, a quick fix.
 import { localBounds } from "./attach";
 import {
-  doorSwing,
+  doorSwings,
   fitOpening,
   pointInPolygon,
   pointOnWall,
@@ -224,9 +224,9 @@ export function computeIssues(scene: Scene, shell: Shell): Issue[] {
     if (door.type !== "door") continue;
     const wall = shell.walls.find((w) => w.id === door.wall);
     if (!wall) continue;
-    const { sector } = doorSwing(wall, door);
+    const sectors = doorSwings(wall, door).map((sw) => sw.sector);
     const blockers = scene.objects.filter((o) =>
-      solids.get(o.id)!.some((s) => s.bottom < door.height && overlapDepth(s.poly, sector) > 1),
+      solids.get(o.id)!.some((s) => s.bottom < door.height && sectors.some((sector) => overlapDepth(s.poly, sector) > 1)),
     );
     if (blockers.length > 0) {
       issues.push({

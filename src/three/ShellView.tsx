@@ -1,9 +1,11 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import * as THREE from "three";
-import { wallPieces, type WallPiece } from "../model/geometry";
-import type { Opening, Room, Shell, Wall } from "../model/schema";
+import { finishRects, floorMaterial, sideVector } from "../model/finishes";
+import { pointOnWall, wallPieces, type WallPiece } from "../model/geometry";
+import type { Finish, Opening, Room, Shell, Wall } from "../model/schema";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
+import { JoineryView } from "./JoineryView";
 import { useMaterials } from "./materials";
 
 // Height walls are cut at in "cut" view and in plan view, so you can see into
@@ -46,7 +48,9 @@ function WallView({ wall, openings, shell }: { wall: Wall; openings: Opening[]; 
           </mesh>
         );
       })}
-      {cut(glass, wallsCut).map((p, i) => {
+      {/* The plan shows windows as a glass line; other views get full joinery. */}
+      {!plan && <JoineryView wall={wall} openings={openings} clip={wallsCut ? CUT_HEIGHT : Infinity} />}
+      {plan && cut(glass, wallsCut).map((p, i) => {
         const b = box(p, 2);
         return (
           <mesh key={`g${i}`} position={b.position} rotation={[0, -angle, 0]} material={material("glass")}>
@@ -70,8 +74,48 @@ function RoomCeiling({ room, height }: { room: Room; height: number }) {
   return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, M(height), 0]} material={CEILING} receiveShadow />;
 }
 
+// A finish on one side of a wall: thin panels on the face, with doors and
+// windows cut out. UVs are in metres along the wall and up, so tile patterns
+// line up across the pieces.
+function WallFinish({ finish, shell, clip }: { finish: Finish; shell: Shell; clip: number }) {
+  const material = useMaterials();
+  const wall = shell.walls.find((w) => w.id === finish.wall);
+  // Build the panels once per change, not on every render.
+  const panels = useMemo(() => {
+    if (!wall || !finish.side) return [];
+    const out = finish.side === "right" ? 1 : -1;
+    return finishRects(finish, shell).flatMap((r) => {
+      const top = Math.min(r.top, clip);
+      if (top <= r.bottom) return [];
+      const w = r.end - r.start;
+      const h = top - r.bottom;
+      const mid = pointOnWall(wall, (r.start + r.end) / 2, out * (wall.thickness / 2 + 0.3));
+      const geometry = new THREE.PlaneGeometry(M(w), M(h));
+      // u runs along the wall (mirrored on the left side so it matches the
+      // panel's own left-to-right), v up from the floor.
+      const u0 = out === 1 ? r.start : -r.end;
+      const uv = geometry.attributes.uv as THREE.BufferAttribute;
+      for (let k = 0; k < uv.count; k++) uv.setXY(k, M(u0 + uv.getX(k) * w), M(r.bottom + uv.getY(k) * h));
+      return [{ geometry, position: [M(mid[0]), M((r.bottom + top) / 2), M(mid[1])] as [number, number, number] }];
+    });
+  }, [finish, shell, wall, clip]);
+  useEffect(() => () => panels.forEach((p) => p.geometry.dispose()), [panels]);
+  if (!wall || !finish.side) return null;
+  const v = sideVector(wall, finish.side);
+  const rotation = Math.atan2(v[0], v[1]);
+  const mat = material(finish.material);
+  return (
+    <group>
+      {panels.map((p, i) => (
+        <mesh key={i} geometry={p.geometry} position={p.position} rotation={[0, rotation, 0]} material={mat} receiveShadow />
+      ))}
+    </group>
+  );
+}
+
 function RoomFloor({ room }: { room: Room }) {
   const material = useMaterials();
+  const scene = useOdaja((s) => s.scene);
   const geometry = useMemo(() => {
     // Shape coordinates are (x, -y) so that after laying the shape flat
     // (rotating -90° about X) plan y ends up on world +z.
@@ -79,13 +123,17 @@ function RoomFloor({ room }: { room: Room }) {
     return new THREE.ShapeGeometry(shape);
   }, [room.polygon]);
 
-  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} receiveShadow material={material(room.floor ?? "oak")} />;
+  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} receiveShadow material={material(floorMaterial(scene, room))} />;
 }
 
 export function ShellView() {
   const shell = useOdaja((s) => s.shell);
   const walk = useOdaja((s) => s.viewMode === "walk");
+  const plan = useOdaja((s) => s.viewMode === "plan");
+  const wallsCut = useOdaja((s) => s.wallsCut);
+  const finishes = useOdaja((s) => s.scene?.finishes);
   if (!shell) return null;
+  const clip = plan || (wallsCut && !walk) ? CUT_HEIGHT : Infinity;
   return (
     <group>
       {shell.rooms.map((room) => (
@@ -95,6 +143,7 @@ export function ShellView() {
       {shell.walls.map((wall) => (
         <WallView key={wall.id} wall={wall} shell={shell} openings={shell.openings.filter((o) => o.wall === wall.id)} />
       ))}
+      {!plan && finishes?.filter((f) => f.surface === "wall").map((f) => <WallFinish key={f.id} finish={f} shell={shell} clip={clip} />)}
     </group>
   );
 }

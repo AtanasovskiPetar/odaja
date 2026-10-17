@@ -14,6 +14,7 @@ import { newProjectFile, newSceneFile, newShellFile, slugify, type StarterRoom }
 import { formatJson } from "../src/model/format";
 import { callTool, inputJsonSchema, TOOLS, type ToolContext } from "./tools";
 import { handleChat } from "./chat/routes";
+import { conversationPhotos, liveConversations, loadConversation } from "./chat/conversations";
 import { stopAllClaudeCode } from "./chat/runners";
 
 const AGENT_DOC_SOURCE = path.resolve("docs/project-format.md");
@@ -136,6 +137,20 @@ export function odajaProjectServer(): Plugin {
       server.ws.send({ type: "custom", event: "odaja:open-scene", data: { path } });
     },
   };
+
+  // Tools called from a chat can use that chat's photos.
+  function toolsFor(chatId: string | undefined): ToolContext {
+    if (!chatId) return toolContext;
+    return {
+      ...toolContext,
+      async photos() {
+        const live = liveConversations.get(chatId);
+        if (live) return conversationPhotos(live);
+        if (!projectDir) return [];
+        return conversationPhotos(await loadConversation(projectDir, chatId).catch(() => ({ turns: [] }) as never));
+      },
+    };
+  }
 
   function requireProject(): string {
     if (!projectDir) throw new HttpError(409, "no project is open");
@@ -313,6 +328,30 @@ export function odajaProjectServer(): Plugin {
     return rel;
   }
 
+  // Copy a library material into the open project: its texture into
+  // assets/textures/ and the material into project.json under a free name.
+  async function addLibraryMaterial(id: string) {
+    const dir = resolveInLibrary(id);
+    const item = JSON.parse(await fs.readFile(path.join(dir, "item.json"), "utf8"));
+    if (!item.material) throw new HttpError(400, `"${id}" is not a material`);
+    const material = structuredClone(item.material);
+    if (material.tile?.image) {
+      const data = await fs.readFile(path.join(dir, material.tile.image));
+      const rel = `assets/textures/${id}${path.extname(material.tile.image)}`;
+      await fs.mkdir(path.dirname(resolveInProject(rel)), { recursive: true });
+      await fs.writeFile(resolveInProject(rel), data);
+      material.tile.image = rel;
+    }
+    const projectFile = resolveInProject("project.json");
+    const project = JSON.parse(await fs.readFile(projectFile, "utf8"));
+    project.materials ??= {};
+    let name = id;
+    for (let n = 2; project.materials[name] && JSON.stringify(project.materials[name]) !== JSON.stringify(material); n++) name = `${id}-${n}`;
+    project.materials[name] = material;
+    await fs.writeFile(projectFile, formatJson(project));
+    return name;
+  }
+
   async function sendFile(res: import("node:http").ServerResponse, abs: string) {
     const data = await fs.readFile(abs).catch(() => null);
     if (data === null) throw new HttpError(404, `not found: ${abs}`);
@@ -371,7 +410,7 @@ export function odajaProjectServer(): Plugin {
           if (route.includes(" /chat/")) {
             const handled = await handleChat(route, url, req, res, {
               projectDir: () => projectDir,
-              tools: toolContext,
+              toolsFor,
               odajaUrl: () => `http://localhost:${server.config.server.port ?? 5173}`,
               json,
               send,
@@ -430,8 +469,8 @@ export function odajaProjectServer(): Plugin {
             case "GET /tools":
               return send(200, TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: inputJsonSchema(t) })));
             case "POST /tools/call": {
-              const { name, input } = await json();
-              return send(200, await callTool(String(name), input, toolContext));
+              const { name, input, chatId } = await json();
+              return send(200, await callTool(String(name), input, toolsFor(typeof chatId === "string" ? chatId : undefined)));
             }
             case "POST /ui-state": {
               const { scenePath } = await json();
@@ -458,6 +497,10 @@ export function odajaProjectServer(): Plugin {
               const { id } = await json();
               await fs.rm(resolveInLibrary(String(id)), { recursive: true, force: true });
               return send(200, { ok: true });
+            }
+            case "POST /library/add-material": {
+              const { id } = await json();
+              return send(200, { name: await addLibraryMaterial(String(id)) });
             }
             case "POST /library/place-model": {
               const { id } = await json();

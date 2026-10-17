@@ -79,6 +79,11 @@ project folders.
 | `server/tools.ts` | AI tools shared by the chat and the MCP server |
 | `server/chat/` | Chat backend: providers and models, settings, conversations, the three runners, HTTP routes |
 | `mcp/server.ts` | MCP server forwarding Odaja's tools to MCP clients |
+| `src/model/finishes.ts`, `src/model/finishOps.ts` | Finishes: face rectangles with openings cut out, wall sides facing a room, quantities; and the named edits |
+| `src/three/textures.ts` | Real-scale tile textures (patterns drawn on canvas, or photos) |
+| `src/three/JoineryView.tsx` | 3D doors and windows by type (frames, sashes, glazing bars, leaves) |
+| `server/photos.ts` | Image edits for photo tools (crop, perspective straightening, colour, seamless); edits stay in memory until saved |
+| `src/ui/MaterialsDialog.tsx`, `src/ui/FinishesInspector.tsx` | Materials editor; finishes, joinery and quantities in the inspector |
 | `src/model/walk.ts` | Walk view: what blocks you (walls at body height, furniture taller than 45 cm), sliding collision, default start |
 | `src/three/WalkControls.tsx` | First-person controls (pointer-lock or drag look, W A S D, Q/E turn, Shift) |
 | `src/ui/WalkOverlay.tsx` | Picking a start on the plan, mini-map, controls hint, eye height |

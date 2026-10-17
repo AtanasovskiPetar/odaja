@@ -46,6 +46,8 @@ export interface Platform {
   deleteLibraryItem(id: string): Promise<void>;
   // Copy a library item's model into the open project; returns its path there.
   placeLibraryModel(id: string): Promise<string>;
+  // Add a library material (and its texture) to the open project; returns its name.
+  addLibraryMaterial(id: string): Promise<string>;
   onFileChanged(callback: (path: string) => void): void;
   // Tell the server what the app is showing (tools default to the open scene).
   reportUiState(state: { scenePath: string | null }): void;
@@ -122,6 +124,9 @@ export const platform: Platform = {
   },
   async placeLibraryModel(id) {
     return (await post<{ src: string }>("/api/library/place-model", { id })).src;
+  },
+  async addLibraryMaterial(id) {
+    return (await post<{ name: string }>("/api/library/add-material", { id })).name;
   },
   onFileChanged(callback) {
     import.meta.hot?.on("odaja:file-changed", (data: { path: string }) => callback(data.path));

@@ -4,6 +4,7 @@ import { formatCm, polygonArea, wallLength } from "../model/geometry";
 import { addRoom, deleteOpening, deleteRoom, deleteWall, setWallLength, updateOpening, updateRoom, updateWall } from "../model/shellOps";
 import { DEFAULT_SHELL } from "../model/schema";
 import { useOdaja } from "../store";
+import { JoineryFields, MaterialSelect, RoomFinishes, WallFinishes } from "./FinishesInspector";
 import { Field } from "./Inspector";
 
 function SharedNote() {
@@ -22,7 +23,6 @@ function SharedNote() {
 export function StructureInspector() {
   const selection = useOdaja((s) => s.structureSelection);
   const shell = useOdaja((s) => s.shell);
-  const materials = useOdaja((s) => s.project?.materials);
   const applyShell = useOdaja((s) => s.applyShell);
   const selectStructure = useOdaja((s) => s.selectStructure);
   const tool = useOdaja((s) => s.tool);
@@ -86,12 +86,8 @@ export function StructureInspector() {
             onCommit={(v) => applyShell(updateWall(wall.id, { height: Number(v) === shell.wallHeight ? undefined : Number(v) }))}
           />
         </div>
-        <MaterialSelect
-          label="Material"
-          value={wall.material ?? "wall"}
-          materials={materials}
-          onChange={(m) => applyShell(updateWall(wall.id, { material: m === "wall" ? undefined : m }))}
-        />
+        <MaterialSelect label="Wall material (bare wall)" value={wall.material ?? "wall"} onChange={(m) => applyShell(updateWall(wall.id, { material: !m || m === "wall" ? undefined : m }))} />
+        <WallFinishes wall={wall} />
         {openings.length > 0 && <p className="hint">{openings.length} door/window opening(s) in this wall are deleted with it.</p>}
         <div className="actions">
           <button
@@ -140,6 +136,7 @@ export function StructureInspector() {
             <button onClick={() => set({ swing: o.swing === "left" ? "right" : "left" })}>Flip swing</button>
           </div>
         )}
+        <JoineryFields opening={o} />
         <p className="hint">Changes that don't fit (overlapping a corner or another opening) are adjusted or ignored.</p>
         <div className="actions">
           <button
@@ -163,7 +160,8 @@ export function StructureInspector() {
     <section className="inspector">
       <div className="group-title">Room · {room.id}</div>
       <Field label="Name" value={room.name} onCommit={(v) => v.trim() && applyShell(updateRoom(room.id, { name: v.trim() }))} />
-      <MaterialSelect label="Floor" value={room.floor ?? "oak"} materials={materials} onChange={(m) => applyShell(updateRoom(room.id, { floor: m }))} />
+      <MaterialSelect label="Floor (room default)" value={room.floor ?? "oak"} onChange={(m) => m && applyShell(updateRoom(room.id, { floor: m }))} />
+      <RoomFinishes room={room} />
       <p className="hint">{(polygonArea(room.polygon) / 10000).toFixed(1)} m² to wall centres.</p>
       <div className="actions">
         <button
@@ -178,32 +176,5 @@ export function StructureInspector() {
       </div>
       <SharedNote />
     </section>
-  );
-}
-
-function MaterialSelect({
-  label,
-  value,
-  materials,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  materials?: Record<string, { color: string }>;
-  onChange: (name: string) => void;
-}) {
-  const names = Object.keys(materials ?? {});
-  if (!names.includes(value)) names.unshift(value);
-  return (
-    <label className="field">
-      <span>{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}>
-        {names.map((n) => (
-          <option key={n} value={n}>
-            {n}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }

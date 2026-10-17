@@ -37,6 +37,15 @@ export interface Conversation {
   };
 }
 
+// Conversations currently being answered, so tools can reach their photos
+// before the turn is saved.
+export const liveConversations = new Map<string, Conversation>();
+
+// Every photo shared in a conversation, in order: photo-1, photo-2, …
+export function conversationPhotos(c: Conversation): ImageInput[] {
+  return c.turns.flatMap((t) => (t.role === "user" ? (t.images ?? []) : []));
+}
+
 const dir = (projectDir: string) => path.join(projectDir, ".odaja", "chats");
 const file = (projectDir: string, id: string) => {
   if (!/^[a-z0-9-]+$/.test(id)) throw new Error("bad chat id");
