@@ -42,6 +42,7 @@ import {
 import { slugify } from "../src/model/defaults";
 import { quantities } from "../src/model/finishes";
 import { addFinish, clearRoomWalls, finishRoomWalls, removeFinishes, setRoomFloor } from "../src/model/finishOps";
+import { compactPart } from "../src/model/partOps";
 import { createHash } from "node:crypto";
 import { adjust, autoColor, crop, decode, encodeJpeg, fit, getEdit, rectify, rotate, seamless, storeEdit, type Raster } from "./photos";
 
@@ -60,6 +61,8 @@ export interface ToolContext {
   // Photos shared in the chat this tool call comes from (photo-1, photo-2, …),
   // if it comes from an Odaja chat.
   photos?(): Promise<{ mimeType: string; data: string }[]>;
+  // The object whose shape the user is editing in the app, if any.
+  editingObject?(): string | null;
 }
 
 export interface ToolDef<S extends z.ZodType = z.ZodType> {
@@ -77,17 +80,25 @@ const vec2 = z.array(z.number()).length(2).describe("[x, y] in cm on the plan (x
 const vec3 = z.array(z.number()).length(3);
 const toolPart = z
   .object({
-    shape: z.enum(["box", "cylinder"]),
-    size: vec3.optional().describe("box: [width x, depth y, height] cm"),
-    radius: z.number().optional().describe("box: corner rounding; cylinder: radius (cm)"),
-    height: z.number().optional().describe("cylinder height (cm)"),
+    shape: z.enum(["box", "cylinder", "sphere", "wedge", "extrusion"]),
+    size: vec3.optional().describe("box, wedge: [width x, depth y, height] cm (a wedge is full height at the back +y, zero at the front)"),
+    radius: z.number().optional().describe("box: corner rounding; cylinder, sphere: radius (cm)"),
+    height: z.number().optional().describe("cylinder height, or length when lying (cm)"),
+    axis: z.enum(["z", "x", "y"]).optional().describe("cylinder: z upright (default), x/y lying. extrusion: z = outline on the plan (x, y) raised by depth; y = front outline (x, up) pushed back by depth; x = side outline (y, up) pushed across by depth"),
+    profile: z.array(z.array(z.number()).length(2)).optional().describe("extrusion outline points, cm, relative to `at`"),
+    depth: z.number().optional().describe("extrusion thickness, cm"),
+    holes: z
+      .array(z.object({ at: vec2.describe("centre, in the outline's plane"), size: vec2.optional().describe("rectangle [w, d]"), radius: z.number().optional().describe("circle") }))
+      .optional()
+      .describe("box or extrusion: cut-outs all the way through (sinks, hobs, cable holes)"),
+    repeat: z.object({ count: z.number().int().min(1).max(50), step: vec3 }).optional().describe("copies in total and the step [x, y, z] cm between them"),
     at: vec3.optional().describe("[x, y, z_bottom] relative to the object origin; default [0, 0, 0]"),
     rotation: z.number().optional(),
     material: z.string().optional(),
     color: z.string().optional().describe("#rrggbb"),
     name: z.string().optional(),
   })
-  .describe("A box or upright cylinder");
+  .describe("A part: box, cylinder, sphere, wedge or extrusion (custom outline)");
 const toParts = (parts: z.infer<typeof toolPart>[]) =>
   parts.map((p, i) => {
     const r = PartSchema.safeParse(p);
@@ -263,6 +274,7 @@ export const TOOLS: ToolDef[] = [
         walls: shell.walls.map((w) => ({ id: w.id, from: w.from, to: w.to, thickness: w.thickness })),
         openings: shell.openings.map((o) => ({ id: o.id, wall: o.wall, type: o.type, offset: o.offset, width: o.width, height: o.height, sill: o.sill || undefined, hinge: o.type === "door" ? o.hinge : undefined, swing: o.type === "door" ? o.swing : undefined })),
         objects: s.objects.map(describeObject),
+        editingShape: ctx.editingObject?.() ?? undefined,
         finishes: s.finishes,
         materials: Object.fromEntries(
           Object.entries(project.materials).map(([k, m]) => [k, m.tile ? `${m.color} tiles ${m.tile.size[0]}×${m.tile.size[1]} ${m.tile.pattern}${m.tile.image ? " (photo)" : ""}` : m.color]),
@@ -419,6 +431,48 @@ export const TOOLS: ToolDef[] = [
       });
       const o = result.scene.objects.find((x) => x.id === input.id)!;
       return { updated: describeObject(o), issues: issuesFor(result.scene, result.shell).filter((i) => i.targets.some((t) => t.id === o.id)).map((i) => i.message) };
+    },
+  }),
+
+  tool({
+    name: "edit_parts",
+    description:
+      "Change an object's parts one at a time (useful while the user is editing its shape; get_overview's editingShape names that object, read_file shows its parts with their indexes). Actions: add (part), update (index + part fields to change), remove (index). Template objects are turned into parts first.",
+    input: z.object({
+      scene: sceneArg,
+      id: z.string(),
+      action: z.enum(["add", "update", "remove"]),
+      index: z.number().int().min(0).optional(),
+      part: toolPart.partial().optional(),
+    }),
+    async run({ scene, id, action, index, part }, ctx) {
+      const result = await changeScene(ctx, scene, (doc) => {
+        const o = doc.objects?.find((x) => x.id === id);
+        if (!o) throw new ToolError(`no object "${id}"`);
+        if (o.model) throw new ToolError("imported 3D models have no parts to edit");
+        let parts = o.parts;
+        if (!parts) {
+          // Template object: switch it to its parts.
+          const parsed = SceneSchema.parse(doc).objects.find((x) => x.id === id)!;
+          parts = parsed.parts.map(compactPart);
+        }
+        if (action === "add") {
+          if (!part?.shape) throw new ToolError("give part with a shape");
+          parts = [...parts, toParts([part as z.infer<typeof toolPart>])[0]];
+        } else {
+          if (index === undefined || !parts[index]) throw new ToolError(`no part ${index}; the object has ${parts.length}`);
+          if (action === "remove") {
+            if (parts.length === 1) throw new ToolError("an object needs at least one part");
+            parts = parts.filter((_, i) => i !== index);
+          } else {
+            const merged = Object.fromEntries(Object.entries({ ...parts[index], ...part }).filter(([, v]) => v !== undefined));
+            parts = parts.map((p, i) => (i === index ? toParts([merged as z.infer<typeof toolPart>])[0] : p));
+          }
+        }
+        return { ...doc, objects: (doc.objects ?? []).map((x) => (x.id === id ? Object.fromEntries(Object.entries({ ...x, template: undefined, params: undefined, parts }).filter(([, v]) => v !== undefined)) as unknown as typeof x : x)) };
+      });
+      const o = result.doc.objects?.find((x) => x.id === id);
+      return { parts: o?.parts?.map((p, i) => ({ index: i, ...p })) };
     },
   }),
 

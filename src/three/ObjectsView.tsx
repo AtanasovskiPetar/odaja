@@ -1,14 +1,15 @@
-import { useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { RoundedBox, TransformControls } from "@react-three/drei";
+import { TransformControls } from "@react-three/drei";
 import { useFrame, type ThreeEvent } from "@react-three/fiber";
 import type { Part, SceneObject } from "../model/schema";
 import { moveObject } from "../model/operations";
 import { snapToWall } from "../model/attach";
 import { roomAt } from "../model/geometry";
-import { M, planToWorld, rotationToWorld, worldToPlan } from "../model/units";
+import { planToWorld, rotationToWorld, worldToPlan } from "../model/units";
 import { useOdaja } from "../store";
 import { useMaterials } from "./materials";
+import { partGeometry, partTransform } from "./partGeometry";
 import { ModelView } from "./ModelView";
 
 // Clicking the move gizmo doesn't hit a scene mesh, which three-fiber reports as
@@ -18,34 +19,15 @@ export const gizmo = { lastUsed: 0 };
 // Furniture is shown faded while editing walls.
 const GHOST = new THREE.MeshBasicMaterial({ color: "#b9b2a6", transparent: true, opacity: 0.35, depthWrite: false });
 
-function PartMesh({ part, ghost }: { part: Part; ghost: boolean }) {
+export function PartMesh({ part, ghost, material: override, onClick, userData }: { part: Part; ghost: boolean; material?: THREE.Material; onClick?: (e: ThreeEvent<MouseEvent>) => void; userData?: Record<string, unknown> }) {
   const material = useMaterials();
-  const mat = ghost ? GHOST : material(part.material, part.color);
-  const [x, y, z] = part.at;
-  const rotation: [number, number, number] = [0, rotationToWorld(part.rotation), 0];
-
-  if (part.shape === "cylinder") {
-    return (
-      <mesh position={planToWorld(x, y, z + part.height / 2)} rotation={rotation} material={mat} castShadow receiveShadow>
-        <cylinderGeometry args={[M(part.radius), M(part.radius), M(part.height), 32]} />
-      </mesh>
-    );
-  }
-
-  const [w, d, h] = part.size;
-  const position = planToWorld(x, y, z + h / 2);
-  // RoundedBox needs a radius smaller than half the thinnest side.
-  const radius = Math.min(part.radius, Math.min(w, d, h) / 2 - 0.01);
-  if (radius > 0.05) {
-    return (
-      <RoundedBox args={[M(w), M(h), M(d)]} radius={M(radius)} smoothness={3} position={position} rotation={rotation} material={mat} castShadow receiveShadow />
-    );
-  }
-  return (
-    <mesh position={position} rotation={rotation} material={mat} castShadow receiveShadow>
-      <boxGeometry args={[M(w), M(h), M(d)]} />
-    </mesh>
-  );
+  const mat = override ?? (ghost ? GHOST : material(part.material, part.color));
+  // Rebuild the geometry only when the part's shape changes.
+  const key = JSON.stringify({ ...part, at: undefined, rotation: undefined, material: undefined, color: undefined, name: undefined });
+  const geometry = useMemo(() => partGeometry(part), [key]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  const { position, rotationY } = partTransform(part);
+  return <mesh geometry={geometry} position={position} rotation={[0, rotationY, 0]} material={mat} castShadow receiveShadow onClick={onClick} userData={userData} />;
 }
 
 function SelectionBox({ target }: { target: THREE.Object3D }) {
@@ -106,6 +88,11 @@ function ObjectView({ object, ghost }: { object: SceneObject; ghost: boolean }) 
         position={planToWorld(x, y, object.elevation)}
         rotation={[0, rotationToWorld(object.rotation), 0]}
         onClick={onClick}
+        onDoubleClick={(e) => {
+          if (ghost || useOdaja.getState().viewMode === "walk") return;
+          e.stopPropagation();
+          useOdaja.getState().editShape(object.id);
+        }}
         userData={{ kind: "object", id: object.id }}
       >
         {object.model ? (
@@ -131,6 +118,13 @@ export function ObjectsView() {
   const objects = useOdaja((s) => s.scene?.objects);
   const structure = useOdaja((s) => s.mode === "structure");
   const hidden = useOdaja((s) => s.mode === "structure" && s.hideFurniture);
+  // While editing an object's shape, it's drawn by the shape editor and the
+  // rest of the furniture is faded.
+  const editing = useOdaja((s) => s.editingObjectId);
   if (hidden) return null;
-  return <group>{objects?.map((object) => <ObjectView key={object.id} object={object} ghost={structure} />)}</group>;
+  return (
+    <group>
+      {objects?.filter((o) => o.id !== editing).map((object) => <ObjectView key={object.id} object={object} ghost={structure || !!editing} />)}
+    </group>
+  );
 }

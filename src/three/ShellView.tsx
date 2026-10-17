@@ -23,7 +23,8 @@ function WallView({ wall, openings, shell }: { wall: Wall; openings: Opening[]; 
   const material = useMaterials();
   const plan = useOdaja((s) => s.viewMode === "plan");
   const walk = useOdaja((s) => s.viewMode === "walk");
-  const wallsCut = (useOdaja((s) => s.wallsCut) && !walk) || plan;
+  // Walls are cut low while editing a shape, so they don't hide it.
+  const wallsCut = ((useOdaja((s) => s.wallsCut || s.editingObjectId !== null)) && !walk) || plan;
   const { solid, glass } = wallPieces(wall, openings, shell.wallHeight);
   const angle = Math.atan2(wall.to[1] - wall.from[1], wall.to[0] - wall.from[0]);
   const dir: [number, number] = [Math.cos(angle), Math.sin(angle)];
@@ -130,7 +131,7 @@ export function ShellView() {
   const shell = useOdaja((s) => s.shell);
   const walk = useOdaja((s) => s.viewMode === "walk");
   const plan = useOdaja((s) => s.viewMode === "plan");
-  const wallsCut = useOdaja((s) => s.wallsCut);
+  const wallsCut = useOdaja((s) => s.wallsCut || s.editingObjectId !== null);
   const finishes = useOdaja((s) => s.scene?.finishes);
   if (!shell) return null;
   const clip = plan || (wallsCut && !walk) ? CUT_HEIGHT : Infinity;

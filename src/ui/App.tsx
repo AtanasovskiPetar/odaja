@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { rotateObject } from "../model/operations";
+import { duplicateParts, mirrorParts, removeParts } from "../model/partOps";
 import { useOdaja, type Tool } from "../store";
 import { Viewport } from "../three/Viewport";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
@@ -12,6 +13,7 @@ import { IssuesPanel } from "./IssuesPanel";
 import { MaterialsDialog } from "./MaterialsDialog";
 import { SaveToLibraryDialog } from "./SaveToLibraryDialog";
 import { QuantitiesSection } from "./FinishesInspector";
+import { PartInspector, PartsSection } from "./PartsEditor";
 import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
 import { StartScreen } from "./StartScreen";
@@ -37,6 +39,15 @@ function useShortcuts() {
         useChat.getState().toggle();
         return;
       }
+      if (mod && e.key.toLowerCase() === "d" && s.editingObjectId) {
+        e.preventDefault();
+        if (s.partSelection.length) {
+          const count = s.sceneDoc?.objects?.find((o) => o.id === s.editingObjectId)?.parts?.length ?? 0;
+          s.apply(duplicateParts(s.editingObjectId, s.partSelection));
+          s.selectParts(s.partSelection.map((_, k) => count + k));
+        }
+        return;
+      }
       if (mod && e.key.toLowerCase() === "d" && s.mode === "furnish") {
         e.preventDefault();
         duplicateSelected();
@@ -59,6 +70,27 @@ function useShortcuts() {
       if (key === "t") return s.setViewMode("plan");
       if (key === "p") return s.setViewMode("3d");
       if (key === "e") return s.setMode(s.mode === "structure" ? "furnish" : "structure");
+
+      if (s.editingObjectId) {
+        const id = s.editingObjectId;
+        const sel = s.partSelection;
+        const count = s.sceneDoc?.objects?.find((o) => o.id === id)?.parts?.length ?? 0;
+        if (key === "g") return s.setPartTool("move");
+        if (key === "r") return s.setPartTool("rotate");
+        if (key === "s") return s.setPartTool("size");
+        if (key === "m" && sel.length) {
+          s.apply(mirrorParts(id, sel, "x"));
+          return s.selectParts(sel.map((_, k) => count + k));
+        }
+        if (key === "enter") return s.stopEditingShape();
+        if (key === "escape") return sel.length ? s.selectParts([]) : s.stopEditingShape();
+        if ((key === "delete" || key === "backspace") && sel.length && sel.length < count) {
+          e.preventDefault();
+          s.apply(removeParts(id, sel));
+          return s.selectParts([]);
+        }
+        return;
+      }
 
       if (s.mode === "structure") {
         // Escape and Enter belong to the structure layer (drawing).
@@ -103,6 +135,7 @@ function Sidebar() {
   const selectedId = useOdaja((s) => s.selectedId);
   const select = useOdaja((s) => s.select);
   const structure = useOdaja((s) => s.mode === "structure");
+  const editingShape = useOdaja((s) => s.editingObjectId !== null);
   const [adding, setAdding] = useState(false);
 
   return (
@@ -118,7 +151,12 @@ function Sidebar() {
 
       <ScenesSection />
 
-      {structure ? (
+      {editingShape ? (
+        <>
+          <PartsSection />
+          <PartInspector />
+        </>
+      ) : structure ? (
         <>
           <RoomsSection />
           <StructureInspector />

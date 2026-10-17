@@ -86,17 +86,48 @@ export const ShellSchema = z.object({
   rooms: z.array(RoomSchema).default([]),
 });
 
+// Cut-outs through a box or an extrusion, in its profile plane relative to
+// the part's centre (for a box or vertical extrusion: plan x, y). A rectangle
+// [width, depth] or a circle (radius). They go all the way through, e.g. a
+// sink or hob cut-out in a worktop.
+export const HoleSchema = z.union([
+  z.object({ at: point2, size: point2 }),
+  z.object({ at: point2, radius: z.number().positive() }),
+]);
+
 const partBase = {
   name: z.string().optional(),
   at: point3.default([0, 0, 0]),
   rotation: z.number().default(0),
   material: z.string().optional(),
   color: color.optional(),
+  // Copies of the part: `count` in total, each moved by `step` [x, y, z] cm
+  // from the previous one (e.g. five shelves 40 cm apart).
+  repeat: z.object({ count: z.number().int().min(1).max(50), step: point3 }).optional(),
 };
 
+const axis = z.enum(["z", "x", "y"]);
+
 export const PartSchema = z.discriminatedUnion("shape", [
-  z.object({ ...partBase, shape: z.literal("box"), size: point3, radius: z.number().min(0).default(0) }),
-  z.object({ ...partBase, shape: z.literal("cylinder"), radius: z.number().positive(), height: z.number().positive() }),
+  z.object({ ...partBase, shape: z.literal("box"), size: point3, radius: z.number().min(0).default(0), holes: z.array(HoleSchema).optional() }),
+  // Upright by default (axis z). Lying along x or y: `height` is its length,
+  // centred on `at`, resting on `at`'s z.
+  z.object({ ...partBase, shape: z.literal("cylinder"), radius: z.number().positive(), height: z.number().positive(), axis: axis.default("z") }),
+  z.object({ ...partBase, shape: z.literal("sphere"), radius: z.number().positive() }),
+  // A ramp: full height at the back (+y), zero at the front (-y).
+  z.object({ ...partBase, shape: z.literal("wedge"), size: point3 }),
+  // A 2D outline (cm, relative to `at`) pushed out by `depth`. Axis z: an
+  // outline on the plan (x, y) raised by `depth` (L-shaped worktops, round
+  // tables). Axis y: a front view outline (x, up) `depth` deep (curved
+  // headboards, arches). Axis x: a side view outline (y, up) `depth` wide.
+  z.object({
+    ...partBase,
+    shape: z.literal("extrusion"),
+    profile: z.array(point2).min(3),
+    depth: z.number().positive(),
+    axis: axis.default("z"),
+    holes: z.array(HoleSchema).optional(),
+  }),
 ]);
 
 // A 3D model file in the project (always GLB; imports are converted). It is
@@ -138,12 +169,27 @@ export const ObjectSchema = z
   })
   .transform((o) => ({
     ...o,
-    parts:
+    // Repeated parts are expanded into copies, so drawing, measuring and
+    // checks see every shelf and leg.
+    parts: expandRepeats(
       o.parts ??
-      (o.model
-        ? [PartSchema.parse({ name: "model-bounds", shape: "box", size: o.model.size })]
-        : z.array(PartSchema).parse(buildTemplate(o.template!, o.params) ?? [])),
+        (o.model
+          ? [PartSchema.parse({ name: "model-bounds", shape: "box", size: o.model.size })]
+          : z.array(PartSchema).parse(buildTemplate(o.template!, o.params) ?? [])),
+    ),
   }));
+
+export function expandRepeats(parts: Part[]): Part[] {
+  return parts.flatMap((p) => {
+    if (!p.repeat || p.repeat.count <= 1) return [p];
+    const { count, step } = p.repeat;
+    return Array.from({ length: count }, (_, i) => ({
+      ...p,
+      repeat: undefined,
+      at: [p.at[0] + step[0] * i, p.at[1] + step[1] * i, p.at[2] + step[2] * i] as [number, number, number],
+    }));
+  });
+}
 
 export const DEFAULT_SHELL = "shell.json";
 
@@ -195,6 +241,7 @@ export type Room = z.infer<typeof RoomSchema>;
 export type Shell = z.infer<typeof ShellSchema>;
 export type Part = z.infer<typeof PartSchema>;
 export type PartInput = z.input<typeof PartSchema>;
+export type Hole = z.infer<typeof HoleSchema>;
 export type SceneObject = z.infer<typeof ObjectSchema>;
 export type ObjectInput = z.input<typeof ObjectSchema>;
 export type Scene = z.infer<typeof SceneSchema>;

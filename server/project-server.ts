@@ -114,14 +114,17 @@ class HttpError extends Error {
 export function odajaProjectServer(): Plugin {
   let projectDir: string | null = null;
   let server: ViteDevServer;
-  // The scene open in the app (reported by the app), the default for tools.
+  // The scene open in the app (reported by the app), the default for tools,
+  // and the object whose shape is being edited.
   let openScenePath: string | null = null;
+  let editingObject: string | null = null;
   // Screenshots requested from the app, waiting for its reply.
   const pendingShots = new Map<string, { resolve: (s: { data: string; mimeType: string }) => void; reject: (e: Error) => void }>();
 
   const toolContext: ToolContext = {
     projectDir: () => projectDir,
     scenePath: () => openScenePath,
+    editingObject: () => editingObject,
     libraryRoot: LIBRARY_ROOT,
     screenshot(view) {
       const id = Math.random().toString(36).slice(2);
@@ -473,8 +476,9 @@ export function odajaProjectServer(): Plugin {
               return send(200, await callTool(String(name), input, toolsFor(typeof chatId === "string" ? chatId : undefined)));
             }
             case "POST /ui-state": {
-              const { scenePath } = await json();
-              openScenePath = typeof scenePath === "string" ? scenePath : null;
+              const state = await json();
+              if ("scenePath" in state) openScenePath = typeof state.scenePath === "string" ? state.scenePath : null;
+              if ("editingObject" in state) editingObject = typeof state.editingObject === "string" ? state.editingObject : null;
               return send(200, { ok: true });
             }
             case "POST /screenshot-result": {

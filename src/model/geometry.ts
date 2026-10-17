@@ -1,5 +1,6 @@
 // 2D plan geometry (centimetres, x right, y down) used for measuring:
 // wall faces, distances to walls, object footprints and room sizes.
+import { partBox } from "./parts";
 import type { Opening, Room, SceneObject, Shell, Wall } from "./schema";
 
 export type Vec = [number, number];
@@ -106,16 +107,7 @@ const rotate = ([x, y]: Vec, degrees: number): Vec => {
 
 // Axis-aligned footprint of an object on the plan, after rotation.
 export function objectFootprint(object: SceneObject, position: Vec = object.position): Rect {
-  const corners = object.parts.flatMap((part) => {
-    const [hw, hd] = part.shape === "box" ? [part.size[0] / 2, part.size[1] / 2] : [part.radius, part.radius];
-    const local: Vec[] = [
-      [-hw, -hd],
-      [hw, -hd],
-      [hw, hd],
-      [-hw, hd],
-    ];
-    return local.map((c) => add(rotate(add(rotate(c, part.rotation), [part.at[0], part.at[1]]), object.rotation), position));
-  });
+  const corners = object.parts.flatMap((part) => partBox(part).corners.map((c) => add(rotate(c, object.rotation), position)));
   return boundsOf(corners);
 }
 

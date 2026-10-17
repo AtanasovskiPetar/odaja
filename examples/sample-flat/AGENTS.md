@@ -226,11 +226,15 @@ faces south (+y).** Then `rotation` behaves predictably.
 
 | Field | Meaning |
 |---|---|
-| `shape` | `box` or `cylinder` |
+| `shape` | `box`, `cylinder`, `sphere`, `wedge` or `extrusion` |
 | `at` | `[x, y, z]`: `x, y` is the centre of the part's footprint relative to the object origin. `z` is the height of the part's **bottom** above the object's elevation. Default `[0, 0, 0]`. |
-| `size` | box only: `[width (x), depth (y), height]` |
-| `radius` | box: corner rounding (default 0). cylinder: radius (required). |
-| `height` | cylinder only. Cylinders stand upright. |
+| `size` | box, wedge: `[width (x), depth (y), height]`. A wedge is full height at the back (+y) and zero at the front. |
+| `radius` | box: corner rounding (default 0). cylinder, sphere: radius (required). |
+| `height` | cylinder: its height, or its length when lying down |
+| `axis` | cylinder: `z` upright (default), `x` lying left–right, `y` lying front–back (centred on `at`, resting on its z) |
+| `profile`, `depth`, `axis` | extrusion: an outline (points in cm, relative to `at`) pushed out by `depth`. Axis `z` (default): an outline on the plan `[x, y]` raised by `depth` (L-shaped worktops, round tables). Axis `y`: a front-view outline `[x, up]` pushed back by `depth` (headboards, arches). Axis `x`: a side-view outline `[y, up]` pushed across by `depth`. |
+| `holes` | box, extrusion: cut-outs all the way through, in the outline's plane relative to the part's centre: `{ "at": [x, y], "size": [w, d] }` or `{ "at": [x, y], "radius": r }` (sinks, hobs, cable holes) |
+| `repeat` | `{ "count": 5, "step": [0, 0, 40] }`: that many copies in total, each moved by `step` (shelves, legs, slats) |
 | `rotation` | Extra rotation of this part, degrees clockwise (default 0) |
 | `material` | A name from `project.json` materials |
 | `color` | `#rrggbb`, overrides the material's colour |

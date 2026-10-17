@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import type { z } from "zod";
 import { followWalls } from "./model/attach";
+import { detachTemplate } from "./model/operations";
+import { compactPart } from "./model/partOps";
 import { newSceneFile, type StarterRoom } from "./model/defaults";
 import { formatJson } from "./model/format";
 import {
@@ -103,6 +105,13 @@ interface OdajaState {
   viewMode: ViewMode;
   frameRequest: number;
   planView: PlanView | null;
+  // Shape editor: the object whose parts are being edited, the selected
+  // part indices, and what dragging the handles does.
+  editingObjectId: string | null;
+  partSelection: number[];
+  partTool: "move" | "rotate" | "size";
+  // Camera request to frame something (world metres).
+  focus: { center: [number, number, number]; radius: number; at: number } | null;
   // Walking: where to start (picked on the plan), the current pose (for the
   // mini-map), eye height in cm, and whether the next plan click picks a start.
   walkStart: { position: [number, number]; heading: [number, number] } | null;
@@ -144,6 +153,11 @@ interface OdajaState {
   setPickingWalkStart(picking: boolean): void;
   setWalkPose(pose: WalkPose | null): void;
   setEyeHeight(cm: number): void;
+  editShape(objectId: string): void;
+  stopEditingShape(): void;
+  selectParts(indices: number[]): void;
+  setPartTool(tool: OdajaState["partTool"]): void;
+  focusOn(center: [number, number, number], radius: number): void;
   apply(change: (doc: SceneDoc) => SceneDoc): void;
   applyShell(change: (doc: ShellDoc) => ShellDoc): Promise<void>;
   undo(): void;
@@ -337,6 +351,10 @@ export const useOdaja = create<OdajaState>((set, get) => {
     viewMode: "3d",
     frameRequest: 0,
     planView: null,
+    editingObjectId: null,
+    partSelection: [],
+    partTool: "move",
+    focus: null,
     walkStart: null,
     walkPose: null,
     eyeHeight: 160,
@@ -372,7 +390,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     },
 
     async openScene(path) {
-      set({ scenePath: path, selectedId: null, structureSelection: null, dragPreview: null, undoStack: [], redoStack: [] });
+      set({ scenePath: path, selectedId: null, structureSelection: null, dragPreview: null, undoStack: [], redoStack: [], editingObjectId: null, partSelection: [] });
       const loaded = await loadFile(path, SceneSchema);
       // Ignore a slow load that finished after the user switched scenes.
       if (get().scenePath !== path) return;
@@ -502,6 +520,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
         frameRequest: s.frameRequest + 1,
         ...(viewMode !== "plan" && s.mode === "structure" ? { mode: "furnish" as const, tool: "select" as const, structureSelection: null } : {}),
         ...(viewMode !== "walk" ? { walkPose: null } : {}),
+        ...(viewMode !== "3d" ? { editingObjectId: null, partSelection: [] } : {}),
         pickingWalkStart: false,
       }));
     },
@@ -530,6 +549,47 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
     setEyeHeight(eyeHeight) {
       set({ eyeHeight });
+    },
+
+    // Open the shape editor for an object. Template objects are turned into
+    // parts first (one undo step); 3D models can't be edited as parts.
+    editShape(objectId) {
+      const s = get();
+      const doc = s.sceneDoc?.objects?.find((o) => o.id === objectId);
+      const parsed = s.scene?.objects.find((o) => o.id === objectId);
+      if (!doc || !parsed) return;
+      if (doc.model) {
+        get().setNotice("This is an imported 3D model; its shape can't be edited as parts. Resize it in the inspector.");
+        return;
+      }
+      if (!doc.parts) get().apply(detachTemplate(objectId, parsed.parts.map(compactPart)));
+      set({ editingObjectId: objectId, selectedId: objectId, partSelection: [], partTool: "move", mode: "furnish", tool: "select", structureSelection: null });
+      platform.reportUiState({ editingObject: objectId });
+      if (get().viewMode !== "3d") get().setViewMode("3d");
+      // Frame the object.
+      const xs = parsed.parts.map((p) => p.at[0]);
+      const ys = parsed.parts.map((p) => p.at[1]);
+      const top = Math.max(...parsed.parts.map((p) => p.at[2])) + parsed.elevation;
+      const [cx, cy] = [parsed.position[0] + (Math.min(...xs) + Math.max(...xs)) / 2, parsed.position[1] + (Math.min(...ys) + Math.max(...ys)) / 2];
+      const size = Math.max(60, Math.max(...xs) - Math.min(...xs) + 100, Math.max(...ys) - Math.min(...ys) + 100, top + 60);
+      get().focusOn([cx / 100, (parsed.elevation + top / 2) / 100, cy / 100], size / 100);
+    },
+
+    stopEditingShape() {
+      set({ editingObjectId: null, partSelection: [] });
+      platform.reportUiState({ editingObject: null });
+    },
+
+    selectParts(partSelection) {
+      set({ partSelection });
+    },
+
+    setPartTool(partTool) {
+      set({ partTool });
+    },
+
+    focusOn(center, radius) {
+      set({ focus: { center, radius, at: Date.now() } });
     },
 
     apply(change) {

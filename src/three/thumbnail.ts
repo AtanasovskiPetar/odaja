@@ -2,7 +2,7 @@
 // slightly above, on a transparent background.
 import * as THREE from "three";
 import type { Material, Part } from "../model/schema";
-import { M, planToWorld, rotationToWorld } from "../model/units";
+import { partGeometry, partTransform } from "./partGeometry";
 
 const SIZE = 256;
 let renderer: THREE.WebGLRenderer | null = null;
@@ -16,7 +16,7 @@ function getRenderer() {
   return renderer;
 }
 
-// A plain three.js version of an object built from parts (no rounded corners).
+// A plain three.js version of an object built from parts.
 export function partsObject(parts: Part[], materials: Record<string, Material> = {}): THREE.Group {
   const group = new THREE.Group();
   for (const part of parts) {
@@ -28,15 +28,10 @@ export function partsObject(parts: Part[], materials: Record<string, Material> =
       transparent: m.opacity < 1,
       opacity: m.opacity,
     });
-    const [x, y, z] = part.at;
-    const height = part.shape === "box" ? part.size[2] : part.height;
-    const geometry =
-      part.shape === "box"
-        ? new THREE.BoxGeometry(M(part.size[0]), M(part.size[2]), M(part.size[1]))
-        : new THREE.CylinderGeometry(M(part.radius), M(part.radius), M(part.height), 32);
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(...planToWorld(x, y, z + height / 2));
-    mesh.rotation.y = rotationToWorld(part.rotation);
+    const mesh = new THREE.Mesh(partGeometry(part), material);
+    const { position, rotationY } = partTransform(part);
+    mesh.position.set(...position);
+    mesh.rotation.y = rotationY;
     group.add(mesh);
   }
   return group;

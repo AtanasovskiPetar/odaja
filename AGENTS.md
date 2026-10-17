@@ -84,6 +84,9 @@ project folders.
 | `src/three/JoineryView.tsx` | 3D doors and windows by type (frames, sashes, glazing bars, leaves) |
 | `server/photos.ts` | Image edits for photo tools (crop, perspective straightening, colour, seamless); edits stay in memory until saved |
 | `src/ui/MaterialsDialog.tsx`, `src/ui/FinishesInspector.tsx` | Materials editor; finishes, joinery and quantities in the inspector |
+| `src/model/parts.ts`, `src/model/partOps.ts` | Part sizes and footprints for every shape; editing parts (add, duplicate, mirror, sit on top, snap) |
+| `src/three/partGeometry.ts` | 3D geometry for every part shape (cut-outs as extrusion holes) |
+| `src/three/ShapeEditorView.tsx`, `src/ui/PartsEditor.tsx` | Shape editor: parts in 3D with handles; parts list and part inspector |
 | `src/model/walk.ts` | Walk view: what blocks you (walls at body height, furniture taller than 45 cm), sliding collision, default start |
 | `src/three/WalkControls.tsx` | First-person controls (pointer-lock or drag look, W A S D, Q/E turn, Shift) |
 | `src/ui/WalkOverlay.tsx` | Picking a start on the plan, mini-map, controls hint, eye height |

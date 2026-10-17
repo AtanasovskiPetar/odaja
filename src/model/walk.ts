@@ -2,16 +2,13 @@
 // Positions are plan cm (x east, y south). Heading is the walking direction
 // as a plan vector.
 import { exteriorSide, pointInPolygon, pointOnWall, polygonArea, wallNormal, wallPieces, type Vec } from "./geometry";
+import { partFootprint } from "./parts";
 import type { Scene, Shell } from "./schema";
 
 export const BODY_RADIUS = 22; // cm
 
 type Segment = [Vec, Vec];
 
-const rotate = ([x, y]: Vec, degrees: number): Vec => {
-  const r = (degrees * Math.PI) / 180;
-  return [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];
-};
 
 const outlineEdges = (poly: Vec[]): Segment[] => poly.map((p, i) => [p, poly[(i + 1) % poly.length]] as Segment);
 
@@ -41,21 +38,9 @@ export function obstacles(shell: Shell, scene: Scene | null): Segment[] {
   }
   for (const o of scene?.objects ?? []) {
     for (const part of o.parts) {
-      const bottom = o.elevation + part.at[2];
-      const top = bottom + (part.shape === "box" ? part.size[2] : part.height);
-      if (top < 45 || bottom > 150) continue;
-      const [hw, hd] = part.shape === "box" ? [part.size[0] / 2, part.size[1] / 2] : [part.radius, part.radius];
-      const poly = ([
-        [-hw, -hd],
-        [hw, -hd],
-        [hw, hd],
-        [-hw, hd],
-      ] as Vec[]).map((c) => {
-        const local = rotate(c, part.rotation);
-        const p = rotate([local[0] + part.at[0], local[1] + part.at[1]], o.rotation);
-        return [p[0] + o.position[0], p[1] + o.position[1]] as Vec;
-      });
-      segments.push(...outlineEdges(poly));
+      const f = partFootprint(part, o.position, o.rotation);
+      if (o.elevation + f.top < 45 || o.elevation + f.bottom > 150) continue;
+      segments.push(...outlineEdges(f.poly));
     }
   }
   return segments;

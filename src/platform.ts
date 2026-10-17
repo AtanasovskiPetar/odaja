@@ -50,7 +50,7 @@ export interface Platform {
   addLibraryMaterial(id: string): Promise<string>;
   onFileChanged(callback: (path: string) => void): void;
   // Tell the server what the app is showing (tools default to the open scene).
-  reportUiState(state: { scenePath: string | null }): void;
+  reportUiState(state: { scenePath?: string | null; editingObject?: string | null }): void;
   // Requests from the server: open a scene, take a screenshot.
   onOpenSceneRequest(callback: (path: string) => void): void;
   onScreenshotRequest(callback: (view: "plan" | "3d") => Promise<{ data: string; mimeType: string }>): void;

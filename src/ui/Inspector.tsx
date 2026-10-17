@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { TEMPLATES_BY_ID } from "../model/library";
-import { detachTemplate, setObjectProps, setTemplateParams } from "../model/operations";
-import type { Part, PartInput, SceneObject } from "../model/schema";
+import { setObjectProps, setTemplateParams } from "../model/operations";
+import type { SceneObject } from "../model/schema";
 import { round } from "../model/units";
 import { useOdaja } from "../store";
 import { deleteSelected, duplicateSelected } from "./actions";
@@ -161,12 +161,9 @@ export function Inspector() {
         <button onClick={() => useOdaja.getState().openDialog({ kind: "save", objectId: object.id })} title="Reuse this object in any scene or project">
           Save to library
         </button>
-        {object.template && (
-          <button
-            onClick={() => apply(detachTemplate(object.id, object.parts.map(compactPart)))}
-            title="Keep the shape but store it as individual parts you (or an agent) can edit"
-          >
-            Edit as parts
+        {!object.model && (
+          <button onClick={() => useOdaja.getState().editShape(object.id)} title="Change the shape part by part (or double-click the object)">
+            Edit shape
           </button>
         )}
         <button className="danger" onClick={deleteSelected} disabled={object.locked} title="Delete (⌫)">
@@ -175,17 +172,6 @@ export function Inspector() {
       </div>
     </section>
   );
-}
-
-// Leave out default values so detached parts read like hand-written ones.
-function compactPart(part: Part): PartInput {
-  const { rotation, at, ...rest } = part;
-  const out: PartInput = { ...rest };
-  if (rotation) out.rotation = rotation;
-  if (at.some((v) => v !== 0)) out.at = at;
-  if (out.shape === "box" && out.radius === 0) delete out.radius;
-  if (!out.name) delete out.name;
-  return out;
 }
 
 function NotesField({ value, onCommit }: { value: string; onCommit: (v: string) => void }) {

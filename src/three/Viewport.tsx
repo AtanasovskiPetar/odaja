@@ -9,6 +9,7 @@ import { useOdaja } from "../store";
 import { gizmo, ObjectsView } from "./ObjectsView";
 import { viewport } from "./capture";
 import { planCamera } from "./planCamera";
+import { ShapeEditorView } from "./ShapeEditorView";
 import { ShellView } from "./ShellView";
 import { WalkControls } from "./WalkControls";
 
@@ -23,6 +24,17 @@ function CameraRig() {
   const size = useThree((s) => s.size);
   const controls = useThree((s) => s.controls) as OrbitControlsImpl | null;
   const hasShell = shell !== null;
+
+  // Frame something on request (the shape editor focusing on an object).
+  const focus = useOdaja((s) => s.focus);
+  useEffect(() => {
+    if (!focus || !controls || viewMode !== "3d") return;
+    const [x, y, z] = focus.center;
+    controls.target.set(x, y, z);
+    const d = focus.radius * 1.5;
+    camera.position.set(x + d * 0.5, y + d * 0.95, z + d * 0.75);
+    controls.update();
+  }, [focus, controls, camera, viewMode]);
 
   useEffect(() => {
     planCamera.camera = camera;
@@ -88,7 +100,12 @@ export function Viewport() {
   const structure = useOdaja((s) => s.mode === "structure");
   const walk = useOdaja((s) => s.viewMode === "walk");
   return (
-    <Canvas shadows onPointerMissed={() => performance.now() - gizmo.lastUsed > 300 && select(null)}>
+    <Canvas shadows onPointerMissed={() => {
+        if (performance.now() - gizmo.lastUsed < 300) return;
+        // In the shape editor a click on empty space clears the part selection.
+        if (useOdaja.getState().editingObjectId) useOdaja.getState().selectParts([]);
+        else select(null);
+      }}>
       <PerspectiveCamera makeDefault={!plan} fov={45} near={0.05} far={200} />
       <OrthographicCamera makeDefault={plan} near={0.1} far={200} />
       <color attach="background" args={[plan ? "#f4f2ee" : walk ? "#dfe8ef" : "#eceae6"]} />
@@ -97,10 +114,11 @@ export function Viewport() {
         <orthographicCamera attach="shadow-camera" args={[-10, 10, 10, -10, 0.5, 40]} />
       </directionalLight>
       {!plan && !walk && (
-        <Grid args={[60, 60]} cellSize={0.1} sectionSize={1} cellColor="#d6d2cb" sectionColor="#bdb7ad" fadeDistance={40} position={[0, -0.002, 0]} infiniteGrid />
+        <Grid args={[60, 60]} cellSize={0.1} sectionSize={1} cellColor="#d6d2cb" sectionColor="#bdb7ad" fadeDistance={40} position={[0, -0.02, 0]} infiniteGrid />
       )}
       <ShellView />
       <ObjectsView />
+      <ShapeEditorView />
       {walk && <WalkControls />}
       <OrbitControls
         makeDefault

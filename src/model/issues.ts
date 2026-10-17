@@ -17,6 +17,7 @@ import {
   type Vec,
 } from "./geometry";
 import { deleteObjectField, moveObjectBy } from "./issueFixes";
+import { partFootprint } from "./parts";
 import type { Part, Scene, SceneDoc, SceneObject, Shell, ShellDoc } from "./schema";
 import { deleteOpening, deleteWall, MIN_WALL, updateOpening } from "./shellOps";
 
@@ -60,20 +61,8 @@ interface Solid {
 
 function partSolids(o: SceneObject): Solid[] {
   return o.parts.map((part: Part) => {
-    const [hw, hd] = part.shape === "box" ? [part.size[0] / 2, part.size[1] / 2] : [part.radius, part.radius];
-    const height = part.shape === "box" ? part.size[2] : part.height;
-    const poly = ([
-      [-hw, -hd],
-      [hw, -hd],
-      [hw, hd],
-      [-hw, hd],
-    ] as Vec[]).map((c) => {
-      const local = rotate(c, part.rotation);
-      const p = rotate([local[0] + part.at[0], local[1] + part.at[1]], o.rotation);
-      return [p[0] + o.position[0], p[1] + o.position[1]] as Vec;
-    });
-    const bottom = o.elevation + part.at[2];
-    return { poly, bottom, top: bottom + height };
+    const f = partFootprint(part, o.position, o.rotation);
+    return { poly: f.poly, bottom: o.elevation + f.bottom, top: o.elevation + f.top };
   });
 }
 

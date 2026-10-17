@@ -1,6 +1,7 @@
 // Objects attached to walls: snapping an object's back against a wall face,
 // and moving attached objects when their wall moves.
 import { pointOnWall, wallDir, wallLength, wallNormal, type Vec } from "./geometry";
+import { partBox } from "./parts";
 import type { Part, SceneDoc, Shell, Wall } from "./schema";
 
 const SNAP_DISTANCE = 15; // cm
@@ -18,18 +19,11 @@ export function localBounds(parts: Part[]) {
   let maxX = -Infinity;
   let maxY = -Infinity;
   for (const part of parts) {
-    const [hw, hd] = part.shape === "box" ? [part.size[0] / 2, part.size[1] / 2] : [part.radius, part.radius];
-    for (const c of [
-      [-hw, -hd],
-      [hw, -hd],
-      [hw, hd],
-      [-hw, hd],
-    ] as Vec[]) {
-      const [x, y] = rotate(c, part.rotation);
-      minX = Math.min(minX, x + part.at[0]);
-      maxX = Math.max(maxX, x + part.at[0]);
-      minY = Math.min(minY, y + part.at[1]);
-      maxY = Math.max(maxY, y + part.at[1]);
+    for (const [x, y] of partBox(part).corners) {
+      minX = Math.min(minX, x);
+      maxX = Math.max(maxX, x);
+      minY = Math.min(minY, y);
+      maxY = Math.max(maxY, y);
     }
   }
   return { minX, minY, maxX, maxY };

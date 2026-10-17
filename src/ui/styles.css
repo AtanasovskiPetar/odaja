@@ -1893,3 +1893,43 @@ button.link.danger {
 .library-card img.texture {
   object-fit: cover;
 }
+
+/* Shape editor */
+
+.part-tools {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.part-tools button {
+  flex: 1;
+  padding: 5px 0;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.part-tools button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.parts-add {
+  margin-bottom: 8px;
+}
+
+.parts-add button {
+  padding: 5px 8px;
+}
+
+.parts-list {
+  margin-bottom: 6px;
+}
+
+.hole-row {
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--border);
+}
