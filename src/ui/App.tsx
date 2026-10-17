@@ -20,7 +20,31 @@ import { StartScreen } from "./StartScreen";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
 import { UnderlayPanel, UnderlayToolLayer } from "./UnderlayPanel";
+import { ThemeCycleButton } from "./ThemeSwitch";
 import { WalkOverlay, WalkStartPicker } from "./WalkOverlay";
+import {
+  IconBack,
+  IconChat,
+  IconCompare,
+  IconCube,
+  IconCut,
+  IconDoor,
+  IconEyeOff,
+  IconFurnish,
+  IconLayers,
+  IconPlan,
+  IconPlus,
+  IconRedo,
+  IconRoom,
+  IconSelect,
+  IconStructure,
+  IconSwatch,
+  IconUndo,
+  IconWalk,
+  IconWall,
+  IconWindow,
+  LogoMark,
+} from "./icons";
 
 function useShortcuts() {
   useEffect(() => {
@@ -143,11 +167,14 @@ function Sidebar() {
     <aside className="sidebar">
       <header className="brand">
         <button className="logo-button" onClick={closeProject} title="Back to projects">
+          <IconBack className="back" size={14} />
+          <LogoMark />
           <span className="logo">Odaja</span>
         </button>
         <span className="project-name" title={projectDir ?? undefined}>
           {project?.name ?? "…"}
         </span>
+        <ThemeCycleButton />
       </header>
 
       <ScenesSection />
@@ -168,13 +195,17 @@ function Sidebar() {
         <div className="section-head">
           <h2>{adding ? "Add object" : "Objects"}</h2>
           <button className={`add-button ${adding ? "active" : ""}`} onClick={() => setAdding(!adding)} disabled={!scene}>
-            {adding ? "Close" : "+ Add"}
+            {adding ? "Done" : (
+              <>
+                <IconPlus size={13} /> Add
+              </>
+            )}
           </button>
         </div>
         {adding ? (
           <AddPanel onClose={() => setAdding(false)} />
         ) : scene?.objects.length === 0 ? (
-          <p className="muted empty-hint">No objects yet. Click + Add, or ask an agent to furnish this scene.</p>
+          <p className="muted empty-hint">An empty room. Add furniture, or ask the chat to furnish it.</p>
         ) : (
           <ul className="list">
             {scene?.objects.map((o) => (
@@ -241,12 +272,12 @@ function RoomsSection() {
   );
 }
 
-const TOOLS: { tool: Tool; label: string; key: string }[] = [
-  { tool: "select", label: "Select", key: "V" },
-  { tool: "wall", label: "Wall", key: "W" },
-  { tool: "room", label: "Room", key: "R" },
-  { tool: "door", label: "Door", key: "D" },
-  { tool: "window", label: "Window", key: "N" },
+const TOOLS: { tool: Tool; label: string; key: string; Icon: typeof IconSelect }[] = [
+  { tool: "select", label: "Select", key: "V", Icon: IconSelect },
+  { tool: "wall", label: "Wall", key: "W", Icon: IconWall },
+  { tool: "room", label: "Room", key: "R", Icon: IconRoom },
+  { tool: "door", label: "Door", key: "D", Icon: IconDoor },
+  { tool: "window", label: "Window", key: "N", Icon: IconWindow },
 ];
 
 function StructureToolbar() {
@@ -258,14 +289,17 @@ function StructureToolbar() {
   const toggleHideFurniture = useOdaja((s) => s.toggleHideFurniture);
   return (
     <div className="toolbar secondary">
-      {TOOLS.map((t) => (
-        <button key={t.tool} className={tool === t.tool ? "active" : ""} onClick={() => setTool(t.tool)} title={`${t.label} (${t.key})`}>
-          {t.label}
-        </button>
-      ))}
+      <div className="seg">
+        {TOOLS.map(({ tool: id, label, key, Icon }) => (
+          <button key={id} className={tool === id ? "active" : ""} onClick={() => setTool(id)} title={`${label} (${key})`}>
+            <Icon size={16} />
+            {label}
+          </button>
+        ))}
+      </div>
       <span className="sep" />
       <label className="inline-field" title="Thickness of new walls">
-        Wall
+        Thickness
         <select value={thickness} onChange={(e) => setThickness(Number(e.target.value))}>
           {[8, 10, 12, 15, 20, 25, 30].map((t) => (
             <option key={t} value={t}>
@@ -274,11 +308,11 @@ function StructureToolbar() {
           ))}
         </select>
       </label>
-      <button className={hideFurniture ? "active" : ""} onClick={toggleHideFurniture} title="Hide furniture (H)">
-        Hide furniture
+      <button className={`icon-only ${hideFurniture ? "active" : ""}`} onClick={toggleHideFurniture} title="Hide furniture (H)">
+        <IconEyeOff size={17} />
       </button>
-      <button onClick={() => useOdaja.getState().openDialog({ kind: "materials" })} title="Colours, paints, tiles">
-        Materials
+      <button className="icon-only" onClick={() => useOdaja.getState().openDialog({ kind: "materials" })} title="Materials: colours, paints, tiles">
+        <IconSwatch size={17} />
       </button>
     </div>
   );
@@ -289,6 +323,7 @@ function ChatToggle() {
   const toggle = useChat((s) => s.toggle);
   return (
     <button className={open ? "active" : ""} onClick={toggle} title="Chat with an AI about your design (⌘J)">
+      <IconChat size={17} />
       Chat
     </button>
   );
@@ -316,44 +351,57 @@ function Toolbar() {
 
   return (
     <div className="toolbar">
-      <button className={mode === "furnish" ? "active" : ""} onClick={() => setMode("furnish")} title="Arrange furniture (E toggles)">
-        Furnish
-      </button>
-      <button className={mode === "structure" ? "active" : ""} onClick={() => setMode("structure")} title="Edit walls, doors, windows and rooms (E toggles)">
-        Structure
-      </button>
+      <div className="seg">
+        <button className={mode === "furnish" ? "active" : ""} onClick={() => setMode("furnish")} title="Arrange furniture (E toggles)">
+          <IconFurnish size={17} />
+          Furnish
+        </button>
+        <button className={mode === "structure" ? "active" : ""} onClick={() => setMode("structure")} title="Edit walls, doors, windows and rooms (E toggles)">
+          <IconStructure size={17} />
+          Structure
+        </button>
+      </div>
       <span className="sep" />
-      <button className={viewMode === "plan" ? "active" : ""} onClick={() => setViewMode("plan")} title="Floor plan with dimensions (T)">
-        Plan
-      </button>
-      <button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")} title="3D view (P)">
-        3D
-      </button>
-      <button
-        className={viewMode === "walk" || picking ? "active" : ""}
-        onClick={() => (viewMode === "plan" ? setPicking(true) : startWalk(null))}
-        title="Walk through the flat at eye height (K). From the plan, click where to stand."
-      >
-        Walk
-      </button>
+      <div className="seg">
+        <button className={viewMode === "plan" ? "active" : ""} onClick={() => setViewMode("plan")} title="Floor plan with dimensions (T)">
+          <IconPlan size={17} />
+          Plan
+        </button>
+        <button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")} title="3D view (P)">
+          <IconCube size={17} />
+          3D
+        </button>
+        <button
+          className={viewMode === "walk" || picking ? "active" : ""}
+          onClick={() => (viewMode === "plan" ? setPicking(true) : startWalk(null))}
+          title="Walk through the flat at eye height (K). From the plan, click where to stand."
+        >
+          <IconWalk size={17} />
+          Walk
+        </button>
+      </div>
       {viewMode === "3d" && (
-        <button className={wallsCut ? "active" : ""} onClick={toggleWallsCut} title="Cut walls at 110 cm (C)">
-          Cut walls
+        <button className={`icon-only ${wallsCut ? "active" : ""}`} onClick={toggleWallsCut} title="Cut walls at 110 cm (C)">
+          <IconCut size={17} />
         </button>
       )}
       {viewMode === "plan" && (
-        <button className={underlayOpen ? "active" : ""} onClick={() => setUnderlayPanel(!underlayOpen)} title="Floor plan image under the plan, to check and trace walls">
-          Background
+        <button className={`icon-only ${underlayOpen ? "active" : ""}`} onClick={() => setUnderlayPanel(!underlayOpen)} title="Floor plan background: an image under the plan, to check and trace walls">
+          <IconLayers size={17} />
         </button>
       )}
       {hasBase && viewMode === "plan" && (
-        <button className={showChanges ? "active" : ""} onClick={toggleShowChanges} title="Show walls removed (red) and added (green) compared with shell.json">
-          Changes
+        <button className={`icon-only ${showChanges ? "active" : ""}`} onClick={toggleShowChanges} title="Show walls removed (red) and added (green) compared with shell.json">
+          <IconCompare size={17} />
         </button>
       )}
       <span className="sep" />
-      <button onClick={undo} disabled={!canUndo} title="Undo (⌘Z)">Undo</button>
-      <button onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)">Redo</button>
+      <button className="icon-only" onClick={undo} disabled={!canUndo} title="Undo (⌘Z)">
+        <IconUndo size={17} />
+      </button>
+      <button className="icon-only" onClick={redo} disabled={!canRedo} title="Redo (⇧⌘Z)">
+        <IconRedo size={17} />
+      </button>
       <span className="sep" />
       <ChatToggle />
     </div>

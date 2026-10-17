@@ -10,12 +10,13 @@ import { replacePart, snapPart } from "../model/partOps";
 import { expandRepeats, PartSchema, type Part, type PartInput } from "../model/schema";
 import { planToWorld, rotationToWorld } from "../model/units";
 import { useOdaja } from "../store";
+import { sceneTheme } from "./theme";
 import { gizmo, PartMesh } from "./ObjectsView";
 import { partGeometry, partTransform } from "./partGeometry";
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 // Drawn on top of everything so the selection is visible through other parts.
-const ACCENT = new THREE.LineBasicMaterial({ color: "#ff7a1a", depthTest: false, transparent: true });
+const ACCENT = new THREE.LineBasicMaterial({ color: sceneTheme().accent, depthTest: false, transparent: true });
 
 function Outline({ part }: { part: Part }) {
   const geometry = useMemo(() => new THREE.EdgesGeometry(partGeometry(part), 30), [part]);

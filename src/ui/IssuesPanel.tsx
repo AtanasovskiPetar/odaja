@@ -36,7 +36,7 @@ export function IssuesPanel() {
   if (issues.length === 0) {
     return (
       <div className="issues-badge ok" title="No problems found in this scene">
-        ✓ No issues
+        No issues
       </div>
     );
   }

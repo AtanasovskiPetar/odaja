@@ -5,6 +5,7 @@ import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react"
 import type { Vec } from "../model/geometry";
 import { calibrate } from "../model/underlay";
 import { useOdaja, type PlanView } from "../store";
+import { IconClose } from "./icons";
 import { PLAN_ACCEPT, savePlanFile } from "./planImage";
 
 function screenToPlan(view: PlanView, sx: number, sy: number): Vec {
@@ -48,7 +49,7 @@ export function UnderlayPanel() {
       <div className="underlay-head">
         <strong>Floor plan background</strong>
         <button className="icon" onClick={() => setPanel(false)} title="Close">
-          ×
+          <IconClose size={15} />
         </button>
       </div>
       <input ref={fileInput} type="file" accept={PLAN_ACCEPT} hidden onChange={(e) => e.target.files?.[0] && pick(e.target.files[0])} />

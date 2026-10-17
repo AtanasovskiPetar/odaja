@@ -8,6 +8,7 @@ import { snapToWall } from "../model/attach";
 import { roomAt } from "../model/geometry";
 import { planToWorld, rotationToWorld, worldToPlan } from "../model/units";
 import { useOdaja } from "../store";
+import { sceneTheme } from "./theme";
 import { useMaterials } from "./materials";
 import { partGeometry, partTransform } from "./partGeometry";
 import { ModelView } from "./ModelView";
@@ -31,7 +32,7 @@ export function PartMesh({ part, ghost, material: override, onClick, userData }:
 }
 
 function SelectionBox({ target }: { target: THREE.Object3D }) {
-  const [helper] = useState(() => new THREE.BoxHelper(target, "#ff7a1a"));
+  const [helper] = useState(() => new THREE.BoxHelper(target, sceneTheme().accent));
   // Follow the object while it is being dragged.
   useFrame(() => helper.setFromObject(target));
   return <primitive object={helper} />;

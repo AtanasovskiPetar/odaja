@@ -139,7 +139,9 @@ export function Inspector() {
         </label>
         {object.attachedTo && (
           <div className="attached">
-            Against <strong>{object.attachedTo}</strong>, moves with it
+            <span>
+              Against <strong>{object.attachedTo}</strong> and moves with it
+            </span>
             <button onClick={() => set({ attachedTo: undefined })}>Detach</button>
           </div>
         )}

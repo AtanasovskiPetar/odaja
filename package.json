@@ -15,6 +15,7 @@
     "@ai-sdk/openai": "^4.0.96",
     "@ai-sdk/openai-compatible": "^3.0.71",
     "@anthropic-ai/sdk": "^0.135.0",
+    "@fontsource/instrument-serif": "^5.3.0",
     "@modelcontextprotocol/sdk": "^1.32.1",
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",

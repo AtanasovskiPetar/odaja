@@ -89,7 +89,9 @@ function Dim({ toScreen, a, b, offset = 0, extFrom, label, className = "dim" }: 
   let angle = (Math.atan2(u[1], u[0]) * 180) / Math.PI;
   if (angle > 90) angle -= 180;
   if (angle <= -90) angle += 180;
-  const mid: Vec = [(sa[0] + sb[0]) / 2, (sa[1] + sb[1]) / 2];
+  // The figure sits just above its line, as on a drawing, never on it.
+  const up: Vec = [Math.sin((angle * Math.PI) / 180), -Math.cos((angle * Math.PI) / 180)];
+  const mid: Vec = [(sa[0] + sb[0]) / 2 + up[0] * 7, (sa[1] + sb[1]) / 2 + up[1] * 7];
   const overshoot = Math.sign(offset - (extFrom ?? 0)) * 6; // cm past the line
   return (
     <g className={className}>
@@ -229,11 +231,11 @@ function RoomLabels({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
         const area = size && room.polygon.length === 4 ? size.width * size.depth : polygonArea(room.polygon);
         return (
           <g key={room.id} className="room">
-            <Label at={[c[0], c[1] - 8]} className="room-name">
+            <Label at={[c[0], c[1] - 7]} className="room-name">
               {room.name}
             </Label>
             {screenWidth >= 150 && (
-              <Label at={[c[0], c[1] + 8]} className="room-size">
+              <Label at={[c[0], c[1] + 10]} className="room-size">
                 {size ? `${formatCm(size.width)} × ${formatCm(size.depth)} · ` : ""}
                 {(area / 10000).toFixed(1)} m²
               </Label>
@@ -356,7 +358,7 @@ export function PlanOverlay() {
     <svg className="plan-overlay" width={view.width} height={view.height}>
       <defs>
         <marker id="odaja-arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-          <path d="M 0 0 L 10 5 L 0 10 z" fill="#3d3a36" />
+          <path d="M 0 0 L 10 5 L 0 10 z" style={{ fill: "var(--ink)" }} />
         </marker>
       </defs>
       <WallChanges shell={shell} toScreen={toScreen} />

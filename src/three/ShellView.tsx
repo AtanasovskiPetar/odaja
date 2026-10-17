@@ -7,12 +7,11 @@ import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { JoineryView } from "./JoineryView";
 import { useMaterials } from "./materials";
+import { planMaterials } from "./theme";
 
 // Height walls are cut at in "cut" view and in plan view, so you can see into
 // rooms from above and windows and doors show as openings.
 const CUT_HEIGHT = 110;
-const PLAN_WALL = new THREE.MeshBasicMaterial({ color: "#3d3a36" });
-const PLAN_WINDOW = new THREE.MeshBasicMaterial({ color: "#ffffff" });
 
 function cut(pieces: WallPiece[], wallsCut: boolean): WallPiece[] {
   if (!wallsCut) return pieces;
@@ -44,7 +43,7 @@ function WallView({ wall, openings, shell }: { wall: Wall; openings: Opening[]; 
       {cut(solid, wallsCut).map((p, i) => {
         const b = box(p, wall.thickness);
         return (
-          <mesh key={i} position={b.position} rotation={[0, -angle, 0]} castShadow receiveShadow material={plan ? (p.sill ? PLAN_WINDOW : PLAN_WALL) : material(wall.material ?? "wall")}>
+          <mesh key={i} position={b.position} rotation={[0, -angle, 0]} castShadow receiveShadow material={plan ? (p.sill ? planMaterials.glazing : planMaterials.wall) : material(wall.material ?? "wall")}>
             <boxGeometry args={b.args} />
           </mesh>
         );
@@ -124,7 +123,14 @@ function RoomFloor({ room }: { room: Room }) {
     return new THREE.ShapeGeometry(shape);
   }, [room.polygon]);
 
-  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} receiveShadow material={material(floorMaterial(scene, room))} />;
+  const plan = useOdaja((s) => s.viewMode === "plan");
+  return (
+    <>
+      <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} receiveShadow material={material(floorMaterial(scene, room))} />
+      {/* The plan tints floors like a watercolour wash, so walls and furniture read first. */}
+      {plan && <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]} material={planMaterials.wash} renderOrder={1} />}
+    </>
+  );
 }
 
 export function ShellView() {

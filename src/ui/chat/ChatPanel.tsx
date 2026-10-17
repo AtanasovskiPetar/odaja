@@ -4,6 +4,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { useOdaja } from "../../store";
 import { ChatSettingsDialog } from "./ChatSettings";
 import { useChat, type AssistantItem, type ImageInput, type Turn } from "./chatStore";
+import { IconArrowUp, IconChevron, IconClip, IconClose, IconPlus, IconSliders, IconStop } from "../icons";
 
 // Downscale big photos before sending: fewer tokens, same usefulness.
 async function toImageInput(file: File): Promise<ImageInput> {
@@ -223,17 +224,18 @@ export function ChatPanel() {
   return (
     <aside className="chat-panel">
       <header className="chat-head">
-        <button className="chat-title" onClick={() => setListOpen(!listOpen)} title="Conversations">
-          {title} <span className="chevron">▾</span>
+        <button className={`chat-title ${listOpen ? "open" : ""}`} onClick={() => setListOpen(!listOpen)} title="Conversations">
+          <span className="label">{title}</span>
+          <IconChevron className="chevron" size={16} />
         </button>
         <button className="icon" onClick={() => openChat(null)} title="New chat">
-          ＋
+          <IconPlus size={17} />
         </button>
         <button className="icon" onClick={() => setSettingsOpen(true)} title="Models and API keys">
-          ⚙
+          <IconSliders size={17} />
         </button>
-        <button className="icon" onClick={toggle} title="Close chat">
-          ×
+        <button className="icon" onClick={toggle} title="Close chat (⌘J)">
+          <IconClose size={16} />
         </button>
       </header>
       {listOpen && (
@@ -251,7 +253,7 @@ export function ChatPanel() {
                 <span className="muted">{c.model || c.provider}</span>
               </button>
               <button className="remove" onClick={() => window.confirm(`Delete "${c.title}"?`) && deleteChat(c.id)} title="Delete">
-                ×
+                <IconClose size={13} />
               </button>
             </li>
           ))}
@@ -261,7 +263,8 @@ export function ChatPanel() {
       <div className="chat-scroll" ref={scroller}>
         {turns.length === 0 && (
           <div className="chat-empty">
-            <p>Ask about your design or tell me what to change. For example:</p>
+            <p className="chat-hello">What shall we change?</p>
+            <p>Ask about the design, or say what you'd like moved, built or checked. Photos help.</p>
             <ul>
               <li>"Is there enough space in front of the toilet?"</li>
               <li>"Move the sofa so it faces the TV, 2.5 m away."</li>
@@ -282,60 +285,65 @@ export function ChatPanel() {
           addFiles([...e.dataTransfer.files]);
         }}
       >
-        {images.length > 0 && (
-          <div className="attachments">
-            {images.map((img, i) => (
-              <div key={i} className="attachment">
-                <img src={`data:${img.mimeType};base64,${img.data}`} alt="" />
-                <button onClick={() => setImages(images.filter((_, j) => j !== i))}>×</button>
-              </div>
-            ))}
-          </div>
-        )}
-        <textarea
-          value={text}
-          rows={3}
-          placeholder="Message… (paste or drop photos)"
-          onChange={(e) => setText(e.target.value)}
-          onPaste={(e) => {
-            const files = [...e.clipboardData.files];
-            if (files.length) {
-              e.preventDefault();
-              addFiles(files);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-              e.preventDefault();
-              submit();
-            }
-          }}
-        />
-        <div className="composer-row">
-          <button className="icon" onClick={() => fileInput.current?.click()} title="Attach photos">
-            📎
-          </button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept="image/*"
-            multiple
-            hidden
-            onChange={(e) => {
-              addFiles([...(e.target.files ?? [])]);
-              e.target.value = "";
+        <div className="composer-box">
+          {images.length > 0 && (
+            <div className="attachments">
+              {images.map((img, i) => (
+                <div key={i} className="attachment">
+                  <img src={`data:${img.mimeType};base64,${img.data}`} alt="" />
+                  <button onClick={() => setImages(images.filter((_, j) => j !== i))} title="Remove">
+                    <IconClose size={11} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+          <textarea
+            value={text}
+            rows={3}
+            placeholder="Describe a change, or drop in a photo…"
+            onChange={(e) => setText(e.target.value)}
+            onPaste={(e) => {
+              const files = [...e.clipboardData.files];
+              if (files.length) {
+                e.preventDefault();
+                addFiles(files);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                e.preventDefault();
+                submit();
+              }
             }}
           />
-          <span className="grow" />
-          {busy ? (
-            <button className="send stop" onClick={stop}>
-              Stop
+          <div className="composer-row">
+            <button className="icon" onClick={() => fileInput.current?.click()} title="Attach photos">
+              <IconClip size={17} />
             </button>
-          ) : (
-            <button className="send" onClick={submit} disabled={!text.trim() && images.length === 0}>
-              Send
-            </button>
-          )}
+            <input
+              ref={fileInput}
+              type="file"
+              accept="image/*"
+              multiple
+              hidden
+              onChange={(e) => {
+                addFiles([...(e.target.files ?? [])]);
+                e.target.value = "";
+              }}
+            />
+            <span className="grow" />
+            <span className="note">⏎ to send</span>
+            {busy ? (
+              <button className="send stop" onClick={stop} title="Stop">
+                <IconStop size={16} />
+              </button>
+            ) : (
+              <button className="send" onClick={submit} disabled={!text.trim() && images.length === 0} title="Send">
+                <IconArrowUp size={16} />
+              </button>
+            )}
+          </div>
         </div>
       </div>
       {settingsOpen && <ChatSettingsDialog />}

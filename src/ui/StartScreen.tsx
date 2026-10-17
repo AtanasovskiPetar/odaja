@@ -2,6 +2,48 @@ import { useState, type FormEvent } from "react";
 import { useOdaja } from "../store";
 import { useChat } from "./chat/chatStore";
 import { PLAN_ACCEPT, savePlanFile } from "./planImage";
+import { LogoMark } from "./icons";
+import { ThemeSwitch } from "./ThemeSwitch";
+
+// Small drawings for the three ways to start: a room, a plan sheet, a blank sheet.
+const GLYPH = { width: 30, height: 30, viewBox: "0 0 30 30", fill: "none", stroke: "currentColor", strokeLinejoin: "round" as const, "aria-hidden": true };
+
+function RoomGlyph() {
+  return (
+    <svg {...GLYPH}>
+      <path d="M5 6h20v18H5Z" strokeWidth={2.4} />
+      <path d="M9 3.5h12M3 10v10" strokeWidth={0.8} strokeDasharray="1.5 1.5" />
+    </svg>
+  );
+}
+
+function PlanGlyph() {
+  return (
+    <svg {...GLYPH}>
+      <path d="M6 3.5h13l5 5v18H6Z" strokeWidth={1.2} />
+      <path d="M19 3.5v5h5" strokeWidth={1.2} />
+      <path d="M9.5 12h11v10h-11ZM15 12v4M15 19v3M15 17h5.5" strokeWidth={1.6} />
+    </svg>
+  );
+}
+
+function BlankGlyph() {
+  return (
+    <svg {...GLYPH}>
+      <path d="M6 5h18v20H6Z" strokeWidth={1.2} strokeDasharray="2.5 2" />
+      <path d="M15 11v8M11 15h8" strokeWidth={1.3} strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProjectGlyph() {
+  return (
+    <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+      <path d="M4 4h16v16H4Z" strokeWidth={1.8} />
+      <path d="M12 4v7M12 14v6M12 12.5h8" strokeWidth={1.1} />
+    </svg>
+  );
+}
 
 const PLAN_DRAFT =
   "Here's the floor plan of my flat. Build it in Odaja: walls, doors, windows and rooms. Take the scale from a dimension printed on the plan; if there isn't one, ask me for a measurement.";
@@ -63,27 +105,36 @@ function NewProject() {
 
   return (
     <form className="card" onSubmit={submit}>
-      <h2>New project</h2>
+      <h2>Start a new home</h2>
       <label className="field">
         <span>Name</span>
-        <input autoFocus value={name} placeholder="My flat" onChange={(e) => setName(e.target.value)} />
+        <input autoFocus value={name} placeholder="The flat on Partizanska" onChange={(e) => setName(e.target.value)} />
       </label>
 
       <div className="choice">
         <label className={start === "room" ? "active" : ""}>
           <input type="radio" checked={start === "room"} onChange={() => setStart("room")} />
+          <span className="glyph">
+            <RoomGlyph />
+          </span>
           <strong>One rectangular room</strong>
-          <span>Four walls with these inside measurements. Add more walls later.</span>
+          <span>Four walls at these inside measurements. Grow it from there.</span>
         </label>
         <label className={start === "plan" ? "active" : ""}>
           <input type="radio" checked={start === "plan"} onChange={() => setStart("plan")} />
+          <span className="glyph">
+            <PlanGlyph />
+          </span>
           <strong>From a floor plan</strong>
-          <span>An image or PDF of the plan. It goes in the background and the chat builds the walls from it.</span>
+          <span>A photo or PDF of the plan. It sits underneath, and the chat draws the walls over it.</span>
         </label>
         <label className={start === "empty" ? "active" : ""}>
           <input type="radio" checked={start === "empty"} onChange={() => setStart("empty")} />
-          <strong>Empty</strong>
-          <span>No walls yet. Draw them yourself or ask the chat.</span>
+          <span className="glyph">
+            <BlankGlyph />
+          </span>
+          <strong>A blank sheet</strong>
+          <span>No walls yet. Draw them yourself, or describe them to the chat.</span>
         </label>
       </div>
 
@@ -122,7 +173,7 @@ function NewProject() {
 
       {error && <div className="inline-error">{error}</div>}
       <button className="primary" type="submit" disabled={busy || !name.trim()}>
-        Create project
+        {busy ? "Setting up…" : "Create project"}
       </button>
       <p className="hint">Saved in {tildePath(root)}/{name.trim() || "…"}</p>
     </form>
@@ -142,14 +193,17 @@ function ProjectList() {
 
   return (
     <div className="card">
-      <h2>Open a project</h2>
+      <h2>Carry on</h2>
       {projects.length === 0 ? (
-        <p className="muted">No projects yet.</p>
+        <p className="muted empty-hint">Nothing here yet. Your projects will appear here.</p>
       ) : (
         <ul className="project-list">
           {projects.map((p) => (
             <li key={p.dir}>
               <button onClick={() => open(p.dir)}>
+                <span className="thumb">
+                  <ProjectGlyph />
+                </span>
                 <strong>{p.name}</strong>
                 <span className="muted">{tildePath(p.dir)}</span>
                 <span className="muted when">{timeAgo(p.modified)}</span>
@@ -178,9 +232,17 @@ function ProjectList() {
 export function StartScreen() {
   return (
     <div className="start">
+      <div className="start-corner">
+        <ThemeSwitch />
+      </div>
       <header>
-        <span className="logo big">Odaja</span>
-        <p className="muted">Plan your home in 3D, together with your AI agents.</p>
+        <div className="start-mark">
+          <LogoMark size={44} />
+          <span className="logo big">Odaja</span>
+        </div>
+        <p>
+          A drafting table for your home. Measure it, furnish it, walk through it, <em>and talk it over</em> before anything is built.
+        </p>
       </header>
       <div className="start-grid">
         <NewProject />
