@@ -164,7 +164,11 @@ Each phase leaves the app working, and ends with typecheck, build and a check in
 - **Deploy:** a GitHub Pages workflow on pushes to `master`, with the right base path.
 - Done when: the site is live on the GitHub Pages URL, works offline after the first visit, and refuses outside scripts.
 
-**7. Companion release and docs**
+**7. Companion release and docs** — done
+- **To release:** set `version` in `package.json`, commit, then `git tag v<version>` and push the tag. The workflow checks they match.
+- The macOS builds are signed ad hoc but not notarised; the README says how to clear the download quarantine. Notarising needs an Apple Developer account (later, if people ask).
+- Checked locally: archives for macOS, Linux and Windows; the unpacked macOS build serves the app and answers MCP (30 tools) with a bare `PATH`, the way Claude Desktop starts it.
+- **Still open:** the final web address (see "Changing the address later").
 - **Releases:** a GitHub Actions workflow that builds `odaja-server` for macOS (Apple Silicon and Intel), Windows and Linux on version tags and publishes it to GitHub Releases.
 - **Docs:** how to connect Claude Desktop and Claude Code to `odaja-server mcp`. Update `AGENTS.md`, `README.md` (with screenshots) and add a `LICENSE` (MIT).
 - **Before telling anyone:** decide the final web address.

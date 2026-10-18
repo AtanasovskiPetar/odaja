@@ -147,7 +147,7 @@ function ModelPicker() {
         ))}
       </select>
       <select value={model} onChange={(e) => selectModel(e.target.value)} disabled={models.length === 0}>
-        {models.length === 0 && <option value="">{modelsError ? "No models" : "Loading…"}</option>}
+        {models.length === 0 && <option value="">{info && !info.ready ? "Set it up in ⚙" : modelsError ? "No models" : "Loading…"}</option>}
         {models.map((m) => (
           <option key={m.id} value={m.id}>
             {m.name}

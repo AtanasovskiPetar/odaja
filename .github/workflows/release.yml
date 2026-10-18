@@ -1,0 +1,55 @@
+# Builds the companion (odaja-server) for every platform when a version tag
+# is pushed, and publishes the archives as a GitHub Release:
+#
+#   git tag v0.1.0 && git push origin v0.1.0     (the tag must match package.json)
+#
+# macOS builds run on a Mac, so the binaries get the (ad hoc) signature Apple
+# Silicon requires; the rest are cross-compiled on Linux. See scripts/release.ts.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-latest
+            platforms: macos-arm64 macos-x64
+          - runner: ubuntu-latest
+            platforms: linux-x64 linux-arm64 windows-x64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - name: Tag matches package.json
+        run: |
+          version=$(bun -e 'console.log((await Bun.file("package.json").json()).version)')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then echo "Tag $GITHUB_REF_NAME doesn't match package.json version $version"; exit 1; fi
+      - run: bun install --frozen-lockfile
+      - run: bun scripts/release.ts ${{ matrix.platforms }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.runner }}
+          path: release/*
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --title "Odaja $GITHUB_REF_NAME" --generate-notes

@@ -22,6 +22,7 @@ ODAJA_HOME=/path bun run dev                   # where new projects are created 
 open http://localhost:5173/?host=browser       # dev, but as the website: the home in browser storage, tools in the page
 bun run build && bun run start                 # the built app without Vite, at http://localhost:5180 (ODAJA_PORT)
 bun run package:server                         # build/odaja-server (one binary, no Bun needed) + build/resources/
+bun run release [macos-arm64 …]                # release archives for every platform, in release/
 bun run typecheck
 bun run format-project <dir>                   # reformat a project's JSON the way the app saves it
 ```
@@ -52,7 +53,9 @@ the copy too. To change the sample itself, open it deliberately with
 - **MCP server** (`mcp/run.ts`, started by `mcp/server.ts` or as
   `odaja-server mcp`): forwards Odaja's tools to any MCP client. The app must
   be running. To use Odaja from Claude Code:
-  `claude mcp add odaja -- bun /path/to/odaja/mcp/server.ts`. It finds the
+  `claude mcp add odaja -- bun /path/to/odaja/mcp/server.ts` (from the repo)
+  or `claude mcp add odaja -- /path/to/odaja-server mcp` (the companion);
+  Claude Desktop takes the same command in `claude_desktop_config.json`. It finds the
   running app through `~/.odaja/server.json` (written by the standalone
   server), else http://localhost:5173; `ODAJA_URL` overrides both.
 - **In-app chat** (`src/agent/chat/`, `src/ui/chat/`): a chat panel (⌘J) with a
@@ -135,6 +138,7 @@ there, or it's refused. The policy isn't applied in development.
 | `src/ui/homeFileActions.ts`, `src/ui/HomeMenu.tsx`, `src/ui/HomeFileDialogs.tsx` | Save (⌘S writes back to the same file where the browser allows it, else downloads), save a copy, open (button, ⌘O or drop), the "Include chat history" choice, export PNG/JPG; the file menu on the home's name with the unsaved-changes dot |
 | `scripts/webBuild.ts` | Build steps for the website: the Content Security Policy put into `index.html`, and `dist/sw.js` (the service worker from `src/browser/serviceWorker.js` with every built file listed, for offline use) |
 | `.github/workflows/pages.yml` | Builds and publishes the website to GitHub Pages on every push to `master` |
+| `scripts/release.ts`, `.github/workflows/release.yml` | Companion releases: on a `v*` tag matching `package.json`, archives of `odaja-server` for macOS (built on a Mac, for the signature Apple Silicon needs), Linux and Windows, each with `resources/`, a README and the licence, published as a GitHub Release |
 | `src/browser/` | The website's host: `opfs.ts` (file helpers over the browser's private file system), `homes.ts` (one home at a time plus the previous one, restorable), `platform.ts` (the same interface over browser storage; files are shown through `blob:` URLs), `sample.ts` (the sample flat bundled into the build), `kv.ts` (a small IndexedDB store, e.g. for where each home was saved), `keeping.ts` (asking the browser to keep the site's data; the Safari and private-window notes), `serviceWorker.js` (offline copy; registered only by the website, never in development or the companion) |
 | `src/three/` | React Three Fiber rendering: shell (walls, openings, floors), objects, viewport |
 | `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `StructureLayer.tsx` is the interactive SVG for Structure mode (drawing, dragging, its own pan/zoom), `StructureInspector.tsx` edits walls/openings/rooms, `IssuesPanel.tsx` lists issues. `StartScreen.tsx` is the project picker, `ScenesSection.tsx` the scene list. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |

@@ -232,7 +232,7 @@ function NewProject() {
         <ConfirmReplace name={keptHome.name} action={busy ? "Setting up…" : "Replace and create"} onCancel={() => setConfirming(false)} />
       ) : (
         <button className="primary" type="submit" disabled={busy || !name.trim()}>
-          {busy ? "Setting up…" : "Create project"}
+          {busy ? "Setting up…" : "Create home"}
         </button>
       )}
       <p className="hint">{web ? "Kept in this browser, saved as you work. A private window forgets it when closed." : `Saved in ${tildePath(root)}/${name.trim() || "…"}`}</p>

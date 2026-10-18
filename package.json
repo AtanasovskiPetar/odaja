@@ -10,7 +10,8 @@
     "package:server": "bun scripts/package-server.ts",
     "typecheck": "tsc -b --noEmit",
     "format-project": "bun scripts/format-project.ts",
-    "docs:templates": "bun scripts/docs-templates.ts"
+    "docs:templates": "bun scripts/docs-templates.ts",
+    "release": "bun scripts/release.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^4.0.99",
@@ -39,5 +40,6 @@
     "@vitejs/plugin-react": "^6.1.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.4"
-  }
+  },
+  "license": "MIT"
 }
