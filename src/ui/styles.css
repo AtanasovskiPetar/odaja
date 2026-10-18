@@ -2564,6 +2564,9 @@ button.link.danger {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
+  /* Long words (URLs, error codes) wrap instead of pushing the chat sideways. */
+  overflow-x: hidden;
+  overflow-wrap: anywhere;
   padding: 16px 16px 20px;
   display: flex;
   flex-direction: column;
@@ -2610,6 +2613,8 @@ button.link.danger {
 }
 
 .turn {
+  min-width: 0;
+  max-width: 100%;
   animation: appear var(--settle) var(--ease) both;
 }
 
@@ -2636,6 +2641,10 @@ button.link.danger {
   color: var(--sheet);
   white-space: pre-wrap;
   line-height: 1.45;
+}
+
+.turn.assistant > * {
+  max-width: 100%;
 }
 
 .turn.assistant {
