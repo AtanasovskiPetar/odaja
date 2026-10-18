@@ -18,6 +18,7 @@ import { formatJson } from "../src/model/format";
 import { belongsInFile, homeName, packHome, unpackHome } from "../src/model/homeFile";
 import { callTool, inputJsonSchema, TOOLS, type ToolContext } from "../src/agent/tools";
 import { folderFiles } from "./agentFiles";
+import { moveToTrash } from "./trash";
 import { chatPhotos, claudeCodeStatus, runClaudeCodeTurn, stopAllClaudeCode, stopClaudeCode } from "./claudeCode";
 import { setImageCodec } from "../src/agent/photos";
 import { jimpCodec } from "./imageCodec";
@@ -83,7 +84,7 @@ async function projectSummary(dir: string) {
   try {
     const project = JSON.parse(await fs.readFile(path.join(dir, "project.json"), "utf8"));
     const stat = await fs.stat(dir);
-    return { dir, name: String(project.name ?? path.basename(dir)), modified: stat.mtimeMs };
+    return { dir, name: String(project.name ?? path.basename(dir)), modified: stat.mtimeMs, inProjectsFolder: path.dirname(dir) === PROJECTS_ROOT };
   } catch {
     return null;
   }
@@ -569,6 +570,22 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
           }
           case "POST /projects/import":
             return send(200, { dir: await importProject(new Uint8Array(await readBody(req))) });
+          // Deleting a home: one in the projects folder goes to the Trash
+          // (restorable); one opened from elsewhere is only forgotten.
+          case "POST /projects/trash":
+          case "POST /projects/forget": {
+            const { dir } = await json();
+            const abs = path.resolve(String(dir ?? ""));
+            if (abs === projectDir) return send(409, { error: "that home is open; open another one first" });
+            if (route.endsWith("/trash")) {
+              if (path.dirname(abs) !== PROJECTS_ROOT || !(await isProject(abs))) return send(400, { error: "only homes in the projects folder can be moved to the Trash" });
+              await moveToTrash(abs);
+            }
+            const state = await readState();
+            state.recent = state.recent.filter((d) => d !== abs);
+            await writeState(state);
+            return send(200, { ok: true });
+          }
           case "POST /projects/create": {
             const { name, room } = await json();
             return send(200, { dir: await createProject(String(name ?? ""), room) });

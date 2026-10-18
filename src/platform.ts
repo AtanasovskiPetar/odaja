@@ -13,6 +13,9 @@ export interface ProjectSummary {
   dir: string;
   name: string;
   modified: number;
+  // In the projects folder (Documents/Odaja), so it can go to the Trash;
+  // a folder opened from elsewhere can only be removed from the list.
+  inProjectsFolder?: boolean;
 }
 
 export interface SceneSummary {
@@ -81,6 +84,10 @@ export interface Platform {
     write(id: string, json: string): Promise<void>;
     remove(id: string): Promise<void>;
   };
+  // The companion: move a home's folder to the Trash, or forget one opened
+  // from elsewhere. Not the open home.
+  trashProject?(dir: string): Promise<void>;
+  forgetProject?(dir: string): Promise<void>;
   // Where the AI tools run in the page (the website): their file access, and
   // how they ask the app to show a scene. Absent when tools run on the server.
   localTools?: { files(): AgentFiles | null; openScene(path: string): void };
@@ -192,6 +199,12 @@ const serverPlatform: Platform = {
   },
   async markSavedToFile() {
     // Folders are saved as you work; nothing to track.
+  },
+  async trashProject(dir) {
+    await post("/api/projects/trash", { dir });
+  },
+  async forgetProject(dir) {
+    await post("/api/projects/forget", { dir });
   },
   chats: {
     list: async () => (await request<{ ids: string[] }>("/api/chats")).ids,

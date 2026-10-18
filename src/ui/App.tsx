@@ -19,6 +19,7 @@ import { ScenesSection } from "./ScenesSection";
 import { Welcome, OpenFolderDialog } from "./Welcome";
 import { NewHomeDialog } from "./NewHome";
 import { TraceGuide } from "./TraceGuide";
+import { ManageHomesDialog } from "./ManageHomes";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
 import { UnderlayPanel, UnderlayToolLayer } from "./UnderlayPanel";
@@ -454,6 +455,7 @@ function Dialogs() {
   if (dialog?.kind === "export-image") return <ExportImageDialog />;
   if (dialog?.kind === "new-home") return <NewHomeDialog />;
   if (dialog?.kind === "open-folder") return <OpenFolderDialog />;
+  if (dialog?.kind === "manage-homes") return <ManageHomesDialog />;
   if (dialog?.kind === "add-to-library") return <AddToLibraryDialog items={dialog.items} />;
   return null;
 }

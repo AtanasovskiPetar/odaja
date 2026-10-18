@@ -68,6 +68,8 @@ export type Dialog =
   // A new home (the home menu), and opening a project folder (companion).
   | { kind: "new-home" }
   | { kind: "open-folder" }
+  // The companion's list of homes: open, delete (to the Trash), forget.
+  | { kind: "manage-homes" }
   // After opening a home: its library items you don't have yet.
   | { kind: "add-to-library"; items: MissingItem[] }
   | null;

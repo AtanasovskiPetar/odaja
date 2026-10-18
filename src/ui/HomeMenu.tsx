@@ -88,6 +88,9 @@ export function HomeMenu() {
               <button role="menuitem" onClick={run(() => useOdaja.getState().openDialog({ kind: "open-folder" }))}>
                 Open a folder…
               </button>
+              <button role="menuitem" onClick={run(() => useOdaja.getState().openDialog({ kind: "manage-homes" }))}>
+                Manage homes…
+              </button>
             </>
           )}
           <div className="menu-sep" />
