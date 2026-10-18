@@ -30,6 +30,16 @@ compares options against it.
 Scene file names follow the scene's name in lowercase with dashes, the same way
 the app names them. Every project keeps at least one scene.
 
+### Saved as one file: `.odaja`
+
+A home can also travel as a single **`.odaja` file** (Save to file in Odaja).
+It's a zip of this folder: `project.json`, `shell.json`, `shells/`, `scenes/`,
+`assets/`, plus `odaja.json` (`{ "format": "odaja-home", "version": 1, "savedAt": … }`).
+`AGENTS.md`, `CLAUDE.md` and hidden files are left out; chats (`.odaja/chats/`)
+only when the person saving chose "Include chat history". Opening the file
+gives back the same folder, so an agent can unzip it, edit the files as
+described here, and zip them again (keep `project.json` at the top level).
+
 ## Coordinates and units
 
 - **Centimetres** everywhere.

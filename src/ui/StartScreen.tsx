@@ -5,16 +5,36 @@ import { PLAN_ACCEPT, savePlanFile } from "./planImage";
 import { LogoMark } from "./icons";
 import { ThemeSwitch } from "./ThemeSwitch";
 import { platform } from "../platform";
+import { openHome, pickHomeFile, rememberedChatsChoice, saveHome, type PickedHome } from "./homeFileActions";
 
 // On the website, starting something new replaces the home kept in the
 // browser; it is set aside as the previous home, so this asks first.
 function ConfirmReplace({ name, action, onCancel, onConfirm }: { name: string; action: string; onCancel: () => void; onConfirm?: () => void }) {
+  const unsaved = useOdaja((s) => s.homes?.unsavedToFile ?? false);
+  const [saving, setSaving] = useState(false);
+  const saveFirst = async () => {
+    setSaving(true);
+    const saved = await saveHome({ includeChats: await rememberedChatsChoice() });
+    setSaving(false);
+    // Saved: carry on with what was asked (the form submits itself).
+    if (saved) {
+      await useOdaja.getState().refreshProjects();
+      if (onConfirm) onConfirm();
+      else document.querySelector<HTMLFormElement>(".start form.card")?.requestSubmit();
+    }
+  };
   return (
     <div className="confirm-replace" role="alertdialog" aria-label="Replace your home?">
       <p>
         This replaces <strong>{name}</strong> in this browser. It's kept as your previous home, so you can bring it back.
+        {unsaved && " It has changes that aren't saved to a file yet."}
       </p>
       <div className="actions">
+        {unsaved && (
+          <button type="button" onClick={saveFirst} disabled={saving}>
+            {saving ? "Saving…" : "Save it first"}
+          </button>
+        )}
         <button type={onConfirm ? "button" : "submit"} className="primary" onClick={onConfirm} autoFocus>
           {action}
         </button>
@@ -290,6 +310,17 @@ function ProjectList() {
         </ul>
       )}
       <SampleRow onError={setError} />
+      <button
+        className="open-file"
+        onClick={async () => {
+          setError(null);
+          const picked = await pickHomeFile().catch((err) => (setError((err as Error).message), null));
+          if (picked) openHome(picked).catch((err) => setError((err as Error).message));
+        }}
+        title="Opens it as a new folder in your projects folder"
+      >
+        Open a home file (.odaja)…
+      </button>
       <form
         className="open-path"
         onSubmit={(e) => {
@@ -314,6 +345,7 @@ function BrowserHomes() {
   const openProject = useOdaja((s) => s.openProject);
   const openSample = useOdaja((s) => s.openSample);
   const [confirmSample, setConfirmSample] = useState(false);
+  const [pickedFile, setPickedFile] = useState<PickedHome | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const kept = homes?.current ?? null;
@@ -361,6 +393,27 @@ function BrowserHomes() {
             <span className="muted">A furnished two-room flat to explore. Change anything.</span>
           </button>
         </div>
+      )}
+      {pickedFile && kept ? (
+        <ConfirmReplace
+          name={kept.name}
+          action={`Open ${pickedFile.file.name}`}
+          onCancel={() => setPickedFile(null)}
+          onConfirm={() => run(() => openHome(pickedFile))}
+        />
+      ) : (
+        <button
+          className="open-file"
+          disabled={busy}
+          onClick={async () => {
+            const picked = await pickHomeFile().catch((err) => (setError((err as Error).message), null));
+            if (!picked) return;
+            if (kept) setPickedFile(picked);
+            else run(() => openHome(picked));
+          }}
+        >
+          Open a home file (.odaja)…
+        </button>
       )}
       {previous && (
         <div className="previous-home">

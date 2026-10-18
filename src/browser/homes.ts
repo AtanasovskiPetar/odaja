@@ -72,6 +72,11 @@ export async function swapWithPrevious(): Promise<string> {
   return state.previous;
 }
 
+export async function markSaved(id: string) {
+  const state = await readState();
+  await writeState({ ...state, unsavedToFile: { ...state.unsavedToFile, [id]: false } });
+}
+
 export async function markChanged(id: string) {
   const state = await readState();
   if (state.unsavedToFile[id]) return;

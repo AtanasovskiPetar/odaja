@@ -110,7 +110,9 @@ Each phase leaves the app working, and ends with typecheck, build and a check in
 - In this phase the chat is hidden on the website.
 - Done when: `vite build` served as plain static files (no `/api`) lets you create, edit, reload and continue a home. The companion and dev mode behave as today.
 
-**2. `.odaja` files**
+**2. `.odaja` files** — done
+- The file menu sits on the home's name in the sidebar, with the unsaved dot. Opening: the menu, ⌘O, the start screen, or dropping a file on the app.
+- Image export renders at full screen resolution and embeds the serif font, so exported plans keep their lettering.
 - **Format:** zip and unzip with `fflate`. Document it in `docs/project-format.md`.
 - **Save:** ⌘S, with a File System Access handle in Chrome/Edge and a download elsewhere. "Include chat history" in the save dialog.
 - **Open,** with the replace prompt.

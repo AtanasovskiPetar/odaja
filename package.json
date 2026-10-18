@@ -22,6 +22,7 @@
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
     "ai": "^7.0.143",
+    "fflate": "^0.8.3",
     "jimp": "^1.6.1",
     "pdfjs-dist": "^6.4.299",
     "react": "^19.3.1",

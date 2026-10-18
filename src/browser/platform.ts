@@ -3,6 +3,7 @@
 // Same interface as the server-backed platform (src/platform.ts).
 import { newProjectFile, newSceneFile, newShellFile, slugify } from "../model/defaults";
 import { formatJson } from "../model/format";
+import { belongsInFile, packHome, unpackHome } from "../model/homeFile";
 import type { LibraryEntry, Platform, SceneSummary } from "../platform";
 import * as homes from "./homes";
 import * as opfs from "./opfs";
@@ -117,6 +118,24 @@ export function createBrowserPlatform(): Platform {
 
   async function replaceHome(content: Record<string, opfs.Data>) {
     await openHome(await homes.addHome(content));
+  }
+
+  // The open home, or (on the start screen) the one kept in the browser.
+  async function homeForSaving(): Promise<string> {
+    const id = open ?? (await homes.readState()).current;
+    if (!id) throw new Error("there's no home to save");
+    return id;
+  }
+
+  // Every file of the home that belongs in a saved file.
+  async function homeFiles(id: string, includeChats: boolean): Promise<Record<string, Uint8Array>> {
+    const out: Record<string, Uint8Array> = {};
+    for (const rel of await opfs.walk(homes.homePath(id))) {
+      if (!belongsInFile(rel, includeChats)) continue;
+      const file = await opfs.readFile(homes.homePath(id, rel));
+      if (file) out[rel] = new Uint8Array(await file.arrayBuffer());
+    }
+    return out;
   }
 
   async function refreshLibraryUrls(id: string) {
@@ -301,6 +320,26 @@ export function createBrowserPlatform(): Platform {
       await write("project.json", formatJson(project));
       announce("project.json");
       return name;
+    },
+
+    async exportHome(includeChats) {
+      const zip = packHome(await homeFiles(await homeForSaving(), includeChats));
+      return new Blob([zip as BlobPart], { type: "application/octet-stream" });
+    },
+
+    async homeHasChats() {
+      return (await opfs.walk(homes.homePath(await homeForSaving(), ".odaja/chats"))).some((p) => p.endsWith(".json"));
+    },
+
+    async importHome(data) {
+      const files = unpackHome(data);
+      await replaceHome(Object.fromEntries(Object.entries(files).map(([rel, bytes]) => [rel, new Blob([bytes as BlobPart])])));
+    },
+
+    async markSavedToFile() {
+      const id = await homeForSaving();
+      if (id === open) changed = false;
+      await homes.markSaved(id);
     },
 
     onFileChanged(callback) {

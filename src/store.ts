@@ -55,7 +55,16 @@ export interface FileError {
 
 // A dialog over the app: importing model files, or saving an object to the
 // library.
-export type Dialog = { kind: "import"; files: File[] } | { kind: "save"; objectId: string } | { kind: "materials"; focus?: string } | null;
+export type Dialog =
+  | { kind: "import"; files: File[] }
+  | { kind: "save"; objectId: string }
+  | { kind: "materials"; focus?: string }
+  // Saving the home to a .odaja file (asks about chats when it has some).
+  | { kind: "save-file"; saveAs?: boolean }
+  // Opening a .odaja file over the home in the browser (asks first).
+  | { kind: "open-home"; file: File; handle?: FileSystemFileHandle }
+  | { kind: "export-image" }
+  | null;
 
 // One undoable step: the before/after content of every file it touched.
 interface FileEdit {
@@ -74,6 +83,8 @@ interface OdajaState {
   sampleCopied: boolean;
   // The website's home and the one it replaced (null in dev and the companion).
   homes: ProjectList["homes"] | null;
+  // The website: the open home has changes not yet saved to a .odaja file.
+  unsavedToFile: boolean;
   projectDir: string | null;
   projectDoc: ProjectDoc | null;
   project: Project | null;
@@ -133,6 +144,9 @@ interface OdajaState {
   load(): Promise<void>;
   refreshProjects(): Promise<void>;
   openSample(fresh: boolean): Promise<void>;
+  // Open a .odaja file (the website replaces its home; the companion adds a folder).
+  openHomeFile(data: Uint8Array): Promise<void>;
+  setUnsavedToFile(unsaved: boolean): void;
   openProject(dir: string): Promise<void>;
   createProject(name: string, room?: StarterRoom): Promise<void>;
   closeProject(): Promise<void>;
@@ -246,6 +260,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
   }
 
   function write(path: string, doc: unknown) {
+    if (platform.kind === "browser" && !get().unsavedToFile) set({ unsavedToFile: true });
     const text = formatJson(doc);
     lastWritten.set(path, text);
     platform.writeFile(path, text).catch((err) => console.error("save failed", path, err));
@@ -351,6 +366,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     sampleDir: "",
     sampleCopied: false,
     homes: null,
+    unsavedToFile: false,
     mode: "furnish",
     tool: "select",
     hideFurniture: false,
@@ -376,7 +392,8 @@ export const useOdaja = create<OdajaState>((set, get) => {
     pickingWalkStart: false,
 
     async load() {
-      const { current } = await platform.listProjects();
+      const { current, homes } = await platform.listProjects();
+      set({ unsavedToFile: homes?.unsavedToFile ?? false });
       if (current) await loadProject();
       else await get().refreshProjects();
     },
@@ -388,16 +405,30 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
     async openProject(dir) {
       await platform.openProject(dir);
+      const { homes } = await platform.listProjects();
+      set({ unsavedToFile: homes?.unsavedToFile ?? false });
       await loadProject();
     },
 
     async openSample(fresh) {
       await platform.openSample(fresh);
+      set({ unsavedToFile: false });
       await loadProject();
+    },
+
+    async openHomeFile(data) {
+      await platform.importHome(data);
+      set({ unsavedToFile: false });
+      await loadProject();
+    },
+
+    setUnsavedToFile(unsaved) {
+      set({ unsavedToFile: unsaved });
     },
 
     async createProject(name, room) {
       await platform.createProject(name, room);
+      set({ unsavedToFile: false });
       await loadProject();
       // A new project starts in the plan view, where its size is visible.
       get().setViewMode("plan");

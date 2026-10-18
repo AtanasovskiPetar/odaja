@@ -66,6 +66,14 @@ export interface Platform {
   placeLibraryModel(id: string): Promise<string>;
   // Add a library material (and its texture) to the open project; returns its name.
   addLibraryMaterial(id: string): Promise<string>;
+  // The open home as a .odaja file (zip), and whether it has chats to include.
+  exportHome(includeChats: boolean): Promise<Blob>;
+  homeHasChats(): Promise<boolean>;
+  // Open a .odaja file: on the website it replaces the home in the browser
+  // (kept as the previous one); in the companion it becomes a new folder.
+  importHome(data: Uint8Array): Promise<void>;
+  // The open home was just saved to a file (the website tracks unsaved changes).
+  markSavedToFile(): Promise<void>;
   onFileChanged(callback: (path: string) => void): void;
   // Tell the server what the app is showing (tools default to the open scene).
   reportUiState(state: { scenePath?: string | null; editingObject?: string | null }): void;
@@ -157,6 +165,20 @@ const serverPlatform: Platform = {
   },
   async addLibraryMaterial(id) {
     return (await post<{ name: string }>("/api/library/add-material", { id })).name;
+  },
+  async exportHome(includeChats) {
+    const res = await fetch(`/api/project/export?chats=${includeChats ? 1 : 0}`, { cache: "no-store" });
+    if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `couldn't save (${res.status})`);
+    return res.blob();
+  },
+  async homeHasChats() {
+    return (await request<{ chats: boolean }>("/api/project/has-chats")).chats;
+  },
+  async importHome(data) {
+    await request("/api/projects/import", { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: new Blob([data as BlobPart]) });
+  },
+  async markSavedToFile() {
+    // Folders are saved as you work; nothing to track.
   },
   onFileChanged(callback) {
     onEvent<{ path: string }>("file-changed", (data) => callback(data.path));

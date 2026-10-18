@@ -14,6 +14,7 @@ import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { newProjectFile, newSceneFile, newShellFile, slugify, type StarterRoom } from "../src/model/defaults";
 import { formatJson } from "../src/model/format";
+import { belongsInFile, homeName, packHome, unpackHome } from "../src/model/homeFile";
 import { callTool, inputJsonSchema, TOOLS, type ToolContext } from "./tools";
 import { handleChat } from "./chat/routes";
 import { conversationPhotos, liveConversations, loadConversation } from "./chat/conversations";
@@ -257,6 +258,44 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
     await fs.writeFile(path.join(dir, "project.json"), formatJson(newProjectFile(clean)));
     await fs.writeFile(path.join(dir, "shell.json"), formatJson(newShellFile(room)));
     await fs.writeFile(path.join(dir, "scenes", "main.json"), formatJson(newSceneFile("Main")));
+    await openProject(dir);
+    return dir;
+  }
+
+  // Every file under a folder, as "/"-separated paths relative to it.
+  async function walk(dir: string, prefix = ""): Promise<string[]> {
+    const entries = await fs.readdir(path.join(dir, prefix), { withFileTypes: true }).catch(() => []);
+    const out: string[] = [];
+    for (const e of entries) {
+      const rel = prefix ? `${prefix}/${e.name}` : e.name;
+      if (e.isDirectory()) out.push(...(await walk(dir, rel)));
+      else if (e.isFile()) out.push(rel);
+    }
+    return out;
+  }
+
+  // The open project as a .odaja file.
+  async function exportProject(includeChats: boolean) {
+    const dir = requireProject();
+    const files: Record<string, Uint8Array> = {};
+    for (const rel of await walk(dir)) {
+      if (belongsInFile(rel, includeChats)) files[rel] = new Uint8Array(await fs.readFile(path.join(dir, rel)));
+    }
+    return packHome(files);
+  }
+
+  // A .odaja file becomes a new folder in the projects folder (named after
+  // the home, numbered if taken), and opens.
+  async function importProject(data: Uint8Array) {
+    const files = unpackHome(data);
+    const base = homeName(files).replace(/[/\\:*?"<>|\u0000-\u001f]/g, "-").trim() || "Home";
+    let dir = path.join(PROJECTS_ROOT, base);
+    for (let n = 2; await fs.stat(dir).catch(() => null); n++) dir = path.join(PROJECTS_ROOT, `${base} ${n}`);
+    for (const [rel, bytes] of Object.entries(files)) {
+      const abs = path.join(dir, ...rel.split("/"));
+      await fs.mkdir(path.dirname(abs), { recursive: true });
+      await fs.writeFile(abs, bytes);
+    }
     await openProject(dir);
     return dir;
   }
@@ -515,6 +554,19 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
             await openProject(await sampleCopy(Boolean(fresh)));
             return send(200, { dir: projectDir });
           }
+          case "GET /project/export": {
+            const zip = await exportProject(url.searchParams.get("chats") === "1");
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/octet-stream");
+            res.setHeader("Cache-Control", "no-store");
+            return void res.end(zip);
+          }
+          case "GET /project/has-chats": {
+            const chats = (await walk(requireProject(), ".odaja/chats")).some((p) => p.endsWith(".json"));
+            return send(200, { chats });
+          }
+          case "POST /projects/import":
+            return send(200, { dir: await importProject(new Uint8Array(await readBody(req))) });
           case "POST /projects/create": {
             const { name, room } = await json();
             return send(200, { dir: await createProject(String(name ?? ""), room) });

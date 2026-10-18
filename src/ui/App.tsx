@@ -22,6 +22,9 @@ import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
 import { UnderlayPanel, UnderlayToolLayer } from "./UnderlayPanel";
 import { ThemeCycleButton } from "./ThemeSwitch";
+import { HomeMenu, openHomeFromPicker } from "./HomeMenu";
+import { ExportImageDialog, OpenHomeDialog, SaveFileDialog } from "./HomeFileDialogs";
+import { isHomeFile, requestOpenHome, saveHome } from "./homeFileActions";
 import { WalkOverlay, WalkStartPicker } from "./WalkOverlay";
 import {
   IconBack,
@@ -50,6 +53,20 @@ import {
 function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // File keys work everywhere, also while typing in a field.
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && useOdaja.getState().status === "project") {
+        const k = e.key.toLowerCase();
+        if (k === "s") {
+          e.preventDefault();
+          saveHome({ saveAs: e.shiftKey });
+          return;
+        }
+        if (k === "o") {
+          e.preventDefault();
+          openHomeFromPicker();
+          return;
+        }
+      }
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
       const s = useOdaja.getState();
       if (s.status !== "project") return;
@@ -154,8 +171,6 @@ function useShortcuts() {
 }
 
 function Sidebar() {
-  const project = useOdaja((s) => s.project);
-  const projectDir = useOdaja((s) => s.projectDir);
   const closeProject = useOdaja((s) => s.closeProject);
   const scene = useOdaja((s) => s.scene);
   const selectedId = useOdaja((s) => s.selectedId);
@@ -172,9 +187,7 @@ function Sidebar() {
           <LogoMark />
           <span className="logo">Odaja</span>
         </button>
-        <span className="project-name" title={projectDir ?? undefined}>
-          {project?.name ?? "…"}
-        </span>
+        <HomeMenu />
         <ThemeCycleButton />
       </header>
 
@@ -438,6 +451,9 @@ function Dialogs() {
   if (dialog?.kind === "import") return <ImportDialog files={dialog.files} />;
   if (dialog?.kind === "save") return <SaveToLibraryDialog objectId={dialog.objectId} />;
   if (dialog?.kind === "materials") return <MaterialsDialog focus={dialog.focus} />;
+  if (dialog?.kind === "save-file") return <SaveFileDialog saveAs={dialog.saveAs} />;
+  if (dialog?.kind === "open-home") return <OpenHomeDialog file={dialog.file} handle={dialog.handle} />;
+  if (dialog?.kind === "export-image") return <ExportImageDialog />;
   return null;
 }
 
@@ -461,7 +477,10 @@ function useFileDrop() {
         e.preventDefault();
         setOver(false);
         const files = [...e.dataTransfer.files];
-        if (files.length) useOdaja.getState().openDialog({ kind: "import", files });
+        // A dropped home file opens the home; anything else is a model to import.
+        const home = files.find(isHomeFile);
+        if (home) requestOpenHome({ file: home });
+        else if (files.length) useOdaja.getState().openDialog({ kind: "import", files });
       },
     },
   };

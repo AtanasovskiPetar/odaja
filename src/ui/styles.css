@@ -214,7 +214,10 @@ svg {
   flex-direction: column;
   background: var(--sheet);
   border-right: 1px solid var(--line);
-  overflow: hidden;
+  /* Not clipped: the home menu opens wider than the sidebar. Sections scroll themselves. */
+  overflow: visible;
+  position: relative;
+  z-index: 10;
 }
 
 .sidebar section {
@@ -300,16 +303,119 @@ svg {
   color: var(--accent);
 }
 
-.project-name {
+/* The home's name opens the file menu. */
+.home-menu {
+  position: relative;
+  flex: 1;
   min-width: 0;
-  padding-left: 10px;
+  padding-left: 8px;
   border-left: 1px solid var(--line-strong);
+}
+
+.project-name {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px;
+  border: none;
+  border-radius: var(--r-s);
+  background: none;
   color: var(--ink-2);
   font-size: 12.5px;
   line-height: 1.25;
+  text-align: left;
+}
+
+.project-name:hover,
+.project-name.open {
+  background: var(--well);
+  color: var(--ink);
+}
+
+.project-name:active {
+  transform: none;
+}
+
+.project-name .label {
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.project-name .chevron {
+  color: var(--faint);
+  transition: transform var(--settle) var(--ease);
+}
+
+.project-name.open .chevron {
+  transform: rotate(180deg);
+}
+
+/* Changes not yet saved to a file: a small red-pencil mark. */
+.unsaved-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 230px;
+  padding: 5px;
+  border-radius: var(--r);
+  background: var(--card);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  transform-origin: top left;
+  animation: rise var(--settle) var(--ease) both;
+}
+
+.menu button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  padding: 6px 9px;
+  border: none;
+  border-radius: var(--r-s);
+  background: none;
+  color: var(--ink);
+  font-size: 12.5px;
+  text-align: left;
+}
+
+.menu button:hover {
+  background: var(--well);
+}
+
+.menu kbd {
+  font-family: var(--sans);
+  font-size: 11px;
+  color: var(--faint);
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+.menu-note {
+  margin: 4px 9px 3px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 /* ——— Appearance switch ——— */
@@ -1947,6 +2053,24 @@ button.link.danger {
   margin: 0;
   padding: 6px 14px;
   font-size: 12.5px;
+}
+
+.open-file {
+  display: block;
+  width: 100%;
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+}
+
+.open-file:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ink) 40%, transparent);
 }
 
 .previous-home {
