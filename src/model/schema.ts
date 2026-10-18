@@ -24,12 +24,20 @@ export const TileSchema = z.object({
   image: z.string().regex(/^assets\/textures\/[^/]+\.(jpg|jpeg|png|webp)$/, "image is a file under assets/textures/").optional(),
 });
 
+// The furniture-library item something was placed from. Opening a saved home
+// uses it to offer adding items you don't have yet to your library.
+export const LibraryRefSchema = z.object({
+  id: z.string(),
+  category: z.string().optional(),
+});
+
 export const MaterialSchema = z.object({
   color,
   roughness: z.number().min(0).max(1).default(0.8),
   metalness: z.number().min(0).max(1).default(0),
   opacity: z.number().min(0).max(1).default(1),
   tile: TileSchema.optional(),
+  libraryItem: LibraryRefSchema.optional(),
 });
 
 // A floor plan image shown under the Plan view, to check and trace walls.
@@ -173,6 +181,7 @@ export const ObjectSchema = z
     params: z.record(z.string(), z.number()).optional(),
     parts: z.array(PartSchema).min(1).optional(),
     model: ModelSchema.optional(),
+    libraryItem: LibraryRefSchema.optional(),
   })
   .superRefine((o, ctx) => {
     if (o.template !== undefined && !TEMPLATES_BY_ID.has(o.template)) {

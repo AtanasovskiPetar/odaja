@@ -5,7 +5,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { slugify } from "../model/defaults";
 import { roomAt } from "../model/geometry";
 import { addObject, uniqueId, type ObjectDoc } from "../model/operations";
-import type { LibraryItemDoc } from "../model/schema";
+import { ObjectSchema, type LibraryItemDoc, type MaterialDoc } from "../model/schema";
 import { platform, type LibraryEntry } from "../platform";
 import { useOdaja } from "../store";
 import { configureGLTF, normalize, simplify, toGLB, type ImportSettings, type LoadedModel } from "../three/modelImport";
@@ -37,17 +37,31 @@ export async function placeLibraryEntry(entry: LibraryEntry) {
     params: o.params,
     parts: o.parts,
     model,
+    libraryItem: { id: entry.id, category: item.category },
   });
 }
 
-async function writeItem(name: string, category: string, notes: string | undefined, object: LibraryItemDoc["object"], files: { model?: ArrayBuffer | Blob; preview?: Blob }) {
-  const id = await platform.newLibraryItem(name);
-  if (files.model) await platform.writeLibraryFile(`${id}/model.glb`, files.model);
-  if (files.preview) await platform.writeLibraryFile(`${id}/preview.png`, files.preview);
-  const item: LibraryItemDoc = { version: 1, name, category, ...(notes ? { notes } : {}), object };
-  await platform.writeLibraryFile(`${id}/item.json`, JSON.stringify(item, null, 2) + "\n");
+// A library item ready to write: item.json plus its files.
+export interface BuiltItem {
+  item: LibraryItemDoc;
+  files: { model?: ArrayBuffer | Blob; preview?: Blob; texture?: { ext: string; data: Blob } };
+}
+
+// Write an item into the library. `idHint` keeps an item's original id when
+// it comes back from a saved home, so the home's objects still point at it.
+export async function writeItem(built: BuiltItem, idHint?: string) {
+  const id = await platform.newLibraryItem(idHint ?? built.item.name);
+  const { model, preview, texture } = built.files;
+  if (model) await platform.writeLibraryFile(`${id}/model.glb`, model);
+  if (preview) await platform.writeLibraryFile(`${id}/preview.png`, preview);
+  if (texture) await platform.writeLibraryFile(`${id}/texture.${texture.ext}`, texture.data);
+  await platform.writeLibraryFile(`${id}/item.json`, JSON.stringify(built.item, null, 2) + "\n");
   useOdaja.getState().libraryChanged();
   return id;
+}
+
+function item(name: string, category: string, notes: string | undefined, body: Pick<LibraryItemDoc, "object" | "material">): LibraryItemDoc {
+  return { version: 1, name, category, ...(notes ? { notes } : {}), ...body };
 }
 
 async function loadProjectModel(src: string): Promise<THREE.Object3D> {
@@ -56,12 +70,10 @@ async function loadProjectModel(src: string): Promise<THREE.Object3D> {
   return (await loader.loadAsync(platform.fileUrl(src))).scene;
 }
 
-// Save an object from the open scene as a library item (with a preview).
-export async function saveObjectToLibrary(objectId: string, name: string, category: string, notes?: string) {
-  const { sceneDoc, scene, project } = useOdaja.getState();
-  const doc = sceneDoc?.objects?.find((o) => o.id === objectId);
-  const parsed = scene?.objects.find((o) => o.id === objectId);
-  if (!doc || !parsed) throw new Error("object not found");
+// An object (from any scene of the open home) as a library item, with a preview.
+export async function buildObjectItem(doc: ObjectDoc, name: string, category: string, notes?: string): Promise<BuiltItem> {
+  const { project } = useOdaja.getState();
+  const parsed = ObjectSchema.parse(doc);
   const object: LibraryItemDoc["object"] = {
     ...(doc.elevation ? { elevation: doc.elevation } : {}),
     ...(doc.template ? { template: doc.template, params: doc.params } : {}),
@@ -77,7 +89,27 @@ export async function saveObjectToLibrary(objectId: string, name: string, catego
     view = partsObject(parsed.parts, project?.materials);
   }
   const preview = await renderThumbnail(view).catch(() => undefined);
-  return writeItem(name, category, notes, object, { model, preview });
+  return { item: item(name, category, notes, { object }), files: { model, preview } };
+}
+
+// A material of the open home as a library item (its texture comes along).
+export async function buildMaterialItem(material: MaterialDoc, name: string, category: string): Promise<BuiltItem> {
+  const { libraryItem: _, ...rest } = material;
+  const body = structuredClone(rest);
+  let texture: BuiltItem["files"]["texture"];
+  if (body.tile?.image) {
+    const ext = (body.tile.image.split(".").pop() ?? "jpg").toLowerCase();
+    texture = { ext, data: await fetch(platform.fileUrl(body.tile.image)).then((r) => r.blob()) };
+    body.tile.image = `texture.${ext}`;
+  }
+  return { item: item(name, category, undefined, { material: body as LibraryItemDoc["material"] }), files: { texture } };
+}
+
+// Save an object from the open scene as a library item (with a preview).
+export async function saveObjectToLibrary(objectId: string, name: string, category: string, notes?: string) {
+  const doc = useOdaja.getState().sceneDoc?.objects?.find((o) => o.id === objectId);
+  if (!doc) throw new Error("object not found");
+  return writeItem(await buildObjectItem(doc, name, category, notes));
 }
 
 export interface ImportOptions {
@@ -99,9 +131,9 @@ export async function finishImport(loaded: LoadedModel, options: ImportOptions) 
 
   if (options.saveToLibrary) {
     const preview = await renderThumbnail(group).catch(() => undefined);
-    const id = await writeItem(options.name, options.category, undefined, { model: { src: "model.glb", size } }, { model: glb, preview });
+    const id = await writeItem({ item: item(options.name, options.category, undefined, { object: { model: { src: "model.glb", size } } }), files: { model: glb, preview } });
     if (options.placeInScene) {
-      place({ name: options.name, model: { src: await platform.placeLibraryModel(id), size } });
+      place({ name: options.name, model: { src: await platform.placeLibraryModel(id), size }, libraryItem: { id, category: options.category } });
     }
     return;
   }

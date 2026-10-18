@@ -449,7 +449,7 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
     const dir = resolveInLibrary(id);
     const item = JSON.parse(await fs.readFile(path.join(dir, "item.json"), "utf8"));
     if (!item.material) throw new HttpError(400, `"${id}" is not a material`);
-    const material = structuredClone(item.material);
+    const material = { ...structuredClone(item.material), libraryItem: { id, category: item.category } };
     if (material.tile?.image) {
       const data = await fs.readFile(path.join(dir, material.tile.image));
       const rel = `assets/textures/${id}${path.extname(material.tile.image)}`;

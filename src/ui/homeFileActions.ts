@@ -39,7 +39,7 @@ async function canWrite(handle: WritableHandle) {
   return (await handle.requestPermission?.(mode)) === "granted";
 }
 
-function download(blob: Blob, name: string) {
+export function download(blob: Blob, name: string) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = name;
@@ -130,6 +130,11 @@ export async function openHome({ file, handle }: PickedHome) {
   const key = useOdaja.getState().projectDir;
   if (key && handle) await kvSet(handleKey(key), handle);
   store.setNotice(`Opened ${file.name}`);
+  // Furniture and materials from someone's library come with the home, but
+  // join your library only if you say so.
+  const { findMissingLibraryItems } = await import("./libraryFiles");
+  const missing = await findMissingLibraryItems().catch(() => []);
+  if (missing.length) useOdaja.getState().openDialog({ kind: "add-to-library", items: missing });
 }
 
 // From inside the app: on the website this replaces the home, so it asks first.

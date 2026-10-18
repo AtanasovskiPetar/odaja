@@ -4,6 +4,7 @@ import { setObjectProps, setTemplateParams } from "../model/operations";
 import type { SceneObject } from "../model/schema";
 import { round } from "../model/units";
 import { useOdaja } from "../store";
+import { saveObjectAsItemFile } from "./libraryFiles";
 import { deleteSelected, duplicateSelected } from "./actions";
 
 // Text input that commits on Enter or blur and reverts on Escape, so typing
@@ -162,6 +163,15 @@ export function Inspector() {
         </button>
         <button onClick={() => useOdaja.getState().openDialog({ kind: "save", objectId: object.id })} title="Reuse this object in any scene or project">
           Save to library
+        </button>
+        <button
+          onClick={() => {
+            const doc = useOdaja.getState().sceneDoc?.objects?.find((o) => o.id === object.id);
+            if (doc) saveObjectAsItemFile(doc, object.libraryItem?.category ?? "Other").catch((err) => useOdaja.getState().setNotice(`Couldn't save: ${(err as Error).message}`));
+          }}
+          title="Save this object as a file (.odaja-item), to send to someone or keep"
+        >
+          Save as file
         </button>
         {!object.model && (
           <button onClick={() => useOdaja.getState().editShape(object.id)} title="Change the shape part by part (or double-click the object)">

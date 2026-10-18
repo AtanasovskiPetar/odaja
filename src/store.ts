@@ -17,6 +17,7 @@ import {
   type Shell,
   type ShellDoc,
 } from "./model/schema";
+import type { MissingItem } from "./ui/libraryFiles";
 import { platform, type ProjectList, type ProjectSummary, type SceneSummary } from "./platform";
 
 export type ViewMode = "3d" | "plan" | "walk";
@@ -64,6 +65,8 @@ export type Dialog =
   // Opening a .odaja file over the home in the browser (asks first).
   | { kind: "open-home"; file: File; handle?: FileSystemFileHandle }
   | { kind: "export-image" }
+  // After opening a home: its library items you don't have yet.
+  | { kind: "add-to-library"; items: MissingItem[] }
   | null;
 
 // One undoable step: the before/after content of every file it touched.

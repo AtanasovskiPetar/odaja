@@ -5,6 +5,7 @@ import { homeFileName } from "../model/homeFile";
 import { useOdaja, type ViewMode } from "../store";
 import { exportViewImage } from "../three/capture";
 import { openHome, rememberedChatsChoice, saveHome } from "./homeFileActions";
+import { addMissingToLibrary, type MissingItem } from "./libraryFiles";
 
 const close = () => useOdaja.getState().openDialog(null);
 
@@ -78,7 +79,9 @@ export function OpenHomeDialog({ file, handle }: { file: File; handle?: FileSyst
         return;
       }
       await openHome({ file, handle });
-      close();
+      // Opening may have shown another dialog (adding its items to your
+      // library); close only this one.
+      if (useOdaja.getState().dialog?.kind === "open-home") close();
     } catch (err) {
       setError((err as Error).message);
       setBusy(false);
@@ -174,6 +177,51 @@ export function ExportImageDialog() {
           </button>
         </div>
       </form>
+    </Backdrop>
+  );
+}
+
+// After opening a home: the library items it uses that you don't have.
+export function AddToLibraryDialog({ items }: { items: MissingItem[] }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const add = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      await addMissingToLibrary(items);
+      useOdaja.getState().setNotice(items.length === 1 ? `Added “${items[0].name}” to your library.` : `Added ${items.length} items to your library.`);
+      close();
+    } catch (err) {
+      setError((err as Error).message);
+      setBusy(false);
+    }
+  };
+  return (
+    <Backdrop busy={busy}>
+      <div className="dialog" role="dialog" aria-label="Add to your library?">
+        <h2>Add to your library?</h2>
+        <p className="muted">
+          This home uses {items.length === 1 ? "an item" : `${items.length} items`} that {items.length === 1 ? "isn't" : "aren't"} in your library. {items.length === 1 ? "It's" : "They're"} in this home either way; add {items.length === 1 ? "it" : "them"} to use in other homes too.
+        </p>
+        <ul className="missing-items">
+          {items.map((i) => (
+            <li key={i.id}>
+              <span>{i.name}</span>
+              <span className="muted">{i.kind === "material" ? "material" : i.category}</span>
+            </li>
+          ))}
+        </ul>
+        {error && <div className="inline-error">{error}</div>}
+        <div className="dialog-buttons">
+          <button type="button" onClick={close} disabled={busy}>
+            Not now
+          </button>
+          <button type="button" className="primary" onClick={add} disabled={busy} autoFocus>
+            {busy ? "Adding…" : items.length === 1 ? "Add to my library" : "Add all to my library"}
+          </button>
+        </div>
+      </div>
     </Backdrop>
   );
 }

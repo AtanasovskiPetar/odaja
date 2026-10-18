@@ -198,6 +198,7 @@ automatically. A floor finish replaces the room's own `floor` in this scene.
 | `parts` | The shapes that make up the object (at least one), unless it uses a `template` or `model`. |
 | `template`, `params` | Build the object from a built-in template instead of `parts` (see below). |
 | `model` | Use a 3D model instead of `parts`: `{ "src": "assets/models/chair-3a2f.glb", "size": [w, d, h] }`. The model is stretched to exactly `size` (cm), centred on the object's origin and standing on its elevation, with its front towards -y like every object. |
+| `libraryItem` | Set by the app when the object was placed from the furniture library: `{ "id": "oak-table", "category": "Living" }`. When someone opens a saved home, Odaja offers to add the items it uses to their library. Keep it when editing; leave it out for objects you create. |
 
 ### Template objects
 
@@ -330,4 +331,15 @@ and Other. To add something the user asked to keep (for example a piece you
 built from a photo), write a new folder with an `item.json`; it shows up in the
 app under **+ Add → My library**. To use a library item in a scene, copy its
 `object` fields into a new scene object; for model items also copy `model.glb`
-into the project's `assets/models/` and point `src` at the copy.
+into the project's `assets/models/` and point `src` at the copy, and set the
+object's `libraryItem` to `{ "id": "<folder name>", "category": "<category>" }`.
+Materials added from the library carry the same `libraryItem` in `project.json`.
+
+Library items travel as files too, both zips with an `odaja.json` that says
+what they are:
+- **`.odaja-item`**: one item (its `item.json`, `model.glb`, `preview.png`,
+  `texture.*` at the top).
+- **`.odaja-library`**: many items, each in a folder named by its id.
+
+Opening either in Odaja adds the items to the library, skipping ones already
+there (same id and same `item.json`).

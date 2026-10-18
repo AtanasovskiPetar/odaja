@@ -5,6 +5,8 @@ import { useOdaja } from "../store";
 import { ACCEPT } from "../three/modelImport";
 import { addTemplateObject } from "./actions";
 import { placeLibraryEntry } from "./libraryActions";
+import { openLibraryFile, saveItemFile, saveLibraryFile } from "./libraryFiles";
+import { IconArrowUp } from "./icons";
 
 const CATEGORIES: Template["category"][] = ["Kitchen", "Living", "Bedroom", "Bathroom", "Basic"];
 
@@ -16,6 +18,8 @@ function MyLibrary({ onPlaced }: { onPlaced: () => void }) {
   const [items, setItems] = useState<LibraryEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+  const libraryInput = useRef<HTMLInputElement>(null);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     platform
@@ -29,6 +33,25 @@ function MyLibrary({ onPlaced }: { onPlaced: () => void }) {
     placeLibraryEntry(entry)
       .then(onPlaced)
       .catch((err) => setError((err as Error).message));
+  };
+
+  // Item and library files: what's in them joins the library.
+  const openFiles = async (files: File[]) => {
+    setError(null);
+    setMessage(null);
+    try {
+      const added: string[] = [];
+      for (const f of files) added.push(...(await openLibraryFile(f)));
+      setMessage(added.length === 0 ? "You already have everything in that file." : `Added ${added.length === 1 ? `“${added[0]}”` : `${added.length} items`}.`);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const run = (action: () => Promise<void>) => {
+    setError(null);
+    setMessage(null);
+    action().catch((err) => setError((err as Error).message));
   };
 
   const remove = async (entry: LibraryEntry) => {
@@ -57,6 +80,29 @@ function MyLibrary({ onPlaced }: { onPlaced: () => void }) {
           }}
         />
       </div>
+      <div className="library-files">
+        <button className="link" onClick={() => libraryInput.current?.click()} title="Add items from .odaja-item or .odaja-library files">
+          Open item files…
+        </button>
+        {items && items.length > 0 && (
+          <button className="link" onClick={() => run(saveLibraryFile)} title="All your items in one .odaja-library file: a backup, or for another computer">
+            Save library to a file
+          </button>
+        )}
+        <input
+          ref={libraryInput}
+          type="file"
+          multiple
+          accept=".odaja-item,.odaja-library"
+          hidden
+          onChange={(e) => {
+            const files = [...(e.target.files ?? [])];
+            e.target.value = "";
+            if (files.length) openFiles(files);
+          }}
+        />
+      </div>
+      {message && <p className="hint">{message}</p>}
       {error && <div className="inline-error">{error}</div>}
       {items === null ? null : items.length === 0 ? (
         <p className="muted empty-hint">
@@ -82,6 +128,9 @@ function MyLibrary({ onPlaced }: { onPlaced: () => void }) {
               </button>
               <button className="card-remove" onClick={() => remove(entry)} title="Remove from library">
                 ×
+              </button>
+              <button className="card-export" onClick={() => run(() => saveItemFile(entry))} title="Save as a file (.odaja-item), to send or keep">
+                <IconArrowUp size={12} />
               </button>
             </div>
           ))}

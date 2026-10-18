@@ -303,7 +303,7 @@ export function createBrowserPlatform(): Platform {
       if (text === null) throw new Error(`"${id}" isn't in the library`);
       const item = JSON.parse(text);
       if (!item.material) throw new Error(`"${id}" is not a material`);
-      const material = structuredClone(item.material);
+      const material = { ...structuredClone(item.material), libraryItem: { id, category: item.category } };
       if (material.tile?.image) {
         const image = await opfs.readFile(`${LIBRARY}/${id}/${material.tile.image}`);
         if (image) {

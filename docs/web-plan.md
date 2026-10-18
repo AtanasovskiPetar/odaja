@@ -120,7 +120,8 @@ Each phase leaves the app working, and ends with typecheck, build and a check in
 - **Companion:** open = unpack into a folder, save = zip the folder.
 - Done when: a home saved on the website opens in the companion and back, unchanged.
 
-**3. Library in the browser**
+**3. Library in the browser** — done
+- Saving an item as a file works from the library panel (per item, or the whole library) and from the inspector ("Save as file", without adding it to your library). Items come back under their original id, so a home never offers the same item twice.
 - **Storage:** OPFS `library/<id>/` (`item.json`, `model.glb`, `preview.png`, textures). The existing save-to-library, place and add-material flows run on it.
 - **Provenance:** a schema field on objects and materials, `libraryItem`, the id it came from.
 - **The "Add N items to my library" offer** when a home is opened.

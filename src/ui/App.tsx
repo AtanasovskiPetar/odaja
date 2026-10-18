@@ -23,8 +23,9 @@ import { StructureLayer } from "./StructureLayer";
 import { UnderlayPanel, UnderlayToolLayer } from "./UnderlayPanel";
 import { ThemeCycleButton } from "./ThemeSwitch";
 import { HomeMenu, openHomeFromPicker } from "./HomeMenu";
-import { ExportImageDialog, OpenHomeDialog, SaveFileDialog } from "./HomeFileDialogs";
+import { AddToLibraryDialog, ExportImageDialog, OpenHomeDialog, SaveFileDialog } from "./HomeFileDialogs";
 import { isHomeFile, requestOpenHome, saveHome } from "./homeFileActions";
+import { isLibraryFile, openLibraryFileWithNotice } from "./libraryFiles";
 import { WalkOverlay, WalkStartPicker } from "./WalkOverlay";
 import {
   IconBack,
@@ -454,6 +455,7 @@ function Dialogs() {
   if (dialog?.kind === "save-file") return <SaveFileDialog saveAs={dialog.saveAs} />;
   if (dialog?.kind === "open-home") return <OpenHomeDialog file={dialog.file} handle={dialog.handle} />;
   if (dialog?.kind === "export-image") return <ExportImageDialog />;
+  if (dialog?.kind === "add-to-library") return <AddToLibraryDialog items={dialog.items} />;
   return null;
 }
 
@@ -479,7 +481,9 @@ function useFileDrop() {
         const files = [...e.dataTransfer.files];
         // A dropped home file opens the home; anything else is a model to import.
         const home = files.find(isHomeFile);
+        const libraryFiles = files.filter(isLibraryFile);
         if (home) requestOpenHome({ file: home });
+        else if (libraryFiles.length) libraryFiles.forEach((f) => openLibraryFileWithNotice(f));
         else if (files.length) useOdaja.getState().openDialog({ kind: "import", files });
       },
     },

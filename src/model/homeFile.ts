@@ -32,7 +32,7 @@ export function packHome(files: Record<string, Uint8Array>): Uint8Array {
   return zipSync(zip);
 }
 
-function safePath(path: string): boolean {
+export function safePath(path: string): boolean {
   return !!path && !path.startsWith("/") && !/^[a-zA-Z]:/.test(path) && !path.split("/").some((p) => p === ".." || p === "");
 }
 
