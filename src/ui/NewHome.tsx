@@ -94,7 +94,7 @@ function BlankGlyph() {
   );
 }
 
-const PLAN_DRAFT =
+export const PLAN_DRAFT =
   "Here's the floor plan of my flat. Build it in Odaja: walls, doors, windows and rooms. Take the scale from a dimension printed on the plan; if there isn't one, ask me for a measurement.";
 
 // Shortens /Users/name/… to ~/… for display.

@@ -1999,6 +1999,70 @@ button.link.danger {
   border-top: none;
 }
 
+/* A home without walls: how to trace the plan or start drawing. */
+.trace-guide {
+  margin: 2px 0 0;
+  padding: 12px 12px 10px;
+  border-radius: var(--r);
+  background: var(--well);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+
+.trace-guide p {
+  margin: 0 0 8px;
+}
+
+.trace-guide .trace-title {
+  font-family: var(--serif);
+  font-size: 18px;
+  color: var(--ink);
+}
+
+.trace-guide ol {
+  margin: 0 0 8px;
+  padding-left: 18px;
+}
+
+.trace-guide li {
+  margin-bottom: 10px;
+}
+
+.trace-guide li span {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.trace-guide strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.trace-guide button:not(.link) {
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-s);
+  background: var(--card);
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.trace-guide .actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.trace-guide .trace-or {
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* New home on the website: what happens to the open one. */
 .replaces-note {
   margin: 0 0 14px;

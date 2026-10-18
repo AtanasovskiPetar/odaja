@@ -18,6 +18,7 @@ import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
 import { Welcome, OpenFolderDialog } from "./Welcome";
 import { NewHomeDialog } from "./NewHome";
+import { TraceGuide } from "./TraceGuide";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
 import { UnderlayPanel, UnderlayToolLayer } from "./UnderlayPanel";
@@ -177,6 +178,7 @@ function Sidebar() {
   const structure = useOdaja((s) => s.mode === "structure");
   const editingShape = useOdaja((s) => s.editingObjectId !== null);
   const [adding, setAdding] = useState(false);
+  const noWalls = useOdaja((s) => s.shell !== null && s.shell.walls.length === 0);
 
   return (
     <aside className="sidebar">
@@ -216,6 +218,8 @@ function Sidebar() {
         </div>
         {adding ? (
           <AddPanel onClose={() => setAdding(false)} />
+        ) : noWalls ? (
+          <TraceGuide />
         ) : scene?.objects.length === 0 ? (
           <p className="muted empty-hint">An empty room. Add furniture, or ask the chat to furnish it.</p>
         ) : (
