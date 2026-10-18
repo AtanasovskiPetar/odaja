@@ -1,6 +1,6 @@
 // Odaja's MCP server: forwards Odaja's tools to an MCP client over stdio.
 // The work happens in the running app, so it must be running. Started by
-// mcp/server.ts (development) or as `odaja-server mcp` (the packaged app).
+// mcp/server.ts (development) or as `odaja mcp` (the packaged program).
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";

@@ -22,15 +22,15 @@ ODAJA_HOME=/path bun run dev                   # where new projects are created 
 open http://localhost:5173/?host=browser       # dev, but as the website: the home in browser storage, tools in the page
 bun run companion                              # build, start the companion and open it (http://localhost:5180)
 bun run build && bun run start                 # the same without opening a browser (ODAJA_PORT for another port)
-bun run package:server                         # build/odaja-server (one binary, no Bun needed) + build/resources/
-bun run release [macos-arm64 …]                # release archives for every platform, in release/
+bun run package:server                         # build/odaja: the companion as one file (no Bun needed), app inside
+bun run release [macos-arm64 …]                # the same for every platform, in release/
 bun run typecheck
 bun run format-project <dir>                   # reformat a project's JSON the way the app saves it
 ```
 
 In development the app runs at http://localhost:5173; `bun run start` serves the
 built app and the same backend from `server/main.ts`: the **companion** that
-power users download as `odaja-server` (real project folders, MCP). The plan
+power users install as the `odaja` program (real project folders, MCP, Claude Code in the chat). The plan
 for the website version is in [docs/web-plan.md](docs/web-plan.md). The furniture library is
 `~/Documents/Odaja/Library` (`$ODAJA_HOME/Library`), served under `/api/library`.
 `public/draco/` holds the Draco decoder for compressed glTF files. Recently opened projects are remembered
@@ -53,10 +53,10 @@ the copy too. To change the sample itself, open it deliberately with
   Screenshots are taken by the open app (the server asks it over the event
   stream), so the app must be open in a browser.
 - **MCP server** (`mcp/run.ts`, started by `mcp/server.ts` or as
-  `odaja-server mcp`): forwards Odaja's tools to any MCP client. The app must
+  `odaja mcp`): forwards Odaja's tools to any MCP client. The app must
   be running. To use Odaja from Claude Code:
   `claude mcp add odaja -- bun /path/to/odaja/mcp/server.ts` (from the repo)
-  or `claude mcp add odaja -- /path/to/odaja-server mcp` (the companion);
+  or `claude mcp add odaja -- ~/.local/bin/odaja mcp` (the companion);
   Claude Desktop takes the same command in `claude_desktop_config.json`. It finds the
   running app through `~/.odaja/server.json` (written by the standalone
   server), else http://localhost:5173; `ODAJA_URL` overrides both.
@@ -155,16 +155,17 @@ there, or it's refused. The policy isn't applied in development.
 | `src/ui/homeFileActions.ts`, `src/ui/HomeMenu.tsx`, `src/ui/HomeFileDialogs.tsx` | Save (⌘S writes back to the same file where the browser allows it, else downloads), save a copy, open (button, ⌘O or drop), the "Include chat history" choice, export PNG/JPG; the file menu on the home's name with the unsaved-changes dot |
 | `scripts/webBuild.ts` | Build steps for the website: the Content Security Policy put into `index.html`, and `dist/sw.js` (the service worker from `src/browser/serviceWorker.js` with every built file listed, for offline use) |
 | `.github/workflows/pages.yml` | Builds and publishes the website to GitHub Pages on every push to `master` |
-| `scripts/release.ts`, `.github/workflows/release.yml` | Companion releases: on a `v*` tag matching `package.json`, archives of `odaja-server` for macOS (built on a Mac, for the signature Apple Silicon needs), Linux and Windows, each with `resources/`, a README and the licence, published as a GitHub Release |
+| `scripts/release.ts`, `.github/workflows/release.yml` | Companion releases: on a `v*` tag matching `package.json`, the `odaja` program for macOS (built on a Mac, for the signature Apple Silicon needs), Linux and Windows as single files (`odaja-<platform>`), published as a GitHub Release |
+| `public/install.sh`, `public/install.ps1` | One-line installers served by the website: download the program for the computer from the latest Release into `~/.local/bin` (Windows: `%LOCALAPPDATA%\Programs\Odaja`, added to PATH). Downloaded with curl, it isn't quarantined by macOS. `ODAJA_RELEASE_URL` and `ODAJA_INSTALL_DIR` for testing |
 | `src/browser/` | The website's host: `opfs.ts` (file helpers over the browser's private file system), `homes.ts` (one home at a time; replacing it deletes the old one, after asking when it has changes not in a file), `platform.ts` (the same interface over browser storage; files are shown through `blob:` URLs), `sample.ts` (the sample flat bundled into the build), `kv.ts` (a small IndexedDB store, e.g. for where each home was saved), `keeping.ts` (asking the browser to keep the site's data; the Safari and private-window notes), `serviceWorker.js` (offline copy; registered only by the website, never in development or the companion) |
 | `src/three/` | React Three Fiber rendering: shell (walls, openings, floors), objects, viewport |
 | `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `StructureLayer.tsx` is the interactive SVG for Structure mode (drawing, dragging, its own pan/zoom), `StructureInspector.tsx` edits walls/openings/rooms, `IssuesPanel.tsx` lists issues. `Welcome.tsx` is the first-visit welcome (no home yet), `NewHome.tsx` the new-home form it shares with the "New home…" dialog, `HomeMenu.tsx` the home menu (new, open, save, export; in the companion also the other homes and any folder), `ScenesSection.tsx` the scene list. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
 | `server/api.ts` | The backend, independent of Vite: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; watches the project and pushes events (file changes, screenshot and open-scene requests) on `/api/events` (Server-Sent Events); serves the tools, the library and the home's chat files. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
 | `server/project-server.ts` | Vite plugin mounting `server/api.ts` at `/api` in development |
-| `server/main.ts` | Entry point of the standalone server and of the `odaja-server` binary: serves (`server/serve.ts`), or runs the MCP server with `mcp`. Packaged, it finds its files in `resources/` next to it (`ODAJA_APP_ROOT`). |
+| `server/main.ts` | Entry point of the standalone server and of the `odaja` program: serves (`server/serve.ts`) and opens the browser (`server/open.ts`; `--no-open`), or just opens the Odaja already running; `odaja mcp` runs the MCP server. The program carries its files (built app, format docs, sample flat) and unpacks them once into `~/.odaja/app/<version>` (`server/appFiles.ts`); `ODAJA_APP_ROOT` points elsewhere instead. |
 | `server/serve.ts` | Standalone web server: the built app (`dist/`) plus `server/api.ts` on 127.0.0.1 only, Host check against DNS rebinding, port 5180 or a free one, announced in `~/.odaja/server.json` (`server/discovery.ts`) |
 | `server/env.ts` | Whether the server runs as the packaged binary |
-| `scripts/package-server.ts` | `bun run package:server [bun-target]`: compiles the server binary and lays out `build/resources/` |
+| `scripts/package-server.ts` | `bun run package:server [bun-target]`: compiles the companion into one file, `build/odaja`, embedding `dist/`, the format docs and the sample flat through a generated entry |
 | `src/model/defaults.ts` | Starting content for new projects (materials, the rectangular-room shell) and scenes |
 | `examples/sample-flat/` | The sample flat: offered in the welcome and "New home…" as a copy, and the fixture for development |
 

@@ -49,43 +49,63 @@ Bring your own key for **Anthropic, OpenAI, Google Gemini or OpenRouter**, or
 run a model on your computer with **Ollama** or **LM Studio**. Keys stay in your
 browser and go only to their own provider. Usage is billed to you there.
 
-**With a Claude subscription:** run the companion below. Its chat offers
-"Claude Code (your subscription)", using the Claude Code installed and signed in
-on your computer, for your own use. You can also talk to Odaja from Claude
-Desktop or Claude Code directly.
+**With a Claude subscription:** install the companion below (one command). Its
+chat offers "Claude Code (your subscription)", using the Claude Code installed
+and signed in on your computer, for your own use.
 
-## The companion: folders and MCP
+## The companion: on your computer, with your Claude subscription
 
-`odaja-server` is a small program that runs the same Odaja on your computer,
-with two extras:
+`odaja` is a small program that runs the same Odaja on your computer, with
+three extras:
 
+- **Your Claude subscription in the chat:** "Claude Code (your subscription)"
+  uses the Claude Code installed and signed in on your computer, for your own
+  use. No API key needed.
 - **Homes are real folders** (in `Documents/Odaja`), plain JSON files you or any
   tool can edit; changes show up live.
 - **An MCP server**, so Claude Desktop, Claude Code and other MCP clients can
   work on your design with Odaja's tools.
 
-Download it for macOS, Windows or Linux from
-[Releases](https://github.com/AtanasovskiPetar/odaja/releases/latest), unpack
-it, and run `odaja-server` (keep the `resources` folder next to it). Then open
-the address it prints, usually http://localhost:5180. A home saved as `.odaja`
-on the website opens in the companion, and back.
-
-> **macOS:** the program isn't notarised by Apple yet. If macOS won't open it,
-> run `xattr -dr com.apple.quarantine .` in the unpacked folder once.
-
-**Claude Code** (with Odaja running):
+**Install** (macOS or Linux), in a terminal:
 
 ```bash
-claude mcp add odaja -- /path/to/odaja-server mcp
+curl -fsSL https://atanasovskipetar.github.io/odaja/install.sh | sh
+```
+
+On Windows, in PowerShell:
+
+```powershell
+irm https://atanasovskipetar.github.io/odaja/install.ps1 | iex
+```
+
+Then start it with `odaja`: it opens Odaja in your browser (usually
+http://localhost:5180) and keeps running in that terminal until you press
+Ctrl+C. Run the install command again to update. A home saved as `.odaja` on
+the website opens in the companion, and back.
+
+To use your Claude subscription, have [Claude Code](https://claude.com/claude-code)
+installed and signed in (`claude auth login`), then pick "Claude Code (your
+subscription)" in the chat.
+
+> Prefer to download by hand? The programs are on
+> [Releases](https://github.com/AtanasovskiPetar/odaja/releases/latest). A file
+> downloaded in a browser needs `chmod +x` and, on macOS, `xattr -d
+> com.apple.quarantine odaja-macos-*` once, because it isn't notarised by Apple.
+
+**Claude Code** talking to Odaja directly (with Odaja running):
+
+```bash
+claude mcp add odaja -- ~/.local/bin/odaja mcp
 ```
 
 **Claude Desktop:** Settings → Developer → Edit Config, add Odaja to
-`claude_desktop_config.json`, and restart Claude Desktop:
+`claude_desktop_config.json` (the full path to `odaja`), and restart Claude
+Desktop:
 
 ```json
 {
   "mcpServers": {
-    "odaja": { "command": "/path/to/odaja-server", "args": ["mcp"] }
+    "odaja": { "command": "/Users/you/.local/bin/odaja", "args": ["mcp"] }
   }
 }
 ```

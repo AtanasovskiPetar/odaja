@@ -1,5 +1,5 @@
-# Builds the companion (odaja-server) for every platform when a version tag
-# is pushed, and publishes the archives as a GitHub Release:
+# Builds the companion (the `odaja` program) for every platform when a version tag
+# is pushed, and publishes the programs as a GitHub Release:
 #
 #   git tag v0.1.0 && git push origin v0.1.0     (the tag must match package.json)
 #

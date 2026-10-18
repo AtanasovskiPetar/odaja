@@ -153,6 +153,8 @@ Each phase leaves the app working, and ends with typecheck, build and a check in
 - **Hints** for Ollama and LM Studio CORS.
 - Done when: a real tool-using conversation works on the website with an API key, and the same in the companion.
 
+**After phase 7: one-line install.** The companion is now one file, `odaja`, carrying the app inside (unpacked once into `~/.odaja/app/`). The website serves install scripts (`curl -fsSL …/install.sh | sh`, `irm …/install.ps1 | iex`) that put it in `~/.local/bin`; downloaded with curl, macOS doesn't quarantine it. `odaja` starts the companion and opens the browser, or opens the one already running. Notarising (a double-click app without warnings) needs an Apple Developer account; later, if needed.
+
 **After phase 7: Claude Code back in the companion's chat.** Without API keys the chat was unusable for a subscription-only user, so the companion's chat offers "Claude Code (your subscription)" again (`server/claudeCode.ts`): the page asks the companion to run the user's own `claude`, as before phase 5. The website can't (a page can't start programs) and doesn't show it.
 
 **6. Ready for the web** — done

@@ -318,7 +318,7 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
     await fs.cp(EXAMPLE_PROJECT, dir, {
       recursive: true,
       // Chats saved while developing stay behind.
-      filter: (src) => !src.split(path.sep).includes(".odaja"),
+      filter: (src) => !path.relative(EXAMPLE_PROJECT, src).split(path.sep).includes(".odaja"),
     });
     return dir;
   }
