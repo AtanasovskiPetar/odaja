@@ -13,6 +13,7 @@ import { callTool, listTools } from "../client";
 import type { ToolResult } from "../tools";
 import { transcript } from "./conversations";
 import { localServerHelp } from "./models";
+import { explainLimit, patientFetch } from "./rateLimits";
 import { SYSTEM_PROMPT } from "./prompt";
 import { baseUrl, type ChatSettings } from "./settings";
 import type { AssistantItem, ChatEvent, Conversation, ImageInput, ProviderId } from "./types";
@@ -23,6 +24,8 @@ export interface RunContext {
   settings: ChatSettings;
   // The photos shared in this conversation, for the photo tools.
   photos(): Promise<ImageInput[]>;
+  // Requests to the provider (set by runTurn: waits out rate limits).
+  fetch?: typeof fetch;
 }
 
 export interface UserInput {
@@ -70,7 +73,7 @@ function recorded(ctx: RunContext, rec: TurnRecorder): RunContext {
 // Runs one turn; the items it produced are returned even when it fails part way.
 export async function runTurn(conv: Conversation, input: UserInput, ctx: RunContext): Promise<{ items: AssistantItem[]; error?: Error }> {
   const rec = new TurnRecorder();
-  const c = recorded(ctx, rec);
+  const c: RunContext = { ...recorded(ctx, rec), fetch: patientFetch(conv.provider, ctx.signal, (message) => ctx.emit({ type: "status", message })) };
   const family = conv.provider === "anthropic" ? "anthropic" : "aisdk";
   // Switching between kinds of connection: carry the conversation over as text.
   const earlier = conv.state.family && conv.state.family !== family ? transcript(conv.turns.slice(0, -1)) : "";
@@ -87,6 +90,11 @@ export async function runTurn(conv: Conversation, input: UserInput, ctx: RunCont
 // Browsers report an unreachable server only as "Failed to fetch".
 function explain(provider: string, err: unknown, settings: ChatSettings): Error {
   const error = err instanceof Error ? err : new Error(String(err));
+  const limit = explainLimit(provider, err);
+  if (limit) {
+    console.warn("[odaja] chat:", error.message);
+    return new Error(limit);
+  }
   const unreachable = /failed to fetch|load failed|networkerror|cannot connect/i.test(error.message);
   if (unreachable && (provider === "ollama" || provider === "lmstudio")) return new Error(localServerHelp(provider, baseUrl(settings, provider)));
   return error;
@@ -106,7 +114,7 @@ const FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-
 
 async function runAnthropic(conv: Conversation, input: UserInput, ctx: RunContext, earlier: string) {
   // The key is the user's own, typed into this page; nothing else sees it.
-  const client = new Anthropic({ apiKey: ctx.settings.keys.anthropic, dangerouslyAllowBrowser: true });
+  const client = new Anthropic({ apiKey: ctx.settings.keys.anthropic, dangerouslyAllowBrowser: true, fetch: ctx.fetch });
   const messages = (conv.state.anthropic ??= []);
   messages.push({
     role: "user",
@@ -185,19 +193,19 @@ async function runAnthropic(conv: Conversation, input: UserInput, ctx: RunContex
 
 // --- OpenAI, Gemini, OpenRouter, local models (Vercel AI SDK) --------------
 
-function aiSdkModel(provider: ProviderId, model: string, settings: ChatSettings): LanguageModel {
+function aiSdkModel(provider: ProviderId, model: string, settings: ChatSettings, fetch?: typeof globalThis.fetch): LanguageModel {
   const key = settings.keys[provider];
   switch (provider) {
     case "openai":
-      return createOpenAI({ apiKey: key })(model);
+      return createOpenAI({ apiKey: key, fetch })(model);
     case "google":
-      return createGoogleGenerativeAI({ apiKey: key })(model);
+      return createGoogleGenerativeAI({ apiKey: key, fetch })(model);
     case "openrouter":
-      return createOpenAICompatible({ name: "openrouter", baseURL: "https://openrouter.ai/api/v1", apiKey: key })(model);
+      return createOpenAICompatible({ name: "openrouter", baseURL: "https://openrouter.ai/api/v1", apiKey: key, fetch })(model);
     case "ollama":
-      return createOpenAICompatible({ name: "ollama", baseURL: `${baseUrl(settings, "ollama")}/v1` })(model);
+      return createOpenAICompatible({ name: "ollama", baseURL: `${baseUrl(settings, "ollama")}/v1`, fetch })(model);
     case "lmstudio":
-      return createOpenAICompatible({ name: "lmstudio", baseURL: `${baseUrl(settings, "lmstudio")}/v1` })(model);
+      return createOpenAICompatible({ name: "lmstudio", baseURL: `${baseUrl(settings, "lmstudio")}/v1`, fetch })(model);
     default:
       throw new Error(`not an AI SDK provider: ${provider}`);
   }
@@ -232,7 +240,7 @@ async function runAiSdk(conv: Conversation, input: UserInput, ctx: RunContext, e
     ]),
   );
   const result = streamText({
-    model: aiSdkModel(conv.provider as ProviderId, conv.model, ctx.settings),
+    model: aiSdkModel(conv.provider as ProviderId, conv.model, ctx.settings, ctx.fetch),
     system: SYSTEM_PROMPT,
     messages,
     tools,

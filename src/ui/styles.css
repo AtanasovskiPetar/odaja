@@ -2789,6 +2789,26 @@ button.link.danger {
   }
 }
 
+/* A passing note while the reply waits (a rate limit). */
+.chat-status {
+  color: var(--muted);
+  font-size: 12px;
+  font-style: italic;
+  animation: pulse-text 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-text {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-status {
+    animation: none;
+  }
+}
+
 .chat-error {
   padding: 7px 10px;
   border-left: 2px solid var(--danger);

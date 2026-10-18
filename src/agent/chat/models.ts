@@ -6,7 +6,19 @@ import type { ModelInfo, ProviderId, ProviderInfo } from "./types";
 
 const hint = (key?: string) => (key ? `…${key.slice(-4)}` : undefined);
 
-export function listProviders(settings: ChatSettings): ProviderInfo[] {
+// Whether a local model server answers (quickly: it's on this computer).
+async function answers(url: string): Promise<boolean> {
+  try {
+    return (await fetch(url, { signal: AbortSignal.timeout(2500) })).ok;
+  } catch {
+    return false;
+  }
+}
+
+// Local servers count as set up only when they answer; a page can't tell
+// "not running" from "not allowing this site", so the status says both.
+export async function listProviders(settings: ChatSettings): Promise<ProviderInfo[]> {
+  const [ollama, lmstudio] = await Promise.all([answers(`${baseUrl(settings, "ollama")}/api/tags`), answers(`${baseUrl(settings, "lmstudio")}/v1/models`)]);
   const keyed = (id: ProviderId, name: string, defaultModel: string): ProviderInfo => ({
     id,
     name,
@@ -16,12 +28,12 @@ export function listProviders(settings: ChatSettings): ProviderInfo[] {
     keyHint: hint(settings.keys[id]),
     defaultModel,
   });
-  const local = (id: ProviderId, name: string): ProviderInfo => ({
+  const local = (id: ProviderId, name: string, running: boolean): ProviderInfo => ({
     id,
     name,
     kind: "local",
-    ready: true,
-    status: "Runs models on this computer",
+    ready: running,
+    status: running ? `Running at ${baseUrl(settings, id)}` : `No answer at ${baseUrl(settings, id)}: not running, or not allowing this site`,
     baseUrl: baseUrl(settings, id),
     defaultModel: "",
   });
@@ -30,8 +42,8 @@ export function listProviders(settings: ChatSettings): ProviderInfo[] {
     keyed("openai", "OpenAI API", ""),
     keyed("google", "Google Gemini API", ""),
     keyed("openrouter", "OpenRouter", ""),
-    local("ollama", "Ollama (local)"),
-    local("lmstudio", "LM Studio (local)"),
+    local("ollama", "Ollama (local)", ollama),
+    local("lmstudio", "LM Studio (local)", lmstudio),
   ];
 }
 

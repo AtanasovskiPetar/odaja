@@ -20,6 +20,8 @@ interface ChatState {
   chatId: string | null;
   turns: Turn[];
   busy: boolean;
+  // A passing note while the reply waits (a rate limit), or null.
+  status: string | null;
   // Text and files to put in the message box (e.g. a floor plan to build from).
   draft: { text: string; files: File[] } | null;
   toggle(): void;
@@ -90,6 +92,7 @@ export const useChat = create<ChatState>((set, get) => {
     chatId: null,
     turns: [],
     busy: false,
+    status: null,
     draft: null,
 
     toggle() {
@@ -121,7 +124,7 @@ export const useChat = create<ChatState>((set, get) => {
 
     async loadProviders() {
       const settings = await readSettings();
-      const providers = (await models()).listProviders(settings);
+      const providers = await (await models()).listProviders(settings);
       const changed = get().providers.find((p) => p.id === get().provider)?.ready !== providers.find((p) => p.id === get().provider)?.ready;
       set({ providers });
       // Keep the current choice (reloading its models if it was just set up);
@@ -216,6 +219,7 @@ export const useChat = create<ChatState>((set, get) => {
         const { runTurn } = await import("../../agent/chat/runners");
         const result = await runTurn(conv, { text: modelText, images }, {
           emit(e) {
+            if (e.type === "status") return set({ status: get().chatId === conv.id ? e.message : null });
             if (e.type === "error") errors.push(e.message);
             if (get().chatId === conv.id) applyEvent(e);
           },
@@ -242,7 +246,7 @@ export const useChat = create<ChatState>((set, get) => {
         applyEvent({ type: "error", message: (err as Error).message });
       } finally {
         running = null;
-        set({ busy: false });
+        set({ busy: false, status: null });
         get().refreshChats();
       }
     },

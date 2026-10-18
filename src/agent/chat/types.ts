@@ -69,4 +69,6 @@ export type ChatEvent =
   | { type: "text"; delta: string }
   | { type: "tool-start"; id: string; name: string; input: unknown }
   | { type: "tool-end"; id: string; ok: boolean; summary: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  // A passing note while the reply waits (e.g. for a rate limit); null clears it.
+  | { type: "status"; message: string | null };

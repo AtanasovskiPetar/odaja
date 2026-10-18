@@ -107,6 +107,7 @@ function ToolChip({ item }: { item: Extract<AssistantItem, { type: "tool" }> }) 
 }
 
 function TurnView({ turn, live }: { turn: Turn; live: boolean }) {
+  const status = useChat((s) => (live ? s.status : null));
   if (turn.role === "user") {
     return (
       <div className="turn user">
@@ -120,7 +121,8 @@ function TurnView({ turn, live }: { turn: Turn; live: boolean }) {
   return (
     <div className="turn assistant">
       {turn.items.map((item, i) => (item.type === "text" ? <Markdown key={i} text={item.text} /> : <ToolChip key={i} item={item} />))}
-      {live && turn.items.length === 0 && <div className="thinking">Thinking…</div>}
+      {live && turn.items.length === 0 && !status && <div className="thinking">Thinking…</div>}
+      {status && <div className="chat-status">{status}</div>}
       {turn.error && <div className="chat-error">{turn.error}</div>}
     </div>
   );
@@ -142,7 +144,7 @@ function ModelPicker() {
         {providers.map((p) => (
           <option key={p.id} value={p.id}>
             {p.name}
-            {p.ready ? "" : " (not set up)"}
+            {p.ready ? "" : p.kind === "local" ? " (not running)" : " (not set up)"}
           </option>
         ))}
       </select>

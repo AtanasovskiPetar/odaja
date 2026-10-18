@@ -71,7 +71,13 @@ the copy too. To change the sample itself, open it deliberately with
   - *OpenAI, Gemini, OpenRouter, Ollama, LM Studio*: the Vercel AI SDK. Local
     servers must allow the page's address (CORS): Ollama allows localhost by
     itself, the website needs `OLLAMA_ORIGINS`; LM Studio needs "Enable CORS".
-    The chat says so when they don't answer.
+    The chat says so when they don't answer, and shows them as set up only
+    when they answer.
+  - Rate limits (`src/agent/chat/rateLimits.ts`): a reply that uses tools makes
+    several requests, and free tiers allow few a minute. On "429, retry in N s"
+    the chat shows that it's waiting and tries again (up to about a minute at a
+    time, three minutes per reply); a used-up daily quota or credit gets a plain
+    explanation instead.
   - API keys and local server URLs live in the browser's IndexedDB for that
     site (`src/agent/chat/settings.ts`), never in homes or `.odaja` files.
     Conversations are saved with the home in `.odaja/chats/` (`platform.chats`).
