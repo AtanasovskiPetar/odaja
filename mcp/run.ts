@@ -19,6 +19,9 @@ Tiles, paint and floors: set_material, set_finish, get_quantities. Door and wind
 Floor plans: set_background (scale_from a printed dimension, or ask the user for one), image_to_plan to read positions off the image, build_shell for all walls, openings and rooms at once, then screenshot the plan view to compare with the background.
 After changes, check_issues, and use screenshot to look at the result. Every change shows up live in the app and the user can undo it there.`;
 
+// Set when Odaja's chat starts Claude Code, so tools can use the chat's photos.
+const CHAT_ID = process.env.ODAJA_CHAT_ID;
+
 async function api(path: string, body?: unknown) {
   const BASE = await base();
   let res: Response;
@@ -41,7 +44,7 @@ export async function runMcpServer() {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
-      return await api("/tools/call", { name: request.params.name, input: request.params.arguments ?? {} });
+      return await api("/tools/call", { name: request.params.name, input: request.params.arguments ?? {}, chatId: CHAT_ID });
     } catch (err) {
       return { content: [{ type: "text", text: (err as Error).message }], isError: true };
     }

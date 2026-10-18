@@ -12,11 +12,13 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { ImageInput } from "../src/agent/chat/types";
 import { newProjectFile, newSceneFile, newShellFile, slugify, type StarterRoom } from "../src/model/defaults";
 import { formatJson } from "../src/model/format";
 import { belongsInFile, homeName, packHome, unpackHome } from "../src/model/homeFile";
 import { callTool, inputJsonSchema, TOOLS, type ToolContext } from "../src/agent/tools";
 import { folderFiles } from "./agentFiles";
+import { chatPhotos, claudeCodeStatus, runClaudeCodeTurn, stopAllClaudeCode, stopClaudeCode } from "./claudeCode";
 import { setImageCodec } from "../src/agent/photos";
 import { jimpCodec } from "./imageCodec";
 
@@ -127,11 +129,12 @@ class HttpError extends Error {
 export interface OdajaApi {
   // Handles a request whose URL is relative to /api (e.g. "/projects").
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
-  // Stops watching files.
+  // Stops watching files and any Claude Code chats still running.
   stop(): void;
 }
 
-export async function createOdajaApi(): Promise<OdajaApi> {
+// `port` is where the app is served, for the MCP server Claude Code starts.
+export async function createOdajaApi({ port }: { port: () => number }): Promise<OdajaApi> {
   let projectDir: string | null = null;
   // The scene open in the app (reported by the app), the default for tools,
   // and the object whose shape is being edited.
@@ -191,8 +194,10 @@ export async function createOdajaApi(): Promise<OdajaApi> {
     },
   };
 
-  // Tools called from the app's chat get the chat's photos with the call.
-  function toolsWith(photos: unknown): ToolContext {
+  // Tools called from the app's chat get the chat's photos with the call;
+  // from Claude Code's chat (through MCP), by the chat's id.
+  function toolsWith(photos: unknown, chatId?: unknown): ToolContext {
+    if (typeof chatId === "string" && chatPhotos.has(chatId)) photos = chatPhotos.get(chatId);
     if (!Array.isArray(photos)) return toolContext;
     const valid = photos
       .filter((p) => typeof p?.mimeType === "string" && typeof p?.data === "string")
@@ -506,6 +511,7 @@ export async function createOdajaApi(): Promise<OdajaApi> {
       docsWatcher?.close();
       for (const res of listeners) res.end();
       listeners.clear();
+      stopAllClaudeCode();
     },
 
     async handle(req, res) {
@@ -603,8 +609,39 @@ export async function createOdajaApi(): Promise<OdajaApi> {
           case "GET /tools":
             return send(200, TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: inputJsonSchema(t) })));
           case "POST /tools/call": {
-            const { name, input, photos } = await json();
-            return send(200, await callTool(String(name), input, toolsWith(photos)));
+            const { name, input, photos, chatId } = await json();
+            return send(200, await callTool(String(name), input, toolsWith(photos, chatId)));
+          }
+          // The chat's Claude Code connection (see server/claudeCode.ts).
+          case "GET /claude-code/status":
+            return send(200, await claudeCodeStatus());
+          case "POST /claude-code/stop": {
+            const { chatId } = await json();
+            stopClaudeCode(String(chatId));
+            return send(200, { ok: true });
+          }
+          case "POST /claude-code/turn": {
+            requireProject();
+            const body = await json();
+            const chatId = String(body.chatId ?? "");
+            if (!/^[a-z0-9-]+$/.test(chatId)) return send(400, { error: "bad chat id" });
+            const images = (Array.isArray(body.images) ? body.images : []) as ImageInput[];
+            chatPhotos.set(chatId, (Array.isArray(body.photos) ? body.photos : []) as ImageInput[]);
+            // Events go back as server-sent events, ending with the session id.
+            res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
+            const write = (event: unknown) => res.write(`data: ${JSON.stringify(event)}\n\n`);
+            try {
+              const session = await runClaudeCodeTurn(
+                { chatId, model: String(body.model ?? "default"), session: typeof body.session === "string" ? body.session : undefined, text: String(body.text ?? ""), images },
+                `http://localhost:${port()}`,
+                write,
+              );
+              write({ type: "done", session });
+            } catch (err) {
+              write({ type: "error", message: (err as Error).message });
+              write({ type: "done" });
+            }
+            return void res.end();
           }
           case "POST /ui-state": {
             const state = await json();

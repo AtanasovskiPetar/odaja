@@ -3,14 +3,15 @@
 import type Anthropic from "@anthropic-ai/sdk";
 import type { ModelMessage } from "ai";
 
-export type ProviderId = "anthropic" | "openai" | "google" | "openrouter" | "ollama" | "lmstudio";
+// "claude-code" is the user's Claude subscription, through the companion only.
+export type ProviderId = "claude-code" | "anthropic" | "openai" | "google" | "openrouter" | "ollama" | "lmstudio";
 
-export const PROVIDERS: ProviderId[] = ["anthropic", "openai", "google", "openrouter", "ollama", "lmstudio"];
+export const PROVIDERS: ProviderId[] = ["claude-code", "anthropic", "openai", "google", "openrouter", "ollama", "lmstudio"];
 
 export interface ProviderInfo {
   id: ProviderId;
   name: string;
-  kind: "api-key" | "local";
+  kind: "subscription" | "api-key" | "local";
   // Set up enough to use (key present, server URL known).
   ready: boolean;
   status: string;
@@ -54,6 +55,8 @@ export interface Conversation {
     family?: string;
     anthropic?: Anthropic.Beta.BetaMessageParam[];
     aisdk?: ModelMessage[];
+    // Claude Code keeps the history itself; this continues its session.
+    claudeCodeSession?: string;
   };
 }
 

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "companion": "bun run build && bun server/main.ts --open",
     "build": "tsc -b && vite build",
     "start": "bun server/main.ts",
     "package:server": "bun scripts/package-server.ts",

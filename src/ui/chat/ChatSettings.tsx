@@ -40,6 +40,12 @@ function ProviderRow({ provider, onSaved }: { provider: ProviderInfo; onSaved: (
         <span className={`dot ${provider.ready ? "ready" : ""}`} />
       </div>
       <div className="muted provider-status">{provider.status}</div>
+      {provider.kind === "subscription" && (
+        <p className="hint">
+          Uses the Claude Code installed on this computer, signed in with your own Claude account; usage counts toward your plan. Only here, in the companion, and for
+          your own use.
+        </p>
+      )}
       {provider.kind === "api-key" && (
         <div className="provider-field">
           <input

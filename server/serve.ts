@@ -4,11 +4,13 @@
 // Port 5180 unless ODAJA_PORT says otherwise; if 5180 is taken, any free
 // port. The address is printed and written to ~/.odaja/server.json.
 import fs from "node:fs/promises";
+import { spawn } from "node:child_process";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { createOdajaApi } from "./api";
 import { announce, retract } from "./discovery";
+import { loadLoginShellPath } from "./env";
 
 const DEFAULT_PORT = 5180;
 const DIST = path.resolve(process.env.ODAJA_DIST ?? path.join(process.env.ODAJA_APP_ROOT ?? ".", "dist"));
@@ -66,8 +68,10 @@ async function serveApp(req: IncomingMessage, res: ServerResponse) {
 }
 
 export async function startServer() {
+  // Find the user's PATH early, so the chat's first Claude Code start is quick.
+  void loadLoginShellPath();
   let port = Number(process.env.ODAJA_PORT ?? DEFAULT_PORT);
-  const api = await createOdajaApi();
+  const api = await createOdajaApi({ port: () => port });
 
   const server = createServer((req, res) => {
     if (!localHost(req)) {
@@ -105,6 +109,11 @@ export async function startServer() {
   await announce(url);
   // Shown in the terminal; scripts and launchers can read the address from it.
   console.log(`Odaja is running at ${url}`);
+  // `--open` (bun run companion) opens it in the default browser.
+  if (process.argv.includes("--open")) {
+    const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "explorer" : "xdg-open";
+    spawn(opener, [url], { stdio: "ignore", detached: true }).unref();
+  }
 
   const shutdown = async () => {
     api.stop();

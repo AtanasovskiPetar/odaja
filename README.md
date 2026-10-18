@@ -49,8 +49,10 @@ Bring your own key for **Anthropic, OpenAI, Google Gemini or OpenRouter**, or
 run a model on your computer with **Ollama** or **LM Studio**. Keys stay in your
 browser and go only to their own provider. Usage is billed to you there.
 
-**With a Claude subscription:** use the companion below and talk to Odaja from
-Claude Desktop or Claude Code.
+**With a Claude subscription:** run the companion below. Its chat offers
+"Claude Code (your subscription)", using the Claude Code installed and signed in
+on your computer, for your own use. You can also talk to Odaja from Claude
+Desktop or Claude Code directly.
 
 ## The companion: folders and MCP
 
@@ -94,7 +96,8 @@ claude mcp add odaja -- /path/to/odaja-server mcp
 
 ```bash
 bun install
-bun run dev        # http://localhost:5173, homes as folders, like the companion
+bun run companion  # build and start the companion, and open it (http://localhost:5180)
+bun run dev        # the same with live reloading while you change the code (http://localhost:5173)
 bun run typecheck
 ```
 

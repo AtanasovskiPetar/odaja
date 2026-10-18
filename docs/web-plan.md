@@ -153,6 +153,8 @@ Each phase leaves the app working, and ends with typecheck, build and a check in
 - **Hints** for Ollama and LM Studio CORS.
 - Done when: a real tool-using conversation works on the website with an API key, and the same in the companion.
 
+**After phase 7: Claude Code back in the companion's chat.** Without API keys the chat was unusable for a subscription-only user, so the companion's chat offers "Claude Code (your subscription)" again (`server/claudeCode.ts`): the page asks the companion to run the user's own `claude`, as before phase 5. The website can't (a page can't start programs) and doesn't show it.
+
 **6. Ready for the web** — done
 - **To go live:** in the repo's Settings → Pages, set Source to "GitHub Actions" once. Every push to `master` then publishes `https://<user>.github.io/odaja/` (`.github/workflows/pages.yml`).
 - **Offline:** the service worker keeps a copy of every built file (listed at build time) and the two newest versions, so a page opened before an update still loads its parts. The page itself comes from the network first.

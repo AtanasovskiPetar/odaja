@@ -74,12 +74,13 @@ function recorded(ctx: RunContext, rec: TurnRecorder): RunContext {
 export async function runTurn(conv: Conversation, input: UserInput, ctx: RunContext): Promise<{ items: AssistantItem[]; error?: Error }> {
   const rec = new TurnRecorder();
   const c: RunContext = { ...recorded(ctx, rec), fetch: patientFetch(conv.provider, ctx.signal, (message) => ctx.emit({ type: "status", message })) };
-  const family = conv.provider === "anthropic" ? "anthropic" : "aisdk";
+  const family = conv.provider === "anthropic" ? "anthropic" : conv.provider === "claude-code" ? "claude-code" : "aisdk";
   // Switching between kinds of connection: carry the conversation over as text.
   const earlier = conv.state.family && conv.state.family !== family ? transcript(conv.turns.slice(0, -1)) : "";
   if (conv.state.family !== family) conv.state = { family };
   try {
     if (family === "anthropic") await runAnthropic(conv, input, c, earlier);
+    else if (family === "claude-code") await runClaudeCode(conv, input, c, earlier);
     else await runAiSdk(conv, input, c, earlier);
     return { items: rec.items };
   } catch (err) {
@@ -189,6 +190,49 @@ async function runAnthropic(conv: Conversation, input: UserInput, ctx: RunContex
     messages.push({ role: "user", content: results });
   }
   ctx.emit({ type: "error", message: `Stopped after ${MAX_STEPS} steps.` });
+}
+
+// --- Claude Code (the user's subscription, through the companion) ---------
+
+// The companion runs Claude Code and streams its events back (server/claudeCode.ts);
+// Odaja's tools reach the project through Claude Code's MCP connection.
+async function runClaudeCode(conv: Conversation, input: UserInput, ctx: RunContext, earlier: string) {
+  const stop = () => void fetch("/api/claude-code/stop", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chatId: conv.id }) });
+  ctx.signal.addEventListener("abort", stop, { once: true });
+  try {
+    const res = await fetch("/api/claude-code/turn", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chatId: conv.id,
+        model: conv.model,
+        session: conv.state.claudeCodeSession,
+        text: withEarlier(input.text, earlier),
+        images: input.images,
+        photos: await ctx.photos(),
+      }),
+    });
+    if (!res.ok || !res.body) throw new Error((await res.json().catch(() => null))?.error ?? `Claude Code couldn't start (${res.status})`);
+    const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+    let buffer = "";
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += value;
+      let sep: number;
+      while ((sep = buffer.indexOf("\n\n")) !== -1) {
+        const chunk = buffer.slice(0, sep);
+        buffer = buffer.slice(sep + 2);
+        if (!chunk.startsWith("data: ")) continue;
+        const event = JSON.parse(chunk.slice(6)) as ChatEvent | { type: "done"; session?: string };
+        if (event.type === "done") {
+          if (event.session) conv.state.claudeCodeSession = event.session;
+        } else if (!(ctx.signal.aborted && event.type === "error")) ctx.emit(event);
+      }
+    }
+  } finally {
+    ctx.signal.removeEventListener("abort", stop);
+  }
 }
 
 // --- OpenAI, Gemini, OpenRouter, local models (Vercel AI SDK) --------------

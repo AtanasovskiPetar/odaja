@@ -5,6 +5,7 @@
 // failing; a daily quota that's used up isn't waited for.
 
 export const PROVIDER_NAMES: Record<string, string> = {
+  "claude-code": "Claude Code",
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Gemini",

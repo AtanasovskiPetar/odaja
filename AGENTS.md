@@ -20,7 +20,8 @@ bun run dev                                    # reopens the last project, or sh
 ODAJA_PROJECT=/path/to/project bun run dev     # opens a specific project folder
 ODAJA_HOME=/path bun run dev                   # where new projects are created (default ~/Documents/Odaja)
 open http://localhost:5173/?host=browser       # dev, but as the website: the home in browser storage, tools in the page
-bun run build && bun run start                 # the built app without Vite, at http://localhost:5180 (ODAJA_PORT)
+bun run companion                              # build, start the companion and open it (http://localhost:5180)
+bun run build && bun run start                 # the same without opening a browser (ODAJA_PORT for another port)
 bun run package:server                         # build/odaja-server (one binary, no Bun needed) + build/resources/
 bun run release [macos-arm64 …]                # release archives for every platform, in release/
 bun run typecheck
@@ -81,8 +82,17 @@ the copy too. To change the sample itself, open it deliberately with
   - API keys and local server URLs live in the browser's IndexedDB for that
     site (`src/agent/chat/settings.ts`), never in homes or `.odaja` files.
     Conversations are saved with the home in `.odaja/chats/` (`platform.chats`).
-  - There is no in-app Claude Code connection: to use a Claude subscription,
-    talk to Odaja from Claude Desktop or Claude Code over MCP (the companion).
+  - *Claude Code (your subscription)*, in the companion and dev only (a web page
+    can't start programs): the page asks the companion (`/api/claude-code/*`,
+    `server/claudeCode.ts`) to drive the user's own installed, signed-in
+    `claude` in headless stream-json mode with only Odaja's MCP tools
+    (`--tools "" --strict-mcp-config --allowedTools "mcp__odaja__*"
+    --permission-mode dontAsk`), with `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`
+    removed so the subscription is used, and streams its events back. Odaja
+    never reads Claude credentials. `claude` is looked up on the login shell's
+    PATH (`server/env.ts`), or `ODAJA_CLAUDE`. The conversation keeps Claude
+    Code's session id to continue it; photos reach the photo tools through the
+    chat id the MCP server passes along. For personal use only.
 
 ## Security
 

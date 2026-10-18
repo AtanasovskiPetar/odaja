@@ -1,6 +1,7 @@
 // Which model providers are available, and which models each offers. Called
 // from the page, straight to each provider (they all accept browser calls).
 import Anthropic from "@anthropic-ai/sdk";
+import { platform } from "../../platform";
 import { baseUrl, type ChatSettings } from "./settings";
 import type { ModelInfo, ProviderId, ProviderInfo } from "./types";
 
@@ -17,8 +18,24 @@ async function answers(url: string): Promise<boolean> {
 
 // Local servers count as set up only when they answer; a page can't tell
 // "not running" from "not allowing this site", so the status says both.
+// Claude Code runs on the companion (a web page can't start programs), so it's
+// offered only there.
+async function claudeCode(): Promise<ProviderInfo | null> {
+  if (platform.kind !== "server") return null;
+  try {
+    const status = (await (await fetch("/api/claude-code/status")).json()) as { loggedIn: boolean; detail: string };
+    return { id: "claude-code", name: "Claude Code (your subscription)", kind: "subscription", ready: status.loggedIn, status: status.detail, defaultModel: "default" };
+  } catch {
+    return null;
+  }
+}
+
 export async function listProviders(settings: ChatSettings): Promise<ProviderInfo[]> {
-  const [ollama, lmstudio] = await Promise.all([answers(`${baseUrl(settings, "ollama")}/api/tags`), answers(`${baseUrl(settings, "lmstudio")}/v1/models`)]);
+  const [cc, ollama, lmstudio] = await Promise.all([
+    claudeCode(),
+    answers(`${baseUrl(settings, "ollama")}/api/tags`),
+    answers(`${baseUrl(settings, "lmstudio")}/v1/models`),
+  ]);
   const keyed = (id: ProviderId, name: string, defaultModel: string): ProviderInfo => ({
     id,
     name,
@@ -38,6 +55,7 @@ export async function listProviders(settings: ChatSettings): Promise<ProviderInf
     defaultModel: "",
   });
   return [
+    ...(cc ? [cc] : []),
     keyed("anthropic", "Anthropic API", "claude-opus-5-5"),
     keyed("openai", "OpenAI API", ""),
     keyed("google", "Google Gemini API", ""),
@@ -69,6 +87,13 @@ async function getJson(url: string, headers: Record<string, string> = {}) {
 export async function listModels(provider: ProviderId, settings: ChatSettings): Promise<ModelInfo[]> {
   const key = settings.keys[provider];
   switch (provider) {
+    case "claude-code":
+      return [
+        { id: "default", name: "Default (your Claude Code setting)", vision: true, tools: true },
+        { id: "opus", name: "Opus (latest)", vision: true, tools: true },
+        { id: "sonnet", name: "Sonnet (latest)", vision: true, tools: true },
+        { id: "haiku", name: "Haiku (latest)", vision: true, tools: true },
+      ];
     case "anthropic": {
       if (!key) return [];
       const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });

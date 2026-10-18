@@ -8,7 +8,7 @@ export function odajaProjectServer(): Plugin {
   return {
     name: "odaja-project-server",
     async configureServer(server) {
-      const api = await createOdajaApi();
+      const api = await createOdajaApi({ port: () => server.config.server.port ?? 5173 });
       server.httpServer?.on("close", () => api.stop());
       server.middlewares.use("/api", (req, res) => void api.handle(req, res));
     },
