@@ -1,6 +1,6 @@
 // What the server needs from the machine it runs on: whether it is the
 // packaged binary, a usable PATH, and how to start Claude Code and the MCP server.
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import os from "node:os";
 import path from "node:path";
 
@@ -43,6 +43,32 @@ export async function claudeCommand(): Promise<string> {
   await loadLoginShellPath();
   const chosen = process.env.ODAJA_CLAUDE?.trim() || "claude";
   return chosen.replace(/^~(?=$|[/\\])/, os.homedir());
+}
+
+// The environment Claude Code runs in. API keys are removed so the user's
+// subscription is used (a key would take priority in headless mode), and the
+// user name is filled in if missing: Claude Code finds its sign-in in the
+// keychain by it.
+export function claudeEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.ANTHROPIC_API_KEY;
+  delete env.ANTHROPIC_AUTH_TOKEN;
+  if (!env.USER && process.platform !== "win32") {
+    const user = userName();
+    if (user) env.USER = env.LOGNAME = user;
+  }
+  return env;
+}
+
+// The login name even without USER in the environment (Bun then reports "unknown").
+function userName(): string | null {
+  const fromOs = os.userInfo().username;
+  if (fromOs && fromOs !== "unknown") return fromOs;
+  try {
+    return execFileSync("/usr/bin/id", ["-un"], { encoding: "utf8" }).trim() || null;
+  } catch {
+    return null;
+  }
 }
 
 // How Claude Code should start Odaja's MCP server: the packaged binary is its

@@ -9,7 +9,7 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child
 import { promisify } from "node:util";
 import { SYSTEM_PROMPT } from "../src/agent/chat/prompt";
 import type { ChatEvent, ImageInput } from "../src/agent/chat/types";
-import { claudeCommand, mcpCommand } from "./env";
+import { claudeCommand, claudeEnv, mcpCommand } from "./env";
 
 const run = promisify(execFile);
 
@@ -22,9 +22,10 @@ export interface ClaudeCodeStatus {
 export async function claudeCodeStatus(): Promise<ClaudeCodeStatus> {
   const claude = await claudeCommand();
   try {
-    const { stdout: version } = await run(claude, ["--version"], { timeout: 10000 });
+    const env = claudeEnv();
+    const { stdout: version } = await run(claude, ["--version"], { timeout: 10000, env });
     try {
-      const { stdout } = await run(claude, ["auth", "status"], { timeout: 10000 });
+      const { stdout } = await run(claude, ["auth", "status"], { timeout: 10000, env });
       const status = JSON.parse(stdout);
       if (status.authMethod === "claude.ai") {
         return { installed: true, loggedIn: true, detail: `${version.trim()} · ${status.subscriptionType ?? "subscription"}` };
@@ -102,12 +103,7 @@ function start(req: TurnRequest, odajaUrl: string, claude: string): ClaudeProces
     ...(req.model && req.model !== "default" ? ["--model", req.model] : []),
     ...(req.session ? ["--resume", req.session] : []),
   ];
-  // Use the subscription: an API key in the environment would take priority
-  // in headless mode and bill the key instead.
-  const env = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;
-  delete env.ANTHROPIC_AUTH_TOKEN;
-  const proc = spawn(claude, args, { env, cwd: process.env.HOME });
+  const proc = spawn(claude, args, { env: claudeEnv(), cwd: process.env.HOME });
   const entry: ClaudeProcess = { proc, model: req.model, lastUsed: Date.now() };
   let buffer = "";
   let stderr = "";
