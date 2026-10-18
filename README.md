@@ -20,6 +20,9 @@ Nothing to install, no account. Your home stays in your browser.
   sizes, patterns and quantities. Ask the chat to turn a photo of a tile into a texture.
 - **Look around:** plan, 3D, and a walk-through at eye height. Try layouts side
   by side as scenes.
+- **Sunlight:** give the flat's location and which way it faces, then watch
+  the real sun move through your windows on any day of the year, in 3D or
+  walking through.
 - **Checks:** furniture in walls, overlaps, blocked doors, too little space in
   front of a toilet or a wardrobe, each with a quick fix.
 

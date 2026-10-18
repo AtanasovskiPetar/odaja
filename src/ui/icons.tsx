@@ -211,3 +211,7 @@ export const IconAuto = icon(
     <path d="M10 3.5a6.5 6.5 0 0 1 0 13Z" fill="currentColor" stroke="none" />
   </>,
 );
+
+export const IconPlay = icon(<path d="M6.5 4.5v11l9-5.5Z" />);
+
+export const IconPause = icon(<path d="M7 4.5v11M13 4.5v11" />);

@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { shellBounds, wallOutline, type Vec } from "../model/geometry";
 import { headingIntoRoom } from "../model/walk";
+import { WalkSunTime } from "./SunPanel";
 import { useOdaja } from "../store";
 
 // Covers the plan while choosing where to stand.
@@ -110,6 +111,7 @@ export function WalkOverlay() {
         >
           Stand somewhere else
         </button>
+        <WalkSunTime />
         <button onClick={() => setViewMode("3d")}>Exit</button>
       </div>
     </>

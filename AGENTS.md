@@ -138,6 +138,7 @@ there, or it's refused. The policy isn't applied in development.
 | `src/three/WalkControls.tsx` | First-person controls (pointer-lock or drag look, W A S D, Q/E turn, Shift) |
 | `src/ui/WalkOverlay.tsx` | Picking a start on the plan, mini-map, controls hint, eye height |
 | `src/model/underlay.ts`, `src/three/UnderlayView.tsx`, `src/ui/UnderlayPanel.tsx`, `src/ui/planImage.ts` | Floor plan background: image ↔ plan maths and scale from one known length; the image under the plan view; the panel (scale, move, rotate, opacity); loading images and PDFs (first page) into `assets/plans/` |
+| `src/model/sun.ts`, `src/three/SunLight.tsx`, `src/ui/SunPanel.tsx`, `src/ui/sunState.ts` | Sunlight: the sun's position for a place and moment (standard low-precision formulas, offline), sunrise and sunset, light colour and sky; the 3D lights (the real sun with sharp shadows fitted to the flat, an invisible shadow-only ceiling, glass that casts no shadow, a dimmer room and a sky that follows the time); the panel (location and north, stored as `site` in project.json; day, time, play), the north arrow on the plan and the time slider in Walk. The chosen day and time aren't saved |
 | `src/three/capture.ts` | Viewport screenshots (plan view includes the dimension overlay) |
 | `src/ui/chat/` | Chat panel, model picker, connection settings |
 | `src/three/modelImport.ts` | Loading model files (GLB/glTF, FBX, OBJ+MTL, DAE, 3DS, USDZ/USD, 3MF, STL, PLY, WRL), units/up-axis/facing normalisation, simplification, GLB export |

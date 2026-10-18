@@ -17,6 +17,7 @@ import { planCamera } from "./planCamera";
 import { applyPlanTheme, useSceneTheme } from "./theme";
 import { ShapeEditorView } from "./ShapeEditorView";
 import { ShellView } from "./ShellView";
+import { Lights } from "./SunLight";
 import { UnderlayView } from "./UnderlayView";
 import { WalkControls } from "./WalkControls";
 
@@ -120,11 +121,7 @@ export function Viewport() {
       }}>
       <PerspectiveCamera makeDefault={!plan} fov={45} near={0.05} far={200} />
       <OrthographicCamera makeDefault={plan} near={0.1} far={200} />
-      <color attach="background" args={[plan ? theme.paper : walk ? theme.walk : theme.room]} />
-      <hemisphereLight args={["#ffffff", theme.ground, plan ? 2.2 : walk ? 2.0 : 1.4]} />
-      <directionalLight position={[6, 12, 4]} intensity={plan ? 0.8 : 1.6} castShadow={!plan} shadow-mapSize={[2048, 2048]}>
-        <orthographicCamera attach="shadow-camera" args={[-10, 10, 10, -10, 0.5, 40]} />
-      </directionalLight>
+      <Lights theme={theme} plan={plan} walk={walk} />
       {!plan && !walk && (
         <Grid args={[60, 60]} cellSize={0.1} sectionSize={1} cellColor={theme.gridCell} sectionColor={theme.gridSection} fadeDistance={40} position={[0, -0.02, 0]} infiniteGrid />
       )}

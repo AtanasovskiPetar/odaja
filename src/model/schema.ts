@@ -54,12 +54,21 @@ export const UnderlaySchema = z.object({
   visible: z.boolean().default(true),
 });
 
+// Where the flat is, for sunlight: its location, and which way north is on
+// the plan (degrees clockwise from the plan's up; 0 = up is north).
+export const SiteSchema = z.object({
+  latitude: z.number().min(-90).max(90).describe("degrees, north positive"),
+  longitude: z.number().min(-180).max(180).describe("degrees, east positive"),
+  north: z.number().default(0).describe("where north points on the plan, degrees clockwise from up"),
+});
+
 export const ProjectSchema = z.object({
   version: z.literal(1),
   name: z.string(),
   units: z.literal("cm"),
   materials: z.record(z.string(), MaterialSchema).default({}),
   underlay: UnderlaySchema.optional(),
+  site: SiteSchema.optional(),
 });
 
 export const WallSchema = z.object({
@@ -256,6 +265,7 @@ export const SceneSchema = z.object({
 export type Material = z.infer<typeof MaterialSchema>;
 export type Tile = z.infer<typeof TileSchema>;
 export type Underlay = z.infer<typeof UnderlaySchema>;
+export type Site = z.infer<typeof SiteSchema>;
 export type UnderlayDoc = z.input<typeof UnderlaySchema>;
 export type Finish = z.infer<typeof FinishSchema>;
 export type Project = z.infer<typeof ProjectSchema>;

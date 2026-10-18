@@ -19,6 +19,8 @@ import { ScenesSection } from "./ScenesSection";
 import { Welcome, OpenFolderDialog } from "./Welcome";
 import { NewHomeDialog } from "./NewHome";
 import { TraceGuide } from "./TraceGuide";
+import { PlanNorthArrow, SunPanel } from "./SunPanel";
+import { useSun } from "./sunState";
 import { ManageHomesDialog } from "./ManageHomes";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
@@ -38,6 +40,7 @@ import {
   IconEyeOff,
   IconFurnish,
   IconLayers,
+  IconSun,
   IconPlan,
   IconPlus,
   IconRedo,
@@ -364,6 +367,8 @@ function Toolbar() {
   const underlayOpen = useOdaja((s) => s.underlayPanel);
   const setUnderlayPanel = useOdaja((s) => s.setUnderlayPanel);
   const showChanges = useOdaja((s) => s.showChanges);
+  const sunOn = useSun((s) => s.on);
+  const setSunOn = useSun((s) => s.setOn);
   const toggleShowChanges = useOdaja((s) => s.toggleShowChanges);
 
   return (
@@ -407,6 +412,16 @@ function Toolbar() {
           <IconLayers size={17} />
         </button>
       )}
+      <button
+        className={`icon-only ${sunOn ? "active" : ""}`}
+        onClick={() => {
+          setSunOn(!sunOn);
+          if (!sunOn) useOdaja.getState().setUnderlayPanel(false);
+        }}
+        title="Sunlight: the real sun for a day and time, through your windows"
+      >
+        <IconSun size={17} />
+      </button>
       {hasBase && viewMode === "plan" && (
         <button className={`icon-only ${showChanges ? "active" : ""}`} onClick={toggleShowChanges} title="Show walls removed (red) and added (green) compared with shell.json">
           <IconCompare size={17} />
@@ -513,6 +528,8 @@ export function App() {
         {editingStructure && <StructureLayer />}
         <UnderlayToolLayer />
         <UnderlayPanel />
+        <SunPanel />
+        <PlanNorthArrow />
         <WalkStartPicker />
         <WalkOverlay />
         <div className="toolbars">

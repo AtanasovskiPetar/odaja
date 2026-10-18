@@ -101,6 +101,21 @@ pixel, `center` is where the image's centre sits on the plan (cm) and
 scale from one known length: measure it in pixels on the image and divide the
 real length by it.
 
+### Location and north
+
+`site` is optional and only used for sunlight: where the flat is, and which way
+north points on the plan.
+
+```json
+"site": { "latitude": 41.9981, "longitude": 21.4254, "north": 20 }
+```
+
+`latitude` and `longitude` are in degrees (north and east positive). `north` is
+the direction of true north on the plan, in degrees clockwise from the plan's
+up (−y): 0 means up is north, 90 means north is to the right (+x). The app
+works out the sun's direction for any date and time from these; nothing is
+looked up online.
+
 ## shell.json
 
 ```json

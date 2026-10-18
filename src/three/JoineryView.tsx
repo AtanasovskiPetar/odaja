@@ -13,7 +13,8 @@ type Mat = (name?: string, color?: string) => THREE.MeshStandardMaterial;
 function Box({ x0, x1, y0, y1, z0, z1, material }: { x0: number; x1: number; y0: number; y1: number; z0: number; z1: number; material: THREE.Material }) {
   if (x1 - x0 <= 0 || y1 - y0 <= 0 || z1 - z0 <= 0) return null;
   return (
-    <mesh position={[M((x0 + x1) / 2), M((y0 + y1) / 2), M((z0 + z1) / 2)]} material={material} castShadow receiveShadow>
+    // Glass lets the light through: it casts no shadow.
+    <mesh position={[M((x0 + x1) / 2), M((y0 + y1) / 2), M((z0 + z1) / 2)]} material={material} castShadow={!material.transparent} receiveShadow>
       <boxGeometry args={[M(x1 - x0), M(y1 - y0), M(z1 - z0)]} />
     </mesh>
   );

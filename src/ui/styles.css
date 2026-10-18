@@ -3348,3 +3348,135 @@ button.link.danger {
 .missing-items li + li {
   border-top: 1px solid var(--line);
 }
+
+/* ——— Sunlight ——— */
+
+/* Below the toolbar, which reaches the right edge on narrower screens. */
+.sun-panel {
+  top: 66px;
+  width: 280px;
+  max-height: calc(100% - 80px);
+  overflow-y: auto;
+}
+
+.sun-panel .field {
+  display: block;
+  margin-top: 10px;
+}
+
+.sun-panel .field > span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.sun-panel .field .value {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.sun-panel input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.sun-now {
+  margin: 0 0 4px;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+
+.sun-now strong {
+  color: var(--ink);
+}
+
+.sun-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.sun-days button {
+  padding: 3px 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 11px;
+}
+
+.sun-days button.active {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+  color: var(--accent-ink);
+}
+
+.sun-time {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sun-site {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.north-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.north-input {
+  width: 64px;
+  flex-shrink: 0;
+}
+
+.north-glyph {
+  flex-shrink: 0;
+}
+
+.north-glyph .ring {
+  fill: var(--card);
+  stroke: var(--line-strong);
+}
+
+.north-glyph .needle {
+  fill: var(--accent);
+}
+
+.north-glyph .letter {
+  fill: var(--ink);
+  font-size: 7px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+/* North over the plan view. */
+.plan-north {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 3;
+  pointer-events: none;
+  filter: drop-shadow(0 2px 6px rgba(45, 33, 15, 0.18));
+}
+
+.walk-sun {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+
+.walk-sun input[type="range"] {
+  width: 140px;
+  accent-color: var(--accent);
+}
+
+.walk-sun .icon {
+  padding: 3px 6px;
+}
