@@ -16,6 +16,12 @@ if (import.meta.env.DEV) Object.assign(window, { odaja: useOdaja, odajaTools: aw
 // the home in the browser. Find out which before anything uses it.
 await initPlatform();
 
+// The website works offline after the first visit (src/browser/serviceWorker.js).
+// Not in development, and not in the companion, which serves its own files.
+if (import.meta.env.PROD && platform.kind === "browser" && "serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js").catch((err) => console.warn("[odaja] offline copy unavailable:", err));
+}
+
 // AI tools ask the open app for screenshots.
 platform.onScreenshotRequest(captureView);
 

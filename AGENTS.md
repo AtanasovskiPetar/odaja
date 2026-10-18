@@ -85,6 +85,12 @@ get the same check. Never put API keys or Claude credentials in the repo or in
 project folders. The chat's keys stay in the browser and go only to their own
 provider.
 
+The built `index.html` carries a Content Security Policy (`scripts/webBuild.ts`):
+only the site's own scripts (plus WebAssembly for Draco), and requests only to
+the site itself, the AI providers and model servers on `localhost`/`127.0.0.1`.
+Something new that loads from elsewhere (a CDN, another API) must be added
+there, or it's refused. The policy isn't applied in development.
+
 ## Layout
 
 | Path | What |
@@ -127,7 +133,9 @@ provider.
 | `src/model/homeFile.ts` | `.odaja` files (zip of a project folder plus `odaja.json`): pack, unpack with checks (safe paths, size, newer versions), what belongs in a file. Shared by the website and the companion (`/api/project/export`, `/api/projects/import`). |
 | `src/model/libraryFile.ts`, `src/ui/libraryFiles.ts` | `.odaja-item` (one library item) and `.odaja-library` (many) files: pack, unpack with checks, save from the library panel or an object, open (adds to the library, skipping what you have); after opening a home, find the library items it uses (`libraryItem` on objects and materials) that aren't in your library and offer to add them |
 | `src/ui/homeFileActions.ts`, `src/ui/HomeMenu.tsx`, `src/ui/HomeFileDialogs.tsx` | Save (⌘S writes back to the same file where the browser allows it, else downloads), save a copy, open (button, ⌘O or drop), the "Include chat history" choice, export PNG/JPG; the file menu on the home's name with the unsaved-changes dot |
-| `src/browser/` | The website's host: `opfs.ts` (file helpers over the browser's private file system), `homes.ts` (one home at a time plus the previous one, restorable), `platform.ts` (the same interface over browser storage; files are shown through `blob:` URLs), `sample.ts` (the sample flat bundled into the build), `kv.ts` (a small IndexedDB store, e.g. for where each home was saved) |
+| `scripts/webBuild.ts` | Build steps for the website: the Content Security Policy put into `index.html`, and `dist/sw.js` (the service worker from `src/browser/serviceWorker.js` with every built file listed, for offline use) |
+| `.github/workflows/pages.yml` | Builds and publishes the website to GitHub Pages on every push to `master` |
+| `src/browser/` | The website's host: `opfs.ts` (file helpers over the browser's private file system), `homes.ts` (one home at a time plus the previous one, restorable), `platform.ts` (the same interface over browser storage; files are shown through `blob:` URLs), `sample.ts` (the sample flat bundled into the build), `kv.ts` (a small IndexedDB store, e.g. for where each home was saved), `keeping.ts` (asking the browser to keep the site's data; the Safari and private-window notes), `serviceWorker.js` (offline copy; registered only by the website, never in development or the companion) |
 | `src/three/` | React Three Fiber rendering: shell (walls, openings, floors), objects, viewport |
 | `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `StructureLayer.tsx` is the interactive SVG for Structure mode (drawing, dragging, its own pan/zoom), `StructureInspector.tsx` edits walls/openings/rooms, `IssuesPanel.tsx` lists issues. `StartScreen.tsx` is the project picker, `ScenesSection.tsx` the scene list. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
 | `server/api.ts` | The backend, independent of Vite: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; watches the project and pushes events (file changes, screenshot and open-scene requests) on `/api/events` (Server-Sent Events); serves the tools, the library and the home's chat files. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |

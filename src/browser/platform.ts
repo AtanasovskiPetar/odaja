@@ -8,6 +8,7 @@ import type { AgentFiles, FileArea, FileData } from "../agent/files";
 import { chatPath, type LibraryEntry, type Platform, type SceneSummary } from "../platform";
 import * as homes from "./homes";
 import * as opfs from "./opfs";
+import { requestPersistence } from "./keeping";
 import { sampleFiles } from "./sample";
 
 const LIBRARY = "library";
@@ -96,6 +97,7 @@ export function createBrowserPlatform(): Platform {
   const inHome = (rel: string) => homes.homePath(current(), rel);
 
   async function openHome(id: string) {
+    requestPersistence();
     files.clear();
     open = id;
     changed = (await homes.readState()).unsavedToFile[id] ?? false;

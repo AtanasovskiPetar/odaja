@@ -152,7 +152,12 @@ Each phase leaves the app working, and ends with typecheck, build and a check in
 - **Hints** for Ollama and LM Studio CORS.
 - Done when: a real tool-using conversation works on the website with an API key, and the same in the companion.
 
-**6. Ready for the web**
+**6. Ready for the web** — done
+- **To go live:** in the repo's Settings → Pages, set Source to "GitHub Actions" once. Every push to `master` then publishes `https://<user>.github.io/odaja/` (`.github/workflows/pages.yml`).
+- **Offline:** the service worker keeps a copy of every built file (listed at build time) and the two newest versions, so a page opened before an update still loads its parts. The page itself comes from the network first.
+- **Private windows** can only be recognised in Firefox; Chrome and Safari deliberately hide them, so the start screen also says it in words.
+- **The policy** limits local model servers to `localhost` and `127.0.0.1`; one elsewhere on the network would be refused.
+- Checked on the static build (with the server stopped for offline): the sample and the chat open offline; Draco's WebAssembly, blob workers and files, and a PDF plan work; outside scripts, outside requests and `eval` are refused; the companion serves the same build without the offline copy.
 - **Installable and offline:** a PWA (manifest and service worker), with relative `start_url` and `scope` (see "Changing the address later").
 - **Keeping data:** a persistent-storage request, a Safari "Add to Dock" nudge, and a private-window warning ("nothing is kept").
 - **Security:** a strict Content Security Policy.

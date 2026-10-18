@@ -2122,6 +2122,26 @@ button.link.danger {
   font-weight: 500;
 }
 
+/* Where the browser may not keep the home (private window, Safari). */
+.storage-note {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--paper-2, var(--line));
+  color: var(--ink-2);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.storage-note.warn {
+  background: var(--warn-wash);
+  color: var(--ink);
+}
+
+.storage-note .link {
+  font-size: inherit;
+}
+
 .open-path {
   display: flex;
   gap: 6px;

@@ -1,4 +1,5 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
+import { storageNotice, type StorageNotice } from "../browser/keeping";
 import { useOdaja } from "../store";
 import { readSettings } from "../agent/chat/settings";
 import { useChat } from "./chat/chatStore";
@@ -234,7 +235,7 @@ function NewProject() {
           {busy ? "Setting up…" : "Create project"}
         </button>
       )}
-      <p className="hint">{web ? "Kept in this browser, saved as you work." : `Saved in ${tildePath(root)}/${name.trim() || "…"}`}</p>
+      <p className="hint">{web ? "Kept in this browser, saved as you work. A private window forgets it when closed." : `Saved in ${tildePath(root)}/${name.trim() || "…"}`}</p>
     </form>
   );
 }
@@ -427,8 +428,54 @@ function BrowserHomes() {
         </div>
       )}
       {error && <div className="inline-error">{error}</div>}
+      <StorageNote />
     </div>
   );
+}
+
+const SAFARI_NOTE_KEY = "odaja:safari-note-dismissed";
+
+// Where the browser may not keep the home: a private window, or Safari
+// (which clears a site's data after 7 days without a visit, unless it's in the Dock).
+function StorageNote() {
+  const [notice, setNotice] = useState<StorageNotice>(null);
+  useEffect(() => {
+    storageNotice().then((n) => {
+      let dismissed = false;
+      try {
+        dismissed = localStorage.getItem(SAFARI_NOTE_KEY) === "1";
+      } catch {
+        // No storage: show it.
+      }
+      setNotice(n === "safari" && dismissed ? null : n);
+    });
+  }, []);
+  if (notice === "private")
+    return (
+      <p className="storage-note warn">
+        <strong>This looks like a private window.</strong> Nothing is kept after you close it: save your home to a file (⌘S) before you go.
+      </p>
+    );
+  if (notice === "safari")
+    return (
+      <p className="storage-note">
+        Safari clears a site's data after 7 days without a visit. To keep your home, add Odaja to the Dock (File → Add to Dock), and save it to a file now and then.{" "}
+        <button
+          className="link"
+          onClick={() => {
+            try {
+              localStorage.setItem(SAFARI_NOTE_KEY, "1");
+            } catch {
+              // Not remembered: it shows again next time.
+            }
+            setNotice(null);
+          }}
+        >
+          Got it
+        </button>
+      </p>
+    );
+  return null;
 }
 
 export function StartScreen() {
