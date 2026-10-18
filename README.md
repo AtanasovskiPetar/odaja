@@ -95,6 +95,22 @@ subscription)" in the chat.
 > downloaded in a browser needs `chmod +x` and, on macOS, `xattr -d
 > com.apple.quarantine odaja-macos-*` once, because it isn't notarised by Apple.
 
+**Where it goes, and uninstalling.** The program is `~/.local/bin/odaja`. On
+first start it unpacks its app files into `~/.odaja/app/` and keeps a list of
+recent homes in `~/.odaja/`. Your homes and furniture library are in
+`~/Documents/Odaja/`. To remove Odaja, delete the program and `~/.odaja`:
+
+```bash
+rm ~/.local/bin/odaja
+rm -rf ~/.odaja
+```
+
+Your homes stay in `~/Documents/Odaja/`; delete that folder too only if you
+want them gone. On Windows, delete `%LOCALAPPDATA%\Programs\Odaja` and
+`%USERPROFILE%\.odaja`, and remove that Programs folder from your PATH
+(Settings → System → About → Advanced system settings → Environment
+Variables); your homes are in `Documents\Odaja`.
+
 **Claude Code** talking to Odaja directly (with Odaja running):
 
 ```bash
