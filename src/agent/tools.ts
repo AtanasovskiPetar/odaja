@@ -3,18 +3,16 @@
 // chat (any provider), Claude Code through the MCP server, and anything else
 // that speaks MCP. Tools edit the project files; the open app picks the
 // changes up live (and can undo them).
-import fs from "node:fs/promises";
-import path from "node:path";
 import { z } from "zod";
-import { followWalls } from "../src/model/attach";
-import { formatJson } from "../src/model/format";
-import { clearances, objectFootprint, polygonArea, rectEdges, roomAt, roomClearSize, shellBounds, wallEdges, type Vec } from "../src/model/geometry";
-import { issuesFor } from "../src/model/issues";
-import { TEMPLATES, TEMPLATES_BY_ID, templateParams } from "../src/model/library";
-import { addObject, deleteObject, setObjectProps, setTemplateParams, uniqueId, type ObjectDoc } from "../src/model/operations";
-import { enclosedArea } from "../src/model/rooms";
-import { calibrate, defaultUnderlay, pixelToPlan } from "../src/model/underlay";
-import { fitOpening as fitOpeningIn, projectOnWall } from "../src/model/geometry";
+import { followWalls } from "../model/attach";
+import { formatJson } from "../model/format";
+import { clearances, objectFootprint, polygonArea, rectEdges, roomAt, roomClearSize, shellBounds, wallEdges, type Vec } from "../model/geometry";
+import { issuesFor } from "../model/issues";
+import { TEMPLATES, TEMPLATES_BY_ID, templateParams } from "../model/library";
+import { addObject, deleteObject, setObjectProps, setTemplateParams, uniqueId, type ObjectDoc } from "../model/operations";
+import { enclosedArea } from "../model/rooms";
+import { calibrate, defaultUnderlay, pixelToPlan } from "../model/underlay";
+import { fitOpening as fitOpeningIn, projectOnWall } from "../model/geometry";
 import {
   DEFAULT_SHELL,
   LibraryItemSchema,
@@ -28,7 +26,7 @@ import {
   ShellSchema,
   type SceneDoc,
   type ShellDoc,
-} from "../src/model/schema";
+} from "../model/schema";
 import {
   addOpening,
   addRoom,
@@ -41,12 +39,12 @@ import {
   updateOpening,
   updateRoom,
   updateWall,
-} from "../src/model/shellOps";
-import { slugify } from "../src/model/defaults";
-import { quantities } from "../src/model/finishes";
-import { addFinish, clearRoomWalls, finishRoomWalls, removeFinishes, setRoomFloor } from "../src/model/finishOps";
-import { compactPart } from "../src/model/partOps";
-import { createHash } from "node:crypto";
+} from "../model/shellOps";
+import { slugify } from "../model/defaults";
+import { quantities } from "../model/finishes";
+import { addFinish, clearRoomWalls, finishRoomWalls, removeFinishes, setRoomFloor } from "../model/finishOps";
+import { compactPart } from "../model/partOps";
+import { checkPath, extension, fromBase64, sha256Hex, toBase64, type AgentFiles, type FileArea } from "./files";
 import { adjust, autoColor, crop, decode, encodeJpeg, fit, getEdit, rectify, rotate, seamless, storeEdit, type Raster } from "./photos";
 
 export type ToolContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
@@ -56,9 +54,9 @@ export interface ToolResult {
 }
 
 export interface ToolContext {
-  projectDir(): string | null;
+  // The open home's files and the library; null when no home is open.
+  files(): AgentFiles | null;
   scenePath(): string | null; // the scene open in the app
-  libraryRoot: string;
   screenshot(view: "plan" | "3d"): Promise<{ data: string; mimeType: string }>;
   openScene(path: string): void;
   // Photos shared in the chat this tool call comes from (photo-1, photo-2, …),
@@ -114,30 +112,49 @@ class ToolError extends Error {}
 
 // --- file helpers ---------------------------------------------------------
 
-function projectPath(ctx: ToolContext, rel: string) {
-  const dir = ctx.projectDir();
-  if (!dir) throw new ToolError("No project is open in Odaja. Ask the user to open one.");
-  const abs = path.resolve(dir, rel);
-  if (!abs.startsWith(dir + path.sep)) throw new ToolError(`path escapes the project: ${rel}`);
-  return abs;
+function files(ctx: ToolContext): AgentFiles {
+  const f = ctx.files();
+  if (!f) throw new ToolError("No project is open in Odaja. Ask the user to open one.");
+  return f;
+}
+const projectFiles = (ctx: ToolContext): FileArea => files(ctx).project;
+const libraryFiles = (ctx: ToolContext): FileArea => files(ctx).library;
+
+// A path from a model, checked to stay inside its area.
+function safe(rel: string): string {
+  try {
+    return checkPath(rel);
+  } catch {
+    throw new ToolError(`path escapes the project: ${rel}`);
+  }
 }
 
 async function readJson(ctx: ToolContext, rel: string): Promise<unknown> {
-  const text = await fs.readFile(projectPath(ctx, rel), "utf8").catch(() => {
-    throw new ToolError(`file not found: ${rel}`);
-  });
+  const text = await projectFiles(ctx).readText(safe(rel));
+  if (text === null) throw new ToolError(`file not found: ${rel}`);
   return JSON.parse(text);
 }
 
 async function writeJson(ctx: ToolContext, rel: string, doc: unknown) {
-  const abs = projectPath(ctx, rel);
-  await fs.mkdir(path.dirname(abs), { recursive: true });
-  await fs.writeFile(abs, formatJson(doc));
+  await projectFiles(ctx).write(safe(rel), formatJson(doc));
 }
 
 async function listScenes(ctx: ToolContext): Promise<string[]> {
-  const files = await fs.readdir(projectPath(ctx, "scenes")).catch(() => [] as string[]);
-  return files.filter((f) => f.endsWith(".json")).map((f) => `scenes/${f}`).sort();
+  const names = await projectFiles(ctx).listFiles("scenes");
+  return names.filter((f) => f.endsWith(".json")).map((f) => `scenes/${f}`).sort();
+}
+
+// A free folder name in the library: stem, stem-2, …
+async function freeLibraryId(ctx: ToolContext, stem: string) {
+  let id = stem;
+  for (let n = 2; await libraryFiles(ctx).exists(id); n++) id = `${stem}-${n}`;
+  return id;
+}
+
+async function readLibraryItem(ctx: ToolContext, id: string) {
+  const text = await libraryFiles(ctx).readText(`${safe(id)}/item.json`);
+  if (text === null) throw new ToolError(`no library item "${id}"`);
+  return LibraryItemSchema.parse(JSON.parse(text));
 }
 
 async function resolveScene(ctx: ToolContext, scene?: string): Promise<string> {
@@ -326,18 +343,16 @@ export const TOOLS: ToolDef[] = [
     description: "The user's own furniture library (shared by all projects): items they saved or imported. Place one with add_object's library_item.",
     input: z.object({}),
     async run(_input, ctx) {
-      const entries = await fs.readdir(ctx.libraryRoot, { withFileTypes: true }).catch(() => []);
       const items = [];
-      for (const e of entries) {
-        if (!e.isDirectory()) continue;
+      for (const name of await libraryFiles(ctx).listDirs("")) {
         try {
-          const item = LibraryItemSchema.parse(JSON.parse(await fs.readFile(path.join(ctx.libraryRoot, e.name, "item.json"), "utf8")));
+          const item = await readLibraryItem(ctx, name);
           const o = item.object;
           if (!o) {
-            items.push({ id: e.name, name: item.name, category: item.category, notes: item.notes, kind: "material", tile: item.material?.tile });
+            items.push({ id: name, name: item.name, category: item.category, notes: item.notes, kind: "material", tile: item.material?.tile });
             continue;
           }
-          items.push({ id: e.name, name: item.name, category: item.category, notes: item.notes, kind: o.model ? "model" : o.template ? `template:${o.template}` : "parts", size: o.model?.size, params: o.params });
+          items.push({ id: name, name: item.name, category: item.category, notes: item.notes, kind: o.model ? "model" : o.template ? `template:${o.template}` : "parts", size: o.model?.size, params: o.params });
         } catch {
           // Skip broken items.
         }
@@ -372,22 +387,27 @@ export const TOOLS: ToolDef[] = [
         if (!t) throw new ToolError(`unknown template "${input.template}"; see list_templates`);
         fields = { template: t.id, params: templateParams(t, input.params), elevation: input.elevation ?? t.elevation };
       } else if (input.library_item) {
-        const dir = path.join(ctx.libraryRoot, input.library_item);
-        const item = LibraryItemSchema.parse(JSON.parse(await fs.readFile(path.join(dir, "item.json"), "utf8").catch(() => {
-          throw new ToolError(`no library item "${input.library_item}"`);
-        })));
+        const id = safe(input.library_item);
+        const item = await readLibraryItem(ctx, id);
         const o = item.object;
         if (!o) throw new ToolError(`"${input.library_item}" is a material, not furniture; use add_material_from_library`);
         let model;
         if (o.model) {
-          const data = await fs.readFile(path.join(dir, "model.glb"));
-          const src = `assets/models/${input.library_item}-${createHash("sha256").update(data).digest("hex").slice(0, 8)}.glb`;
-          const abs = projectPath(ctx, src);
-          await fs.mkdir(path.dirname(abs), { recursive: true });
-          if (!(await fs.stat(abs).catch(() => null))) await fs.writeFile(abs, data);
+          const data = await libraryFiles(ctx).read(`${id}/model.glb`);
+          if (!data) throw new ToolError(`library item "${id}" is missing its model`);
+          const src = `assets/models/${id}-${(await sha256Hex(data)).slice(0, 8)}.glb`;
+          if (!(await projectFiles(ctx).exists(src))) await projectFiles(ctx).write(src, data);
           model = { src, size: o.model.size };
         }
-        fields = { template: o.template, params: o.params, parts: o.parts, model, elevation: input.elevation ?? o.elevation, notes: input.notes ?? item.notes };
+        fields = {
+          template: o.template,
+          params: o.params,
+          parts: o.parts,
+          model,
+          elevation: input.elevation ?? o.elevation,
+          notes: input.notes ?? item.notes,
+          libraryItem: { id, category: item.category },
+        };
       } else {
         fields = { parts: toParts(input.parts!), elevation: input.elevation };
       }
@@ -776,16 +796,14 @@ export const TOOLS: ToolDef[] = [
     description: "Copy a material (e.g. a tile the user saved) from the user's library into this project, so finishes can use it. Returns the material's name in the project.",
     input: z.object({ item: z.string().describe("library item id from list_library (kind: material)") }),
     async run({ item }, ctx) {
-      const dir = path.join(ctx.libraryRoot, item);
-      const parsed = LibraryItemSchema.parse(JSON.parse(await fs.readFile(path.join(dir, "item.json"), "utf8").catch(() => {
-        throw new ToolError(`no library item "${item}"`);
-      })));
+      const parsed = await readLibraryItem(ctx, item);
       if (!parsed.material) throw new ToolError(`"${item}" is furniture, not a material`);
-      const material = structuredClone(parsed.material) as Record<string, unknown> & { tile?: { image?: string } };
+      const material = { ...structuredClone(parsed.material), libraryItem: { id: item, category: parsed.category } } as Record<string, unknown> & { tile?: { image?: string } };
       if (material.tile?.image) {
-        const rel = `assets/textures/${item}${path.extname(material.tile.image)}`;
-        await fs.mkdir(path.dirname(projectPath(ctx, rel)), { recursive: true });
-        await fs.copyFile(path.join(dir, material.tile.image), projectPath(ctx, rel));
+        const data = await libraryFiles(ctx).read(`${safe(item)}/${material.tile.image}`);
+        if (!data) throw new ToolError(`library item "${item}" is missing its texture`);
+        const rel = `assets/textures/${item}${extension(material.tile.image)}`;
+        await projectFiles(ctx).write(rel, data);
         material.tile.image = rel;
       }
       const project = await readProject(ctx);
@@ -823,7 +841,7 @@ export const TOOLS: ToolDef[] = [
       const preview = await encodeJpeg(await fit(r, 768), 85);
       return {
         content: [
-          { type: "image", data: preview.toString("base64"), mimeType: "image/jpeg" },
+          { type: "image", data: toBase64(preview), mimeType: "image/jpeg" },
           { type: "text", text: `${id}: ${r.width}×${r.height} px. Not saved yet; use save_texture with source "${id}" when it looks right.` },
         ],
       };
@@ -844,24 +862,19 @@ export const TOOLS: ToolDef[] = [
     async run({ source, material, size, roughness, library }, ctx) {
       const r = await fit(await loadPicture(ctx, source), 1600);
       const jpeg = await encodeJpeg(r, 90);
-      const rel = `assets/textures/${material}-${createHash("sha256").update(jpeg).digest("hex").slice(0, 8)}.jpg`;
-      await fs.mkdir(path.dirname(projectPath(ctx, rel)), { recursive: true });
-      await fs.writeFile(projectPath(ctx, rel), jpeg);
+      const rel = `assets/textures/${material}-${(await sha256Hex(jpeg)).slice(0, 8)}.jpg`;
+      await projectFiles(ctx).write(rel, jpeg);
       const tile = { size: size as [number, number], image: rel };
       const mat = { color: "#ffffff", roughness: roughness ?? 0.5, tile };
       const project = await readProject(ctx);
       await writeJson(ctx, "project.json", { ...project, materials: { ...(project.materials ?? {}), [material]: mat } });
       let libraryId: string | undefined;
       if (library) {
-        const stem = slugify(library.name);
-        await fs.mkdir(ctx.libraryRoot, { recursive: true });
-        libraryId = stem;
-        for (let n = 2; await fs.stat(path.join(ctx.libraryRoot, libraryId)).catch(() => null); n++) libraryId = `${stem}-${n}`;
-        const dir = path.join(ctx.libraryRoot, libraryId);
-        await fs.mkdir(dir);
-        await fs.writeFile(path.join(dir, "texture.jpg"), jpeg);
+        libraryId = await freeLibraryId(ctx, slugify(library.name));
+        await libraryFiles(ctx).write(`${libraryId}/texture.jpg`, jpeg);
         const item = { version: 1, name: library.name, category: library.category ?? "Materials", material: { ...mat, tile: { size, image: "texture.jpg" } } };
-        await fs.writeFile(path.join(dir, "item.json"), JSON.stringify(item, null, 2) + "\n");
+        // item.json last: an item only shows up once it's complete.
+        await libraryFiles(ctx).write(`${libraryId}/item.json`, JSON.stringify(item, null, 2) + "\n");
       }
       return { material, texture: rel, size, library: libraryId };
     },
@@ -1017,7 +1030,7 @@ export const TOOLS: ToolDef[] = [
         const photos = ctx.photos ? await ctx.photos() : [];
         const photo = m ? photos[Number(m[1]) - 1] : undefined;
         if (!photo) throw new ToolError(`no ${input.photo} in this chat`);
-        const bytes = Buffer.from(photo.data, "base64");
+        const bytes = fromBase64(photo.data);
         const raster = await decode(bytes);
         // The chat's copy of a plan that is already the background (e.g. from
         // the start screen) is a smaller version of the same image: keep the
@@ -1025,9 +1038,8 @@ export const TOOLS: ToolDef[] = [
         kept = Boolean(underlay && !input.replace && Math.abs(raster.width / raster.height - underlay.width / underlay.height) < 0.01);
         if (!kept) {
           const ext = photo.mimeType === "image/png" ? "png" : "jpg";
-          const rel = `assets/plans/plan-${createHash("sha256").update(bytes).digest("hex").slice(0, 8)}.${ext}`;
-          await fs.mkdir(path.dirname(projectPath(ctx, rel)), { recursive: true });
-          await fs.writeFile(projectPath(ctx, rel), bytes);
+          const rel = `assets/plans/plan-${(await sha256Hex(bytes)).slice(0, 8)}.${ext}`;
+          await projectFiles(ctx).write(rel, bytes);
           underlay = defaultUnderlay(rel, raster.width, raster.height);
         }
       }
@@ -1070,7 +1082,7 @@ export const TOOLS: ToolDef[] = [
       const free = async (dir: string) => {
         for (let n = 1; ; n++) {
           const rel = `${dir}/${stem}${n === 1 ? "" : `-${n}`}.json`;
-          if (!(await fs.stat(projectPath(ctx, rel)).catch(() => null))) return rel;
+          if (!(await projectFiles(ctx).exists(rel))) return rel;
         }
       };
       let shell = current.shellRel;
@@ -1094,13 +1106,12 @@ export const TOOLS: ToolDef[] = [
       const { doc } = await loadScene(ctx, scene);
       const o = doc.objects?.find((x) => x.id === object_id);
       if (!o) throw new ToolError(`no object "${object_id}"`);
-      const stem = slugify(name);
-      await fs.mkdir(ctx.libraryRoot, { recursive: true });
-      let id = stem;
-      for (let n = 2; await fs.stat(path.join(ctx.libraryRoot, id)).catch(() => null); n++) id = `${stem}-${n}`;
-      const dir = path.join(ctx.libraryRoot, id);
-      await fs.mkdir(dir);
-      if (o.model) await fs.copyFile(projectPath(ctx, o.model.src), path.join(dir, "model.glb"));
+      const id = await freeLibraryId(ctx, slugify(name));
+      if (o.model) {
+        const data = await projectFiles(ctx).read(safe(o.model.src));
+        if (!data) throw new ToolError(`the model file ${o.model.src} is missing`);
+        await libraryFiles(ctx).write(`${id}/model.glb`, data);
+      }
       const item = {
         version: 1,
         name,
@@ -1113,7 +1124,7 @@ export const TOOLS: ToolDef[] = [
           ...(o.model ? { model: { src: "model.glb", size: o.model.size } } : {}),
         },
       };
-      await fs.writeFile(path.join(dir, "item.json"), JSON.stringify(item, null, 2) + "\n");
+      await libraryFiles(ctx).write(`${id}/item.json`, JSON.stringify(item, null, 2) + "\n");
       return `saved as library item "${id}" (no preview image; the user can re-save from the app for one)`;
     },
   }),

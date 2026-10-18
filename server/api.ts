@@ -15,7 +15,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { newProjectFile, newSceneFile, newShellFile, slugify, type StarterRoom } from "../src/model/defaults";
 import { formatJson } from "../src/model/format";
 import { belongsInFile, homeName, packHome, unpackHome } from "../src/model/homeFile";
-import { callTool, inputJsonSchema, TOOLS, type ToolContext } from "./tools";
+import { callTool, inputJsonSchema, TOOLS, type ToolContext } from "../src/agent/tools";
+import { folderFiles } from "./agentFiles";
+import { setImageCodec } from "../src/agent/photos";
+import { jimpCodec } from "./imageCodec";
+
+// The photo tools decode and encode images with jimp on the server.
+setImageCodec(jimpCodec);
 import { handleChat } from "./chat/routes";
 import { conversationPhotos, liveConversations, loadConversation } from "./chat/conversations";
 import { stopAllClaudeCode } from "./chat/runners";
@@ -171,10 +177,9 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
   const pendingShots = new Map<string, { resolve: (s: { data: string; mimeType: string }) => void; reject: (e: Error) => void }>();
 
   const toolContext: ToolContext = {
-    projectDir: () => projectDir,
+    files: () => (projectDir ? folderFiles(projectDir, LIBRARY_ROOT) : null),
     scenePath: () => openScenePath,
     editingObject: () => editingObject,
-    libraryRoot: LIBRARY_ROOT,
     screenshot(view) {
       const id = Math.random().toString(36).slice(2);
       return new Promise((resolve, reject) => {

@@ -4,6 +4,7 @@
 //  - "browser": the website, where the home and library live in the browser's
 //    private file system (src/browser/).
 // initPlatform() picks one at startup; `platform` passes every call to it.
+import type { AgentFiles } from "./agent/files";
 import type { HomeSummary } from "./browser/homes";
 import type { StarterRoom } from "./model/defaults";
 import type { LibraryItemDoc, SceneDoc } from "./model/schema";
@@ -74,6 +75,9 @@ export interface Platform {
   importHome(data: Uint8Array): Promise<void>;
   // The open home was just saved to a file (the website tracks unsaved changes).
   markSavedToFile(): Promise<void>;
+  // Where the AI tools run in the page (the website): their file access, and
+  // how they ask the app to show a scene. Absent when tools run on the server.
+  localTools?: { files(): AgentFiles | null; openScene(path: string): void };
   onFileChanged(callback: (path: string) => void): void;
   // Tell the server what the app is showing (tools default to the open scene).
   reportUiState(state: { scenePath?: string | null; editingObject?: string | null }): void;
@@ -209,10 +213,13 @@ const early: ((p: Platform) => void)[] = [];
 
 // Development and the companion answer /api/projects with JSON; the website
 // (static files) doesn't.
+// `?host=browser` forces the website host even with a server present (to
+// develop and test website features with `bun run dev`).
 export async function initPlatform(): Promise<void> {
   if (host) return;
   let server = false;
-  try {
+  const forceBrowser = new URLSearchParams(location.search).get("host") === "browser";
+  if (!forceBrowser) try {
     const res = await fetch("/api/projects", { cache: "no-store" });
     server = res.ok && (res.headers.get("Content-Type") ?? "").includes("application/json");
   } catch {

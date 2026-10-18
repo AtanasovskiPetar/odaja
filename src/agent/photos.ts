@@ -1,28 +1,41 @@
 // Photos shared in a chat, and edits made to them by the AI before anything
 // is kept. Photos stay in the conversation; edits live in memory until
 // save_texture writes a finished texture into the project (or library).
-import { Jimp } from "jimp";
+import { fromBase64 } from "./files";
 
 export interface Raster {
   width: number;
   height: number;
-  data: Buffer; // RGBA
+  data: Uint8Array; // RGBA
+}
+
+// Turning image files into pixels and back. The server uses jimp
+// (server/imageCodec.ts); browsers use a canvas (src/agent/canvasCodec.ts).
+export interface ImageCodec {
+  decode(bytes: Uint8Array): Promise<Raster>;
+  encodeJpeg(r: Raster, quality: number): Promise<Uint8Array>;
+  resize(r: Raster, width: number, height: number): Promise<Raster>;
+}
+
+let codec: ImageCodec | null = null;
+export function setImageCodec(c: ImageCodec) {
+  codec = c;
+}
+function useCodec(): ImageCodec {
+  if (!codec) throw new Error("photo editing isn't set up here");
+  return codec;
 }
 
 // Edits made this session, by id ("edit-3"). Small, short-lived; not saved.
 const edits = new Map<string, Raster>();
 let editCounter = 0;
 
-export async function decode(base64OrBuffer: string | Buffer): Promise<Raster> {
-  const buffer = typeof base64OrBuffer === "string" ? Buffer.from(base64OrBuffer, "base64") : base64OrBuffer;
-  const image = await Jimp.fromBuffer(buffer);
-  return { width: image.bitmap.width, height: image.bitmap.height, data: Buffer.from(image.bitmap.data) };
+export async function decode(base64OrBytes: string | Uint8Array): Promise<Raster> {
+  return useCodec().decode(typeof base64OrBytes === "string" ? fromBase64(base64OrBytes) : base64OrBytes);
 }
 
-export async function encodeJpeg(r: Raster, quality = 88): Promise<Buffer> {
-  const image = new Jimp({ width: r.width, height: r.height });
-  r.data.copy(image.bitmap.data as Buffer);
-  return image.getBuffer("image/jpeg", { quality });
+export async function encodeJpeg(r: Raster, quality = 88): Promise<Uint8Array> {
+  return useCodec().encodeJpeg(r, quality);
 }
 
 export function storeEdit(r: Raster): string {
@@ -61,12 +74,12 @@ export function rotate(r: Raster, degrees: 0 | 90 | 180 | 270): Raster {
   const swap = degrees !== 180;
   const width = swap ? r.height : r.width;
   const height = swap ? r.width : r.height;
-  const data = Buffer.alloc(width * height * 4);
+  const data = new Uint8Array(width * height * 4);
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       // Clockwise rotation: map output pixel back to the source.
       const [sx, sy] = degrees === 90 ? [y, r.height - 1 - x] : degrees === 180 ? [r.width - 1 - x, r.height - 1 - y] : [r.width - 1 - y, x];
-      r.data.copy(data, (y * width + x) * 4, (sy * r.width + sx) * 4, (sy * r.width + sx) * 4 + 4);
+      data.set(r.data.subarray((sy * r.width + sx) * 4, (sy * r.width + sx) * 4 + 4), (y * width + x) * 4);
     }
   }
   return { width, height, data };
@@ -77,8 +90,8 @@ export function crop(r: Raster, x: number, y: number, w: number, h: number): Ras
   const y0 = Math.max(0, Math.round(y));
   const width = Math.max(1, Math.min(r.width - x0, Math.round(w)));
   const height = Math.max(1, Math.min(r.height - y0, Math.round(h)));
-  const data = Buffer.alloc(width * height * 4);
-  for (let row = 0; row < height; row++) r.data.copy(data, row * width * 4, ((y0 + row) * r.width + x0) * 4, ((y0 + row) * r.width + x0 + width) * 4);
+  const data = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row++) data.set(r.data.subarray(((y0 + row) * r.width + x0) * 4, ((y0 + row) * r.width + x0 + width) * 4), row * width * 4);
   return { width, height, data };
 }
 
@@ -135,7 +148,7 @@ export function rectify(r: Raster, corners: [number, number][], maxSide = 1600):
   width = Math.max(8, Math.round(width * k));
   height = Math.max(8, Math.round(height * k));
   const map = homography(corners, width, height);
-  const data = Buffer.alloc(width * height * 4);
+  const data = new Uint8Array(width * height * 4);
   const px = [0, 0, 0, 0];
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -182,7 +195,7 @@ export function autoColor(r: Raster): Raster {
   const lo = Math.min(percentile(0.005), 30);
   const hi = Math.max(percentile(0.995), 225);
   const scale = 255 / Math.max(1, hi - lo);
-  const data = Buffer.alloc(r.data.length);
+  const data = new Uint8Array(r.data.length);
   for (let i = 0; i < n; i++) {
     const o = i * 4;
     for (let c = 0; c < 3; c++) data[o + c] = Math.max(0, Math.min(255, (r.data[o + c] * gain[c] - lo) * scale));
@@ -195,7 +208,7 @@ export function autoColor(r: Raster): Raster {
 export function adjust(r: Raster, brightness = 0, contrast = 0): Raster {
   if (!brightness && !contrast) return r;
   const k = Math.tan(((contrast + 1) * Math.PI) / 4);
-  const data = Buffer.alloc(r.data.length);
+  const data = new Uint8Array(r.data.length);
   for (let i = 0; i < r.data.length; i += 4) {
     for (let c = 0; c < 3; c++) data[i + c] = Math.max(0, Math.min(255, (r.data[i + c] - 128) * k + 128 + brightness * 128));
     data[i + 3] = 255;
@@ -208,7 +221,7 @@ export function adjust(r: Raster, brightness = 0, contrast = 0): Raster {
 // (which wraps continuously) at the edges.
 export function seamless(r: Raster): Raster {
   const { width: w, height: h } = r;
-  const data = Buffer.alloc(r.data.length);
+  const data = new Uint8Array(r.data.length);
   for (let y = 0; y < h; y++) {
     const fy = 1 - Math.abs((2 * (y + 0.5)) / h - 1);
     for (let x = 0; x < w; x++) {
@@ -226,8 +239,5 @@ export function seamless(r: Raster): Raster {
 export async function fit(r: Raster, maxSide: number): Promise<Raster> {
   if (Math.max(r.width, r.height) <= maxSide) return r;
   const k = maxSide / Math.max(r.width, r.height);
-  const image = new Jimp({ width: r.width, height: r.height });
-  r.data.copy(image.bitmap.data as Buffer);
-  image.resize({ w: Math.round(r.width * k), h: Math.round(r.height * k) });
-  return { width: image.bitmap.width, height: image.bitmap.height, data: Buffer.from(image.bitmap.data) };
+  return useCodec().resize(r, Math.round(r.width * k), Math.round(r.height * k));
 }

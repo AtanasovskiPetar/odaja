@@ -1,6 +1,6 @@
 // HTTP routes for the in-app chat, mounted under /api/chat by the dev server.
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { ToolContext } from "../tools";
+import type { ToolContext } from "../../src/agent/tools";
 import { conversationPhotos, deleteConversation, listConversations, liveConversations, loadConversation, newConversation, saveConversation, type ImageInput } from "./conversations";
 import { listModels, listProviders } from "./models";
 import { runTurn, type ChatEvent } from "./runners";

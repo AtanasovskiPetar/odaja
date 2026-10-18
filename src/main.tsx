@@ -9,8 +9,8 @@ import "@fontsource/instrument-serif/400-italic.css";
 import "./ui/styles.css";
 import "./ui/themePref";
 
-// Expose the store in development, for debugging from the browser console.
-if (import.meta.env.DEV) Object.assign(window, { odaja: useOdaja });
+// Expose the store and the AI tools in development, for debugging and tests.
+if (import.meta.env.DEV) Object.assign(window, { odaja: useOdaja, odajaTools: await import("./agent/client") });
 
 // Development and the companion keep projects in folders; the website keeps
 // the home in the browser. Find out which before anything uses it.

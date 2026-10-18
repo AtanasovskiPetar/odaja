@@ -10,7 +10,7 @@ import { dynamicTool, jsonSchema, stepCountIs, streamText, type LanguageModel, t
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { callTool, inputJsonSchema, TOOLS, type ToolContext, type ToolResult } from "../tools";
+import { callTool, inputJsonSchema, TOOLS, type ToolContext, type ToolResult } from "../../src/agent/tools";
 import { transcript, type AssistantItem, type Conversation, type ImageInput } from "./conversations";
 import { SYSTEM_PROMPT } from "./prompt";
 import { claudeCommand, mcpCommand } from "../env";

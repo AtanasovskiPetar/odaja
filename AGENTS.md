@@ -19,6 +19,7 @@ bun install
 bun run dev                                    # reopens the last project, or shows the start screen
 ODAJA_PROJECT=/path/to/project bun run dev     # opens a specific project folder
 ODAJA_HOME=/path bun run dev                   # where new projects are created (default ~/Documents/Odaja)
+open http://localhost:5173/?host=browser       # dev, but as the website: the home in browser storage, tools in the page
 bun run build && bun run start                 # the built app without Vite, at http://localhost:5180 (ODAJA_PORT)
 bun run package:server                         # build/odaja-server (one binary, no Bun needed) + build/resources/
 bun run typecheck
@@ -42,9 +43,10 @@ the copy too. To change the sample itself, open it deliberately with
 
 ## AI integration
 
-- **Tools** (`server/tools.ts`): one set of tools (get_overview, add_object,
+- **Tools** (`src/agent/tools.ts`): one set of tools (get_overview, add_object,
   update_wall, screenshot, check_issues, …) that read and change the open
-  project. The server exposes them at `/api/tools` and `/api/tools/call`.
+  project. The server exposes them at `/api/tools` and `/api/tools/call`;
+  on the website they run in the page on the browser-stored home.
   Screenshots are taken by the open app (the server asks it over the event
   stream), so the app must be open in a browser.
 - **MCP server** (`mcp/run.ts`, started by `mcp/server.ts` or as
@@ -90,13 +92,14 @@ project folders.
 | `src/model/rooms.ts` | Finding enclosed areas in the wall graph ("Make room") |
 | `src/model/snap.ts` | Snapping for the wall tools (ends, onto walls, 45° angles, alignment, grid) |
 | `src/model/issues.ts` | Design checks (furniture in walls, overlaps, blocked doors, clearances) with quick fixes |
-| `server/tools.ts` | AI tools shared by the chat and the MCP server |
+| `src/agent/tools.ts` | AI tools shared by the chat and the MCP server. They reach files only through `ctx.files()` (`src/agent/files.ts`: the home and the library), so they run on the server (`server/agentFiles.ts`, folders on disk) and in the website's page (browser storage, via `platform.localTools`) |
+| `src/agent/client.ts` | Calling the tools from the app: in the page on the website, through `/api/tools/call` otherwise |
 | `server/chat/` | Chat backend: providers and models, settings, conversations, the three runners, HTTP routes |
 | `mcp/server.ts` | MCP server forwarding Odaja's tools to MCP clients |
 | `src/model/finishes.ts`, `src/model/finishOps.ts` | Finishes: face rectangles with openings cut out, wall sides facing a room, quantities; and the named edits |
 | `src/three/textures.ts` | Real-scale tile textures (patterns drawn on canvas, or photos) |
 | `src/three/JoineryView.tsx` | 3D doors and windows by type (frames, sashes, glazing bars, leaves) |
-| `server/photos.ts` | Image edits for photo tools (crop, perspective straightening, colour, seamless); edits stay in memory until saved |
+| `src/agent/photos.ts` | Image edits for photo tools (crop, perspective straightening, colour, seamless); edits stay in memory until saved. Decoding, resizing and JPEG encoding come from a codec: jimp on the server (`server/imageCodec.ts`), a canvas in the browser (`src/agent/canvasCodec.ts`; jimp's browser build is a stub) |
 | `src/ui/MaterialsDialog.tsx`, `src/ui/FinishesInspector.tsx` | Materials editor; finishes, joinery and quantities in the inspector |
 | `src/model/parts.ts`, `src/model/partOps.ts` | Part sizes and footprints for every shape; editing parts (add, duplicate, mirror, sit on top, snap) |
 | `src/three/partGeometry.ts` | 3D geometry for every part shape (cut-outs as extrusion holes) |

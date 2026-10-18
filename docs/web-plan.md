@@ -128,7 +128,9 @@ Each phase leaves the app working, and ends with typecheck, build and a check in
 - **Files:** `.odaja-item` and `.odaja-library`, import and export.
 - Done when: a table made in one home is placed in another, survives replacing the home, travels by item file to a fresh browser profile, and is offered when a home using it is opened.
 
-**4. Agent tools in the browser**
+**4. Agent tools in the browser** — done
+- Photo editing in the browser uses a canvas instead of `jimp`, whose browser build is an empty stub. That also keeps `jimp` out of the website.
+- `?host=browser` runs dev as the website, and dev exposes the tool client as `window.odajaTools` for tests.
 - **Move** `server/tools.ts` and `server/photos.ts` to `src/agent/`, on the storage interface (Node and OPFS implementations). Screenshot and open-scene become direct calls in the browser.
 - **The server** uses the same module, so `/api/tools/call` and MCP are unchanged.
 - Done when: every tool runs against a browser-stored home (checked with a script), and MCP from Claude Code still edits a companion folder live.

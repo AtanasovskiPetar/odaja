@@ -4,6 +4,7 @@
 import { newProjectFile, newSceneFile, newShellFile, slugify } from "../model/defaults";
 import { formatJson } from "../model/format";
 import { belongsInFile, packHome, unpackHome } from "../model/homeFile";
+import type { AgentFiles, FileArea, FileData } from "../agent/files";
 import type { LibraryEntry, Platform, SceneSummary } from "../platform";
 import * as homes from "./homes";
 import * as opfs from "./opfs";
@@ -49,6 +50,44 @@ export function createBrowserPlatform(): Platform {
   // announced like the server's file watcher does, so the app reloads them.
   const changeListeners: ((path: string) => void)[] = [];
   const announce = (rel: string) => changeListeners.forEach((cb) => cb(rel));
+  const openSceneListeners: ((path: string) => void)[] = [];
+
+  // The AI tools' view of browser storage: the open home and the library.
+  // What they write to the home is announced, so the app shows it at once.
+  const asData = (data: FileData): opfs.Data => (typeof data === "string" ? data : new Blob([data as BlobPart]));
+  function area(root: () => string, onWrite?: (rel: string, data: FileData) => Promise<void>): FileArea {
+    const at = (rel: string) => (rel ? `${root()}/${rel}` : root());
+    return {
+      read: async (rel) => {
+        const file = await opfs.readFile(at(rel));
+        return file ? new Uint8Array(await file.arrayBuffer()) : null;
+      },
+      readText: (rel) => opfs.readText(at(rel)),
+      write: async (rel, data) => (onWrite ? onWrite(rel, data) : opfs.writeFile(at(rel), asData(data))),
+      listFiles: async (dir) => (await opfs.list(at(dir))).filter((e) => e.kind === "file").map((e) => e.name),
+      listDirs: async (dir) => (await opfs.list(at(dir))).filter((e) => e.kind === "directory").map((e) => e.name),
+      exists: (rel) => opfs.exists(at(rel)),
+    };
+  }
+  const agentFiles: AgentFiles = {
+    project: area(
+      () => homes.homePath(current()),
+      async (rel, data) => {
+        await write(rel, asData(data));
+        announce(rel);
+      },
+    ),
+    library: area(
+      () => LIBRARY,
+      async (rel, data) => {
+        await opfs.writeFile(`${LIBRARY}/${rel}`, asData(data));
+        if (!isData(rel)) {
+          const file = await opfs.readFile(`${LIBRARY}/${rel}`);
+          if (file) libraryFiles.set(rel, file);
+        }
+      },
+    ),
+  };
 
   function current(): string {
     if (!open) throw new Error("no home is open");
@@ -342,13 +381,19 @@ export function createBrowserPlatform(): Platform {
       await homes.markSaved(id);
     },
 
+    localTools: {
+      files: () => (open ? agentFiles : null),
+      openScene: (path) => openSceneListeners.forEach((cb) => cb(path)),
+    },
+
     onFileChanged(callback) {
       changeListeners.push(callback);
     },
-    // Agents connect through the companion, so there are no requests from
-    // them here (yet).
+    // The tools run in this page and ask the app directly (see localTools).
     reportUiState() {},
-    onOpenSceneRequest() {},
+    onOpenSceneRequest(callback) {
+      openSceneListeners.push(callback);
+    },
     onScreenshotRequest() {},
   };
 }
