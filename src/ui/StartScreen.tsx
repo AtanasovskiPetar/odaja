@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { useOdaja } from "../store";
+import { readSettings } from "../agent/chat/settings";
 import { useChat } from "./chat/chatStore";
 import { PLAN_ACCEPT, savePlanFile } from "./planImage";
 import { LogoMark } from "./icons";
@@ -142,13 +143,13 @@ function NewProject() {
       if (start === "plan" && plan) {
         const { underlay, blob } = await savePlanFile(plan);
         applyProject((doc) => ({ ...doc, underlay }));
-        if (web) {
-          // No chat on the website yet: start by setting the plan's scale, then trace.
-          useOdaja.getState().setUnderlayPanel(true);
-          useOdaja.getState().setUnderlayTool("calibrate");
-        } else {
+        if (Object.keys((await readSettings()).keys).length > 0) {
           // The plan becomes the background, and the chat gets it ready to send.
           startDraft(PLAN_DRAFT, [new File([blob], plan.name, { type: blob.type })]);
+        } else {
+          // No AI connected: start by setting the plan's scale, then trace.
+          useOdaja.getState().setUnderlayPanel(true);
+          useOdaja.getState().setUnderlayTool("calibrate");
         }
       }
     } catch (err) {
@@ -180,7 +181,7 @@ function NewProject() {
             <PlanGlyph />
           </span>
           <strong>From a floor plan</strong>
-          <span>{web ? "A photo or PDF of the plan. It sits underneath for you to trace the walls." : "A photo or PDF of the plan. It sits underneath, and the chat draws the walls over it."}</span>
+          <span>A photo or PDF of the plan. It sits underneath, for you or the chat to draw the walls over it.</span>
         </label>
         <label className={start === "empty" ? "active" : ""}>
           <input type="radio" checked={start === "empty"} onChange={() => setStart("empty")} />
@@ -188,7 +189,7 @@ function NewProject() {
             <BlankGlyph />
           </span>
           <strong>A blank sheet</strong>
-          <span>{web ? "No walls yet. Draw them yourself." : "No walls yet. Draw them yourself, or describe them to the chat."}</span>
+          <span>No walls yet. Draw them yourself, or describe them to the chat.</span>
         </label>
       </div>
 

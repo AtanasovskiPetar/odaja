@@ -1,7 +1,8 @@
 // Connections for the chat: API keys, local model servers, default model.
-// Keys are saved on this Mac only (~/.odaja/settings.json), never in projects.
+// Keys are kept in this browser only (src/agent/chat/settings.ts), never in homes.
 import { useState } from "react";
-import { saveDefaultModel, saveProviderSettings, useChat, type ProviderInfo } from "./chatStore";
+import { saveDefaultModel, saveProviderSettings } from "../../agent/chat/settings";
+import { useChat, type ProviderInfo } from "./chatStore";
 
 const KEY_LINKS: Partial<Record<ProviderInfo["id"], string>> = {
   anthropic: "https://console.anthropic.com/settings/keys",
@@ -10,12 +11,19 @@ const KEY_LINKS: Partial<Record<ProviderInfo["id"], string>> = {
   openrouter: "https://openrouter.ai/keys",
 };
 
+// A web page may only talk to a local model server that allows it (CORS).
+const LOCAL_HINTS: Partial<Record<ProviderInfo["id"], string>> = {
+  ollama: /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(location.origin)
+    ? "Install Ollama and pull a model that can use tools."
+    : `Ollama must allow this site: start it with OLLAMA_ORIGINS=${location.origin}.`,
+  lmstudio: 'In LM Studio, start the server (Developer tab) and turn on "Enable CORS".',
+};
+
 function ProviderRow({ provider, onSaved }: { provider: ProviderInfo; onSaved: () => void }) {
   const [key, setKey] = useState("");
   const [url, setUrl] = useState(provider.baseUrl ?? "");
-  const [command, setCommand] = useState(provider.commandPath ?? "");
   const [busy, setBusy] = useState(false);
-  const save = async (patch: { key?: string; baseUrl?: string; commandPath?: string }) => {
+  const save = async (patch: { key?: string; baseUrl?: string }) => {
     setBusy(true);
     try {
       await saveProviderSettings(provider.id, patch);
@@ -32,22 +40,6 @@ function ProviderRow({ provider, onSaved }: { provider: ProviderInfo; onSaved: (
         <span className={`dot ${provider.ready ? "ready" : ""}`} />
       </div>
       <div className="muted provider-status">{provider.status}</div>
-      {provider.kind === "subscription" && (
-        <p className="hint">Uses the Claude Code installed on this Mac with your own sign-in. No API key, and usage counts toward your plan.</p>
-      )}
-      {provider.kind === "subscription" && (!provider.ready || provider.commandPath) && (
-        <div className="provider-field">
-          <input value={command} onChange={(e) => setCommand(e.target.value)} placeholder="Path to claude, e.g. ~/.local/bin/claude" spellCheck={false} />
-          <button disabled={busy || command === (provider.commandPath ?? "")} onClick={() => save({ commandPath: command })}>
-            Save
-          </button>
-          {provider.commandPath && (
-            <button disabled={busy} onClick={() => save({ commandPath: "" })} title="Find Claude Code by itself again">
-              Reset
-            </button>
-          )}
-        </div>
-      )}
       {provider.kind === "api-key" && (
         <div className="provider-field">
           <input
@@ -73,12 +65,15 @@ function ProviderRow({ provider, onSaved }: { provider: ProviderInfo; onSaved: (
         </div>
       )}
       {provider.kind === "local" && (
-        <div className="provider-field">
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Server URL" />
-          <button disabled={busy || url === provider.baseUrl} onClick={() => save({ baseUrl: url })}>
-            Save
-          </button>
-        </div>
+        <>
+          <div className="provider-field">
+            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="Server URL" />
+            <button disabled={busy || url === provider.baseUrl} onClick={() => save({ baseUrl: url })}>
+              Save
+            </button>
+          </div>
+          <p className="hint">{LOCAL_HINTS[provider.id]}</p>
+        </>
       )}
     </div>
   );
@@ -96,7 +91,7 @@ export function ChatSettingsDialog() {
     <div className="dialog-backdrop" onMouseDown={(e) => e.target === e.currentTarget && close()}>
       <div className="dialog chat-settings">
         <h2>Models and connections</h2>
-        <p className="muted">Keys are stored only on this Mac, in ~/.odaja/settings.json, readable by your user alone.</p>
+        <p className="muted">Your keys stay in this browser, for this site only. The chat sends each key only to its own provider, straight from this page. Usage is billed to your account there.</p>
         {providers.map((p) => (
           <ProviderRow key={p.id} provider={p} onSaved={loadProviders} />
         ))}

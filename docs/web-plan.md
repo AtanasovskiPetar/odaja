@@ -63,6 +63,8 @@ The website's address can change without touching code; only users' data needs c
 
 **Deploying to your own domain:** add `public/CNAME` with the domain, point the domain's DNS at GitHub Pages, and set it in the repo's Pages settings. The workflow and the build stay the same.
 
+**API keys and the shared `github.io` address:** browser storage belongs to the origin, and every Pages site of one account shares it: `<user>.github.io/odaja` and `<user>.github.io/anything-else` are the same origin. Any page published under that account could read the chat's API keys (and the home). Fine while only Odaja is published there; before sharing widely, use an address Odaja has to itself (a custom domain, or a GitHub organisation used only for Odaja). Another reason to settle the address first.
+
 **Users' data:** browser storage belongs to the exact address, so a new address starts empty.
 - **Simplest:** choose the address before sharing (the plan already says so). Then nothing ever has to move.
 - **Always possible:** save the home (`.odaja`) and the library (`.odaja-library`) to files, and open them at the new address.
@@ -135,7 +137,12 @@ Each phase leaves the app working, and ends with typecheck, build and a check in
 - **The server** uses the same module, so `/api/tools/call` and MCP are unchanged.
 - Done when: every tool runs against a browser-stored home (checked with a script), and MCP from Claude Code still edits a companion folder live.
 
-**5. The chat in the browser; Claude Code runner removed**
+**5. The chat in the browser; Claude Code runner removed** — done
+- The engine is `src/agent/chat/`, loaded the first time the chat is used. It asks for Odaja's tools through `src/agent/client.ts`, so the same code runs on the website (tools in the page) and in the companion (tools on the server; the chat's photos go along with a tool call that names one).
+- Conversations go through `platform.chats` (`.odaja/chats/` in browser storage or the folder); saving one doesn't mark the home unsaved.
+- Keys saved in the companion's old `~/.odaja/settings.json` aren't carried over: enter them again in the chat's settings (the file can be deleted).
+- New homes from a floor plan hand the plan to the chat when an API key is set; otherwise they start with setting the scale to trace by hand.
+- Checked with a fake model server (OpenAI-compatible, and the Anthropic API through the page's fetch): tool loops, a photo used by a tool, saving and reopening, on the website and in the companion. A conversation with a real key is still to do.
 - **The engine:** move the provider runners and model lists from `server/chat/` to the browser (the Anthropic SDK in browser mode, the AI SDK for the others).
 - **Settings:** keys and settings in IndexedDB, with the settings dialog adjusted. Tools are called locally or through the companion. Conversations are stored with the home.
 - **Remove:**

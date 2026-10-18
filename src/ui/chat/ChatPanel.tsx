@@ -185,8 +185,10 @@ export function ChatPanel() {
   const scroller = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // Chats belong to the project: reload the list when it changes.
+  // Chats belong to the home: reload the list when it changes (and stop a
+  // reply still running, so it isn't saved into the next home).
   useEffect(() => {
+    useChat.getState().stop();
     openChat(null);
     refreshChats();
   }, [projectDir, openChat, refreshChats]);

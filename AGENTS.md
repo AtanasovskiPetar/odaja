@@ -55,31 +55,35 @@ the copy too. To change the sample itself, open it deliberately with
   `claude mcp add odaja -- bun /path/to/odaja/mcp/server.ts`. It finds the
   running app through `~/.odaja/server.json` (written by the standalone
   server), else http://localhost:5173; `ODAJA_URL` overrides both.
-- **In-app chat** (`server/chat/`, `src/ui/chat/`): a chat panel (⌘J) with a
-  model picker. Connections:
-  - *Claude Code (subscription)*: drives the user's own installed, signed-in
-    `claude` in headless stream-json mode with only Odaja's MCP tools
-    (`--tools "" --strict-mcp-config --allowedTools "mcp__odaja__*"
-    --permission-mode dontAsk`), with `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`
-    removed so the subscription is used. Odaja never reads Claude credentials.
-    `claude` is looked up on the login shell's PATH; the chat settings can set
-    its path by hand. For personal use only.
-  - *Anthropic API*: the official `@anthropic-ai/sdk`, streaming tool loop
-    (default model `claude-opus-5-5`, server-side refusal fallback on).
-  - *OpenAI, Gemini, OpenRouter, Ollama, LM Studio*: the Vercel AI SDK.
-  - API keys and local server URLs live in `~/.odaja/settings.json` (mode 600),
-    never in projects. Conversations are saved per project in
-    `<project>/.odaja/chats/`.
+- **In-app chat** (`src/agent/chat/`, `src/ui/chat/`): a chat panel (⌘J) with a
+  model picker. It runs in the page, on the website and in the companion alike:
+  requests go straight from the browser to the provider with the user's own
+  key, and tools are called through `src/agent/client.ts` (in the page, or on
+  the companion with the chat's photos sent along). The model code loads the
+  first time the chat needs it. Connections:
+  - *Anthropic API*: the official `@anthropic-ai/sdk` (`dangerouslyAllowBrowser`),
+    streaming tool loop (default model `claude-opus-5-5`, server-side refusal
+    fallback on).
+  - *OpenAI, Gemini, OpenRouter, Ollama, LM Studio*: the Vercel AI SDK. Local
+    servers must allow the page's address (CORS): Ollama allows localhost by
+    itself, the website needs `OLLAMA_ORIGINS`; LM Studio needs "Enable CORS".
+    The chat says so when they don't answer.
+  - API keys and local server URLs live in the browser's IndexedDB for that
+    site (`src/agent/chat/settings.ts`), never in homes or `.odaja` files.
+    Conversations are saved with the home in `.odaja/chats/` (`platform.chats`).
+  - There is no in-app Claude Code connection: to use a Claude subscription,
+    talk to Odaja from Claude Desktop or Claude Code over MCP (the companion).
 
 ## Security
 
-The dev server listens on localhost only. Its `/api` can change files, delete
-library items and run models on the user's accounts, so it refuses requests
+The dev server listens on localhost only. Its `/api` can change files and delete
+library items, so it refuses requests
 whose browser `Origin` isn't Odaja itself (other websites the user visits);
 local programs without an Origin (the MCP server, curl) are allowed, and Vite's
 host check refuses DNS-rebinding hosts. Keep new endpoints under `/api` so they
 get the same check. Never put API keys or Claude credentials in the repo or in
-project folders.
+project folders. The chat's keys stay in the browser and go only to their own
+provider.
 
 ## Layout
 
@@ -94,7 +98,7 @@ project folders.
 | `src/model/issues.ts` | Design checks (furniture in walls, overlaps, blocked doors, clearances) with quick fixes |
 | `src/agent/tools.ts` | AI tools shared by the chat and the MCP server. They reach files only through `ctx.files()` (`src/agent/files.ts`: the home and the library), so they run on the server (`server/agentFiles.ts`, folders on disk) and in the website's page (browser storage, via `platform.localTools`) |
 | `src/agent/client.ts` | Calling the tools from the app: in the page on the website, through `/api/tools/call` otherwise |
-| `server/chat/` | Chat backend: providers and models, settings, conversations, the three runners, HTTP routes |
+| `src/agent/chat/` | The chat engine, in the page: providers and models, settings (IndexedDB), conversations (with the home), the system prompt, the two runners (Anthropic SDK, AI SDK) |
 | `mcp/server.ts` | MCP server forwarding Odaja's tools to MCP clients |
 | `src/model/finishes.ts`, `src/model/finishOps.ts` | Finishes: face rectangles with openings cut out, wall sides facing a room, quantities; and the named edits |
 | `src/three/textures.ts` | Real-scale tile textures (patterns drawn on canvas, or photos) |
@@ -126,11 +130,11 @@ project folders.
 | `src/browser/` | The website's host: `opfs.ts` (file helpers over the browser's private file system), `homes.ts` (one home at a time plus the previous one, restorable), `platform.ts` (the same interface over browser storage; files are shown through `blob:` URLs), `sample.ts` (the sample flat bundled into the build), `kv.ts` (a small IndexedDB store, e.g. for where each home was saved) |
 | `src/three/` | React Three Fiber rendering: shell (walls, openings, floors), objects, viewport |
 | `src/ui/` | App layout, sidebar, toolbar, styles. `Inspector.tsx` edits the selected object, `AddPanel.tsx` lists templates, `actions.ts` holds add/duplicate/delete. `StructureLayer.tsx` is the interactive SVG for Structure mode (drawing, dragging, its own pan/zoom), `StructureInspector.tsx` edits walls/openings/rooms, `IssuesPanel.tsx` lists issues. `StartScreen.tsx` is the project picker, `ScenesSection.tsx` the scene list. `PlanOverlay.tsx` draws the plan view's dimensions as SVG over the canvas, following the orthographic camera through `planView` in the store. |
-| `server/api.ts` | The backend, independent of Vite: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; watches the project and pushes events (file changes, screenshot and open-scene requests) on `/api/events` (Server-Sent Events); serves the tools, the library and the chat. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
+| `server/api.ts` | The backend, independent of Vite: lists, creates and opens projects; serves the open project's files over `/api`; creates, renames and deletes scene files; watches the project and pushes events (file changes, screenshot and open-scene requests) on `/api/events` (Server-Sent Events); serves the tools, the library and the home's chat files. It also copies `docs/project-format.md` into each project as `AGENTS.md`. |
 | `server/project-server.ts` | Vite plugin mounting `server/api.ts` at `/api` in development |
 | `server/main.ts` | Entry point of the standalone server and of the `odaja-server` binary: serves (`server/serve.ts`), or runs the MCP server with `mcp`. Packaged, it finds its files in `resources/` next to it (`ODAJA_APP_ROOT`). |
 | `server/serve.ts` | Standalone web server: the built app (`dist/`) plus `server/api.ts` on 127.0.0.1 only, Host check against DNS rebinding, port 5180 or a free one, announced in `~/.odaja/server.json` (`server/discovery.ts`) |
-| `server/env.ts` | The machine: compiled or not, the login shell's PATH (apps from the Dock get a bare one), the `claude` command (chat settings can set its path) and how to start the MCP server |
+| `server/env.ts` | Whether the server runs as the packaged binary |
 | `scripts/package-server.ts` | `bun run package:server [bun-target]`: compiles the server binary and lays out `build/resources/` |
 | `src/model/defaults.ts` | Starting content for new projects (materials, the rectangular-room shell) and scenes |
 | `examples/sample-flat/` | The sample flat: offered on the start screen as a copy, and the fixture for development |

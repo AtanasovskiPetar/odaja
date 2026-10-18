@@ -22,9 +22,6 @@ import { jimpCodec } from "./imageCodec";
 
 // The photo tools decode and encode images with jimp on the server.
 setImageCodec(jimpCodec);
-import { handleChat } from "./chat/routes";
-import { conversationPhotos, liveConversations, loadConversation } from "./chat/conversations";
-import { stopAllClaudeCode } from "./chat/runners";
 
 // Files that ship with the app: the format docs copied into every project,
 // and the sample flat. Resolved from where Odaja runs.
@@ -130,12 +127,11 @@ class HttpError extends Error {
 export interface OdajaApi {
   // Handles a request whose URL is relative to /api (e.g. "/projects").
   handle(req: IncomingMessage, res: ServerResponse): Promise<void>;
-  // Stops watching files and any chats still running.
+  // Stops watching files.
   stop(): void;
 }
 
-// `port` is where the app is served, for the MCP server the chat starts.
-export async function createOdajaApi({ port }: { port: () => number }): Promise<OdajaApi> {
+export async function createOdajaApi(): Promise<OdajaApi> {
   let projectDir: string | null = null;
   // The scene open in the app (reported by the app), the default for tools,
   // and the object whose shape is being edited.
@@ -195,18 +191,13 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
     },
   };
 
-  // Tools called from a chat can use that chat's photos.
-  function toolsFor(chatId: string | undefined): ToolContext {
-    if (!chatId) return toolContext;
-    return {
-      ...toolContext,
-      async photos() {
-        const live = liveConversations.get(chatId);
-        if (live) return conversationPhotos(live);
-        if (!projectDir) return [];
-        return conversationPhotos(await loadConversation(projectDir, chatId).catch(() => ({ turns: [] }) as never));
-      },
-    };
+  // Tools called from the app's chat get the chat's photos with the call.
+  function toolsWith(photos: unknown): ToolContext {
+    if (!Array.isArray(photos)) return toolContext;
+    const valid = photos
+      .filter((p) => typeof p?.mimeType === "string" && typeof p?.data === "string")
+      .map((p) => ({ mimeType: String(p.mimeType), data: String(p.data) }));
+    return { ...toolContext, photos: async () => valid };
   }
 
   function requireProject(): string {
@@ -515,7 +506,6 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
       docsWatcher?.close();
       for (const res of listeners) res.end();
       listeners.clear();
-      stopAllClaudeCode();
     },
 
     async handle(req, res) {
@@ -529,16 +519,6 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
       const json = async () => JSON.parse((await readBody(req)).toString("utf8") || "{}");
       const route = `${req.method} ${url.pathname}`;
       try {
-        if (route.includes(" /chat/")) {
-          const handled = await handleChat(route, url, req, res, {
-            projectDir: () => projectDir,
-            toolsFor,
-            odajaUrl: () => `http://localhost:${port()}`,
-            json,
-            send,
-          });
-          if (handled) return;
-        }
         switch (route) {
           case "GET /events": {
             res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" });
@@ -565,6 +545,17 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
             res.setHeader("Content-Type", "application/octet-stream");
             res.setHeader("Cache-Control", "no-store");
             return void res.end(zip);
+          }
+          // The app's chats (read and written as files under .odaja/chats/).
+          case "GET /chats": {
+            const names = await fs.readdir(path.join(requireProject(), ".odaja", "chats")).catch(() => [] as string[]);
+            return send(200, { ids: names.filter((n) => /^[a-z0-9-]+\.json$/.test(n)).map((n) => n.slice(0, -".json".length)) });
+          }
+          case "POST /chats/delete": {
+            const { id } = await json();
+            if (!/^[a-z0-9-]+$/.test(String(id))) return send(400, { error: "bad chat id" });
+            await fs.rm(resolveInProject(`.odaja/chats/${id}.json`), { force: true });
+            return send(200, { ok: true });
           }
           case "GET /project/has-chats": {
             const chats = (await walk(requireProject(), ".odaja/chats")).some((p) => p.endsWith(".json"));
@@ -616,8 +607,8 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
           case "GET /tools":
             return send(200, TOOLS.map((t) => ({ name: t.name, description: t.description, inputSchema: inputJsonSchema(t) })));
           case "POST /tools/call": {
-            const { name, input, chatId } = await json();
-            return send(200, await callTool(String(name), input, toolsFor(typeof chatId === "string" ? chatId : undefined)));
+            const { name, input, photos } = await json();
+            return send(200, await callTool(String(name), input, toolsWith(photos)));
           }
           case "POST /ui-state": {
             const state = await json();

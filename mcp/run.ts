@@ -6,14 +6,11 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { findRunningOdaja } from "../server/discovery";
 
-// ODAJA_URL wins (Odaja's own chat sets it); otherwise the Odaja that is
-// running on this machine; otherwise the development server.
+// ODAJA_URL wins; otherwise the Odaja that is running on this machine;
+// otherwise the development server.
 async function base() {
   return (process.env.ODAJA_URL ?? (await findRunningOdaja()) ?? "http://localhost:5173").replace(/\/$/, "");
 }
-
-// Set when Odaja's own chat starts Claude Code, so tools can use its photos.
-const CHAT_ID = process.env.ODAJA_CHAT_ID;
 
 const INSTRUCTIONS = `Odaja is the user's 3D home-design app. These tools read and change the open project.
 Start with get_overview. Units are cm on a top-down plan (x east, y south); rotation is degrees clockwise from above and 0 means an object's front faces north.
@@ -44,7 +41,7 @@ export async function runMcpServer() {
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     try {
-      return await api("/tools/call", { name: request.params.name, input: request.params.arguments ?? {}, chatId: CHAT_ID });
+      return await api("/tools/call", { name: request.params.name, input: request.params.arguments ?? {} });
     } catch (err) {
       return { content: [{ type: "text", text: (err as Error).message }], isError: true };
     }

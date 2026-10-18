@@ -1,34 +1,28 @@
-// Running a chat turn: send the user's message to the model, let it use
-// Odaja's tools until it's done, and stream what happens to the app.
+// Running a chat turn in the page: send the user's message to the model, let
+// it use Odaja's tools until it's done, and report what happens as it streams.
 //   - Anthropic API: the official Anthropic SDK, streaming tool loop.
 //   - OpenAI, Gemini, OpenRouter, Ollama, LM Studio: the Vercel AI SDK.
-//   - Claude Code: the user's own installed Claude Code (their subscription),
-//     driven in headless stream-json mode with Odaja's MCP server.
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+// Requests go straight from the browser to the provider with the user's own
+// key. Tools run in the page (website) or on the companion (src/agent/client.ts).
 import Anthropic from "@anthropic-ai/sdk";
 import { dynamicTool, jsonSchema, stepCountIs, streamText, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
-import { callTool, inputJsonSchema, TOOLS, type ToolContext, type ToolResult } from "../../src/agent/tools";
-import { transcript, type AssistantItem, type Conversation, type ImageInput } from "./conversations";
+import { callTool, listTools } from "../client";
+import type { ToolResult } from "../tools";
+import { transcript } from "./conversations";
+import { localServerHelp } from "./models";
 import { SYSTEM_PROMPT } from "./prompt";
-import { claudeCommand, mcpCommand } from "../env";
-import { baseUrl, type ChatSettings, type ProviderId } from "./settings";
-
-export type ChatEvent =
-  | { type: "text"; delta: string }
-  | { type: "tool-start"; id: string; name: string; input: unknown }
-  | { type: "tool-end"; id: string; ok: boolean; summary: string }
-  | { type: "error"; message: string };
+import { baseUrl, type ChatSettings } from "./settings";
+import type { AssistantItem, ChatEvent, Conversation, ImageInput, ProviderId } from "./types";
 
 export interface RunContext {
   emit(event: ChatEvent): void;
   signal: AbortSignal;
-  tools: ToolContext;
   settings: ChatSettings;
-  projectDir: string;
-  odajaUrl: string;
+  // The photos shared in this conversation, for the photo tools.
+  photos(): Promise<ImageInput[]>;
 }
 
 export interface UserInput {
@@ -41,6 +35,8 @@ const MAX_STEPS = 30;
 function summarize(result: ToolResult): string {
   return result.content.map((c) => (c.type === "text" ? c.text : "(image)")).join(" ").slice(0, 300);
 }
+
+const runTool = (name: string, input: unknown, ctx: RunContext) => callTool(name, input, { photos: ctx.photos });
 
 // Collects the assistant's turn for the saved transcript as events stream.
 class TurnRecorder {
@@ -71,20 +67,37 @@ function recorded(ctx: RunContext, rec: TurnRecorder): RunContext {
   };
 }
 
-export async function runTurn(conv: Conversation, input: UserInput, ctx: RunContext): Promise<AssistantItem[]> {
+// Runs one turn; the items it produced are returned even when it fails part way.
+export async function runTurn(conv: Conversation, input: UserInput, ctx: RunContext): Promise<{ items: AssistantItem[]; error?: Error }> {
   const rec = new TurnRecorder();
   const c = recorded(ctx, rec);
-  const family = conv.provider === "anthropic" ? "anthropic" : conv.provider === "claude-code" ? "claude-code" : "aisdk";
+  const family = conv.provider === "anthropic" ? "anthropic" : "aisdk";
   // Switching between kinds of connection: carry the conversation over as text.
   const earlier = conv.state.family && conv.state.family !== family ? transcript(conv.turns.slice(0, -1)) : "";
   if (conv.state.family !== family) conv.state = { family };
-  if (family === "anthropic") await runAnthropic(conv, input, c, earlier);
-  else if (family === "aisdk") await runAiSdk(conv, input, c, earlier);
-  else await runClaudeCode(conv, input, c, earlier);
-  return rec.items;
+  try {
+    if (family === "anthropic") await runAnthropic(conv, input, c, earlier);
+    else await runAiSdk(conv, input, c, earlier);
+    return { items: rec.items };
+  } catch (err) {
+    return { items: rec.items, error: explain(conv.provider, err, ctx.settings) };
+  }
+}
+
+// Browsers report an unreachable server only as "Failed to fetch".
+function explain(provider: string, err: unknown, settings: ChatSettings): Error {
+  const error = err instanceof Error ? err : new Error(String(err));
+  const unreachable = /failed to fetch|load failed|networkerror|cannot connect/i.test(error.message);
+  if (unreachable && (provider === "ollama" || provider === "lmstudio")) return new Error(localServerHelp(provider, baseUrl(settings, provider)));
+  return error;
 }
 
 const withEarlier = (text: string, earlier: string) => (earlier ? `Our conversation so far:\n\n${earlier}\n\n---\n\n${text}` : text);
+
+// Odaja's tools as JSON schemas (from the page or the companion).
+async function toolSchemas() {
+  return (await listTools()).map((t) => ({ ...t, inputSchema: { type: "object", ...t.inputSchema } }));
+}
 
 // --- Anthropic API (official SDK) ------------------------------------------
 
@@ -92,7 +105,8 @@ const withEarlier = (text: string, earlier: string) => (earlier ? `Our conversat
 const FALLBACK_MODELS = new Set(["claude-fable-5-1", "claude-opus-5-5", "claude-opus-5", "claude-sonnet-5-5"]);
 
 async function runAnthropic(conv: Conversation, input: UserInput, ctx: RunContext, earlier: string) {
-  const client = new Anthropic({ apiKey: ctx.settings.keys.anthropic });
+  // The key is the user's own, typed into this page; nothing else sees it.
+  const client = new Anthropic({ apiKey: ctx.settings.keys.anthropic, dangerouslyAllowBrowser: true });
   const messages = (conv.state.anthropic ??= []);
   messages.push({
     role: "user",
@@ -101,10 +115,10 @@ async function runAnthropic(conv: Conversation, input: UserInput, ctx: RunContex
       { type: "text" as const, text: withEarlier(input.text, earlier) },
     ],
   });
-  const tools: Anthropic.Beta.BetaTool[] = TOOLS.map((t) => ({
+  const tools: Anthropic.Beta.BetaTool[] = (await toolSchemas()).map((t) => ({
     name: t.name,
     description: t.description,
-    input_schema: { type: "object", ...inputJsonSchema(t) } as Anthropic.Beta.BetaTool.InputSchema,
+    input_schema: t.inputSchema as Anthropic.Beta.BetaTool.InputSchema,
     // Stream large inputs (e.g. many parts) as they're generated; inputs are
     // validated against the tool's schema before running (callTool).
     eager_input_streaming: true,
@@ -150,7 +164,7 @@ async function runAnthropic(conv: Conversation, input: UserInput, ctx: RunContex
     const results: Anthropic.Beta.BetaToolResultBlockParam[] = [];
     for (const use of toolUses) {
       ctx.emit({ type: "tool-start", id: use.id, name: use.name, input: use.input });
-      const result = await callTool(use.name, use.input, ctx.tools);
+      const result = await runTool(use.name, use.input, ctx);
       ctx.emit({ type: "tool-end", id: use.id, ok: !result.isError, summary: summarize(result) });
       results.push({
         type: "tool_result",
@@ -199,12 +213,12 @@ async function runAiSdk(conv: Conversation, input: UserInput, ctx: RunContext, e
     ],
   });
   const tools: ToolSet = Object.fromEntries(
-    TOOLS.map((t) => [
+    (await toolSchemas()).map((t) => [
       t.name,
       dynamicTool({
         description: t.description,
-        inputSchema: jsonSchema({ type: "object", ...inputJsonSchema(t) } as Parameters<typeof jsonSchema>[0]),
-        execute: async (toolInput) => callTool(t.name, toolInput, ctx.tools),
+        inputSchema: jsonSchema(t.inputSchema as Parameters<typeof jsonSchema>[0]),
+        execute: async (toolInput) => runTool(t.name, toolInput, ctx),
         toModelOutput: ({ output }) => {
           const result = output as ToolResult;
           return {
@@ -218,7 +232,7 @@ async function runAiSdk(conv: Conversation, input: UserInput, ctx: RunContext, e
     ]),
   );
   const result = streamText({
-    model: aiSdkModel(conv.provider, conv.model, ctx.settings),
+    model: aiSdkModel(conv.provider as ProviderId, conv.model, ctx.settings),
     system: SYSTEM_PROMPT,
     messages,
     tools,
@@ -235,153 +249,4 @@ async function runAiSdk(conv: Conversation, input: UserInput, ctx: RunContext, e
     else if (part.type === "error") throw part.error instanceof Error ? part.error : new Error(String(part.error));
   }
   messages.push(...((await result.responseMessages) as ModelMessage[]));
-}
-
-// --- Claude Code (the user's subscription) ---------------------------------
-
-interface ClaudeProcess {
-  proc: ChildProcessWithoutNullStreams;
-  model: string;
-  lastUsed: number;
-  onLine?: (msg: Record<string, unknown>) => void;
-  onExit?: (message: string) => void;
-}
-
-const processes = new Map<string, ClaudeProcess>();
-
-// Close idle Claude Code sessions after a while; they resume when needed.
-setInterval(() => {
-  for (const [id, p] of processes) {
-    if (Date.now() - p.lastUsed > 15 * 60 * 1000) {
-      p.proc.kill();
-      processes.delete(id);
-    }
-  }
-}, 60 * 1000).unref();
-
-export function stopAllClaudeCode() {
-  for (const p of processes.values()) p.proc.kill();
-  processes.clear();
-}
-
-function startClaudeCode(conv: Conversation, ctx: RunContext, claude: string): ClaudeProcess {
-  // The chat id lets Odaja's tools use the photos shared in this chat.
-  const mcpConfig = { mcpServers: { odaja: { ...mcpCommand(), env: { ODAJA_URL: ctx.odajaUrl, ODAJA_CHAT_ID: conv.id } } } };
-  const args = [
-    "-p",
-    "--input-format", "stream-json",
-    "--output-format", "stream-json",
-    "--verbose",
-    "--include-partial-messages",
-    // Only Odaja's tools: no shell or file tools, nothing that needs a prompt.
-    "--tools", "",
-    "--strict-mcp-config",
-    "--mcp-config", JSON.stringify(mcpConfig),
-    "--allowedTools", "mcp__odaja__*",
-    "--permission-mode", "dontAsk",
-    "--append-system-prompt", SYSTEM_PROMPT,
-    ...(conv.model && conv.model !== "default" ? ["--model", conv.model] : []),
-    ...(conv.state.claudeCodeSession ? ["--resume", conv.state.claudeCodeSession] : []),
-  ];
-  // Use the subscription: an API key in the environment would take priority
-  // in headless mode and bill the key instead.
-  const env = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;
-  delete env.ANTHROPIC_AUTH_TOKEN;
-  const proc = spawn(claude, args, { cwd: ctx.projectDir, env });
-  const entry: ClaudeProcess = { proc, model: conv.model, lastUsed: Date.now() };
-  let buffer = "";
-  let stderr = "";
-  proc.stdout.setEncoding("utf8");
-  proc.stdout.on("data", (chunk: string) => {
-    buffer += chunk;
-    let nl: number;
-    while ((nl = buffer.indexOf("\n")) !== -1) {
-      const line = buffer.slice(0, nl).trim();
-      buffer = buffer.slice(nl + 1);
-      if (!line) continue;
-      try {
-        entry.onLine?.(JSON.parse(line));
-      } catch {
-        // Not JSON (shouldn't happen with stream-json); ignore.
-      }
-    }
-  });
-  proc.stderr.on("data", (d) => (stderr = (stderr + d).slice(-2000)));
-  proc.on("exit", (code) => {
-    processes.delete(conv.id);
-    entry.onExit?.(`Claude Code stopped (exit ${code ?? "?"})${stderr.trim() ? `: ${stderr.trim().split("\n").at(-1)}` : ""}`);
-  });
-  processes.set(conv.id, entry);
-  return entry;
-}
-
-async function runClaudeCode(conv: Conversation, input: UserInput, ctx: RunContext, earlier: string) {
-  let entry = processes.get(conv.id);
-  if (entry && entry.model !== conv.model) {
-    // Model changed: restart, resuming the same session with the new model.
-    entry.onExit = undefined;
-    entry.proc.kill();
-    processes.delete(conv.id);
-    entry = undefined;
-  }
-  entry ??= startClaudeCode(conv, ctx, await claudeCommand());
-  const current = entry;
-  current.lastUsed = Date.now();
-
-  await new Promise<void>((resolve, reject) => {
-    const onAbort = () => current.proc.kill("SIGINT");
-    ctx.signal.addEventListener("abort", onAbort, { once: true });
-    const finish = (err?: Error) => {
-      ctx.signal.removeEventListener("abort", onAbort);
-      current.onLine = undefined;
-      current.onExit = undefined;
-      if (err) reject(err);
-      else resolve();
-    };
-    current.onExit = (message) => finish(ctx.signal.aborted ? undefined : new Error(message));
-    current.onLine = (msg) => {
-      if (typeof msg.session_id === "string") conv.state.claudeCodeSession = msg.session_id;
-      if (msg.type === "system" && msg.subtype === "init") {
-        const servers = (msg.mcp_servers as { name: string; status: string }[] | undefined) ?? [];
-        const odaja = servers.find((s) => s.name === "odaja");
-        if (odaja && odaja.status !== "connected") ctx.emit({ type: "error", message: `Odaja's tools didn't connect (${odaja.status}). Is bun installed?` });
-      } else if (msg.type === "stream_event") {
-        const event = msg.event as { type: string; delta?: { type: string; text?: string } };
-        if (event.type === "content_block_delta" && event.delta?.type === "text_delta" && event.delta.text) ctx.emit({ type: "text", delta: event.delta.text });
-      } else if (msg.type === "assistant" && !msg.parent_tool_use_id) {
-        const content = ((msg.message as { content?: unknown[] })?.content ?? []) as { type: string; id?: string; name?: string; input?: unknown }[];
-        for (const block of content) {
-          if (block.type === "tool_use") ctx.emit({ type: "tool-start", id: block.id!, name: block.name!.replace(/^mcp__odaja__/, ""), input: block.input });
-        }
-      } else if (msg.type === "user") {
-        const content = ((msg.message as { content?: unknown })?.content ?? []) as { type: string; tool_use_id?: string; is_error?: boolean; content?: unknown }[];
-        if (!Array.isArray(content)) return;
-        for (const block of content) {
-          if (block.type !== "tool_result") continue;
-          const text = Array.isArray(block.content)
-            ? (block.content as { type: string; text?: string }[]).map((c) => (c.type === "text" ? c.text : "(image)")).join(" ")
-            : String(block.content ?? "");
-          ctx.emit({ type: "tool-end", id: block.tool_use_id!, ok: !block.is_error, summary: text.slice(0, 300) });
-        }
-      } else if (msg.type === "result") {
-        if (msg.is_error && !ctx.signal.aborted) {
-          ctx.emit({ type: "error", message: String(msg.result ?? msg.subtype ?? "Claude Code reported an error") });
-        }
-        finish();
-      }
-    };
-    const line = {
-      type: "user",
-      message: {
-        role: "user",
-        content: [
-          ...input.images.map((img) => ({ type: "image", source: { type: "base64", media_type: img.mimeType, data: img.data } })),
-          { type: "text", text: withEarlier(input.text, earlier) },
-        ],
-      },
-      parent_tool_use_id: null,
-    };
-    current.proc.stdin.write(JSON.stringify(line) + "\n");
-  });
 }

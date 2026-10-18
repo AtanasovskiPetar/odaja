@@ -15,10 +15,11 @@ See [AGENTS.md](AGENTS.md) for the project layout and
 ## Working with AI
 
 - **In the app:** open the chat (⌘J), pick a connection and model, and talk
-  about your design. "Claude Code (your subscription)" uses the Claude Code
-  installed on your Mac; API keys for Anthropic, OpenAI, Gemini and OpenRouter,
-  and local models (Ollama, LM Studio), are set up under the chat's ⚙.
-- **From Claude Code or Claude Desktop:** with the app running, add the MCP server:
+  about your design. Bring your own API key (Anthropic, OpenAI, Gemini,
+  OpenRouter) or a local model (Ollama, LM Studio), set up under the chat's ⚙.
+  Keys stay in your browser and go only to their provider.
+- **From Claude Code or Claude Desktop** (this is how to use a Claude
+  subscription): with the app running, add the MCP server:
 
 ```bash
 claude mcp add odaja -- bun /path/to/odaja/mcp/server.ts

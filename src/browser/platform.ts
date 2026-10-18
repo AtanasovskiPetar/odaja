@@ -5,7 +5,7 @@ import { newProjectFile, newSceneFile, newShellFile, slugify } from "../model/de
 import { formatJson } from "../model/format";
 import { belongsInFile, packHome, unpackHome } from "../model/homeFile";
 import type { AgentFiles, FileArea, FileData } from "../agent/files";
-import type { LibraryEntry, Platform, SceneSummary } from "../platform";
+import { chatPath, type LibraryEntry, type Platform, type SceneSummary } from "../platform";
 import * as homes from "./homes";
 import * as opfs from "./opfs";
 import { sampleFiles } from "./sample";
@@ -379,6 +379,15 @@ export function createBrowserPlatform(): Platform {
       const id = await homeForSaving();
       if (id === open) changed = false;
       await homes.markSaved(id);
+    },
+
+    // Chats aren't changes to the home's design: they don't mark it unsaved.
+    chats: {
+      list: async () =>
+        (await opfs.list(inHome(".odaja/chats"))).filter((e) => e.kind === "file" && e.name.endsWith(".json")).map((e) => e.name.slice(0, -".json".length)),
+      read: (id) => opfs.readText(inHome(chatPath(id))),
+      write: (id, json) => opfs.writeFile(inHome(chatPath(id)), json),
+      remove: (id) => opfs.remove(inHome(chatPath(id))),
     },
 
     localTools: {

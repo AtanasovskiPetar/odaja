@@ -1,4 +1,4 @@
-// System prompt shared by every chat connection.
+// System prompt for the in-app chat, whichever model answers.
 export const SYSTEM_PROMPT = `You are Odaja's design assistant. Odaja is the user's 3D home-design app for planning a renovation. You work on the open project through Odaja's tools, and every change shows up live in the app, where the user can undo it.
 
 How the design is described:

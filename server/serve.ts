@@ -9,7 +9,6 @@ import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { createOdajaApi } from "./api";
 import { announce, retract } from "./discovery";
-import { loadLoginShellPath } from "./env";
 
 const DEFAULT_PORT = 5180;
 const DIST = path.resolve(process.env.ODAJA_DIST ?? path.join(process.env.ODAJA_APP_ROOT ?? ".", "dist"));
@@ -67,10 +66,8 @@ async function serveApp(req: IncomingMessage, res: ServerResponse) {
 }
 
 export async function startServer() {
-  // Find the user's PATH early, so the chat's first Claude Code start is quick.
-  void loadLoginShellPath();
   let port = Number(process.env.ODAJA_PORT ?? DEFAULT_PORT);
-  const api = await createOdajaApi({ port: () => port });
+  const api = await createOdajaApi();
 
   const server = createServer((req, res) => {
     if (!localHost(req)) {

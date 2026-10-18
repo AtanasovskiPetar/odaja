@@ -75,6 +75,13 @@ export interface Platform {
   importHome(data: Uint8Array): Promise<void>;
   // The open home was just saved to a file (the website tracks unsaved changes).
   markSavedToFile(): Promise<void>;
+  // The open home's chat conversations, .odaja/chats/<id>.json (JSON text).
+  chats: {
+    list(): Promise<string[]>;
+    read(id: string): Promise<string | null>;
+    write(id: string, json: string): Promise<void>;
+    remove(id: string): Promise<void>;
+  };
   // Where the AI tools run in the page (the website): their file access, and
   // how they ask the app to show a scene. Absent when tools run on the server.
   localTools?: { files(): AgentFiles | null; openScene(path: string): void };
@@ -84,6 +91,12 @@ export interface Platform {
   // Requests from the server: open a scene, take a screenshot.
   onOpenSceneRequest(callback: (path: string) => void): void;
   onScreenshotRequest(callback: (view: "plan" | "3d") => Promise<{ data: string; mimeType: string }>): void;
+}
+
+// Where a conversation is kept in a home.
+export function chatPath(id: string): string {
+  if (!/^[a-z0-9-]+$/.test(id)) throw new Error("bad chat id");
+  return `.odaja/chats/${id}.json`;
 }
 
 // Events from the server (file changes, requests from agents) arrive on one
@@ -183,6 +196,19 @@ const serverPlatform: Platform = {
   },
   async markSavedToFile() {
     // Folders are saved as you work; nothing to track.
+  },
+  chats: {
+    list: async () => (await request<{ ids: string[] }>("/api/chats")).ids,
+    async read(id) {
+      const res = await fetch(fileUrl(chatPath(id)), { cache: "no-store" });
+      return res.ok ? res.text() : null;
+    },
+    async write(id, json) {
+      await request(fileUrl(chatPath(id)), { method: "PUT", body: json });
+    },
+    async remove(id) {
+      await post("/api/chats/delete", { id });
+    },
   },
   onFileChanged(callback) {
     onEvent<{ path: string }>("file-changed", (data) => callback(data.path));

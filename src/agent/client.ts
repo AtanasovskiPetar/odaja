@@ -32,16 +32,19 @@ export async function listTools(): Promise<{ name: string; description: string; 
   return res.json();
 }
 
-export async function callTool(name: string, input: unknown, options: { chatId?: string; photos?: Photos } = {}): Promise<ToolResult> {
+export async function callTool(name: string, input: unknown, options: { photos?: Photos } = {}): Promise<ToolResult> {
   if (platform.localTools) {
     const [tools, photos, { canvasCodec }] = await Promise.all([import("./tools"), import("./photos"), import("./canvasCodec")]);
     photos.setImageCodec(canvasCodec);
     return tools.callTool(name, input, await localContext(options.photos));
   }
+  // Tools refer to the chat's photos by name (photo-1, …); send them along
+  // only when the input does.
+  const photos = options.photos && /"photo-\d+"/.test(JSON.stringify(input ?? null)) ? await options.photos() : undefined;
   const res = await fetch("/api/tools/call", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, input, chatId: options.chatId }),
+    body: JSON.stringify({ name, input, photos }),
   });
   if (!res.ok) return { content: [{ type: "text", text: `Odaja: ${res.status} ${await res.text()}` }], isError: true };
   return res.json();
