@@ -172,7 +172,6 @@ export const IconSwatch = icon(
 export const IconPlus = icon(<path d="M10 4v12M4 10h12" />);
 export const IconClose = icon(<path d="m5 5 10 10M15 5 5 15" />);
 export const IconChevron = icon(<path d="m6 8 4 4 4-4" />);
-export const IconBack = icon(<path d="M12 5 7 10l5 5" />);
 export const IconArrowUp = icon(<path d="M10 16V4M5 9l5-5 5 5" />);
 export const IconStop = icon(<rect x="5.5" y="5.5" width="9" height="9" rx="1.5" fill="currentColor" stroke="none" />);
 export const IconClip = icon(<path d="m15.5 9.5-5.8 5.8a3.5 3.5 0 0 1-5-5l6.3-6.3a2.3 2.3 0 0 1 3.3 3.3L8 13.6a1.2 1.2 0 0 1-1.7-1.7l5.5-5.5" />);

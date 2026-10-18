@@ -22,8 +22,8 @@ const FILE_TYPES = [{ description: "Odaja home", accept: { "application/octet-st
 const handleKey = (home: string) => `save-handle:${home}`;
 const chatsKey = (home: string) => `save-chats:${home}`;
 
-// The home being saved: the open one, or on the website's start screen the
-// one kept in the browser.
+// The home being saved: the open one, or on the website the one kept in the
+// browser.
 function target(): { key: string; name: string } | null {
   const s = useOdaja.getState();
   if (s.projectDir) return { key: s.projectDir, name: s.project?.name ?? "Home" };
@@ -137,9 +137,10 @@ export async function openHome({ file, handle }: PickedHome) {
   if (missing.length) useOdaja.getState().openDialog({ kind: "add-to-library", items: missing });
 }
 
-// From inside the app: on the website this replaces the home, so it asks first.
+// From inside the app: on the website this replaces the home, so it asks
+// first when that would lose changes not saved to a file.
 export async function requestOpenHome(picked: PickedHome) {
   const s = useOdaja.getState();
-  if (platform.kind === "browser" && s.projectDir) s.openDialog({ kind: "open-home", file: picked.file, handle: picked.handle });
+  if (platform.kind === "browser" && s.projectDir && s.unsavedToFile) s.openDialog({ kind: "open-home", file: picked.file, handle: picked.handle });
   else await openHome(picked).catch((err) => s.setNotice(`Couldn't open ${picked.file.name}: ${(err as Error).message}`));
 }

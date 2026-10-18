@@ -8,7 +8,7 @@ const OPTIONS: { value: ThemePref; label: string; Icon: typeof IconSun }[] = [
   { value: "system", label: "Match system", Icon: IconAuto },
 ];
 
-// All three side by side (start screen).
+// All three side by side (the welcome).
 export function ThemeSwitch() {
   const pref = useThemePref();
   return (

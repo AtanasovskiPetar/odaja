@@ -62,11 +62,10 @@ export function SaveFileDialog({ saveAs }: { saveAs?: boolean }) {
   );
 }
 
-// Opening a file replaces the home kept in the browser (it's kept as the
-// previous home), so this asks first, and offers to save unsaved changes.
+// Opening a file replaces the home kept in the browser. When it has changes
+// that aren't in a file, they'd be lost, so this asks first.
 export function OpenHomeDialog({ file, handle }: { file: File; handle?: FileSystemFileHandle }) {
   const name = useOdaja((s) => s.project?.name ?? "your home");
-  const unsaved = useOdaja((s) => s.unsavedToFile);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,23 +90,20 @@ export function OpenHomeDialog({ file, handle }: { file: File; handle?: FileSyst
   return (
     <Backdrop busy={busy}>
       <div className="dialog" role="alertdialog" aria-label={`Open ${file.name}?`}>
-        <h2>Open {file.name.replace(/\.odaja$/i, "")}?</h2>
+        <h2>Save {name} first?</h2>
         <p className="muted">
-          It replaces <strong>{name}</strong> in this browser. {name} is kept as your previous home, so you can bring it back from the start screen.
-          {unsaved && <> It has changes that aren't saved to a file yet.</>}
+          Opening {file.name} replaces <strong>{name}</strong> in this browser, and it has changes that aren't saved to a file. They'll be lost unless you save them.
         </p>
         {error && <div className="inline-error">{error}</div>}
         <div className="dialog-buttons">
           <button type="button" onClick={close} disabled={busy}>
             Cancel
           </button>
-          {unsaved && (
-            <button type="button" onClick={() => open(true)} disabled={busy}>
-              Save {name} first
-            </button>
-          )}
-          <button type="button" className="primary" onClick={() => open(false)} disabled={busy} autoFocus>
-            {busy ? "Opening…" : "Open"}
+          <button type="button" onClick={() => open(false)} disabled={busy}>
+            Don’t save
+          </button>
+          <button type="button" className="primary" onClick={() => open(true)} disabled={busy} autoFocus>
+            {busy ? "Opening…" : "Save first"}
           </button>
         </div>
       </div>

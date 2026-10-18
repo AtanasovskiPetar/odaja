@@ -1,9 +1,10 @@
-// The website keeps one home at a time, plus the one it replaced (so an
-// accidental replace can be undone once). Each home is a folder in the
-// browser's private file system, in the same layout as a project folder:
+// The website keeps one home at a time, like a document in an editor: the one
+// you work on, saved as you go; your real copies are .odaja files. The home
+// is a folder in the browser's private file system, in the same layout as a
+// project folder:
 //
 //   homes/<id>/project.json, shell.json, shells/, scenes/, assets/
-//   state.json   { current, previous, homes: { <id>: { unsavedToFile } } }
+//   state.json   { current, unsavedToFile: { <id>: boolean } }
 import * as opfs from "./opfs";
 
 export interface HomeSummary {
@@ -14,7 +15,6 @@ export interface HomeSummary {
 
 interface State {
   current: string | null;
-  previous: string | null;
   // Changed since last saved to a file (saving to files comes with .odaja files).
   unsavedToFile: Record<string, boolean>;
 }
@@ -25,9 +25,9 @@ export async function readState(): Promise<State> {
   try {
     const text = await opfs.readText(STATE);
     const s = text ? JSON.parse(text) : {};
-    return { current: s.current ?? null, previous: s.previous ?? null, unsavedToFile: s.unsavedToFile ?? {} };
+    return { current: s.current ?? null, unsavedToFile: s.unsavedToFile ?? {} };
   } catch {
-    return { current: null, previous: null, unsavedToFile: {} };
+    return { current: null, unsavedToFile: {} };
   }
 }
 
@@ -50,26 +50,20 @@ export async function summary(id: string | null): Promise<HomeSummary | null> {
   return { id, name, modified: file.lastModified };
 }
 
-// Store a new home and make it current. The current one becomes the previous
-// home; the one before that is deleted.
+// Store a new home and make it current. The one it replaces is deleted (the
+// app asks first when it has changes that aren't in a file), and so is any
+// home an older version kept as "previous".
 export async function addHome(files: Record<string, opfs.Data>): Promise<string> {
   const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   for (const [rel, data] of Object.entries(files)) await opfs.writeFile(homePath(id, rel), data);
-  const state = await readState();
-  if (state.previous) {
-    await opfs.remove(homePath(state.previous));
-    delete state.unsavedToFile[state.previous];
-  }
-  await writeState({ ...state, previous: state.current, current: id, unsavedToFile: { ...state.unsavedToFile, [id]: false } });
+  await writeState({ current: id, unsavedToFile: { [id]: false } });
+  await removeOthers(id);
   return id;
 }
 
-// Bring the previous home back; the current one takes its place as previous.
-export async function swapWithPrevious(): Promise<string> {
-  const state = await readState();
-  if (!state.previous) throw new Error("there's no previous home");
-  await writeState({ ...state, current: state.previous, previous: state.current });
-  return state.previous;
+// Deletes every home but `keep` (e.g. the previous home older versions kept).
+export async function removeOthers(keep: string | null) {
+  for (const home of await opfs.list("homes")) if (home.name !== keep) await opfs.remove(homePath(home.name));
 }
 
 export async function markSaved(id: string) {

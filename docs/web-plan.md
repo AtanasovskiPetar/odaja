@@ -14,7 +14,8 @@ optional **companion**.
   - It autosaves as you work.
   - First visit: the start screen (*Start a new home*, *Try the sample flat*, *Open a .odaja file*).
   - Coming back: straight into your home. The logo leads to the start screen, with *Continue "My flat"* at the top.
-- Replacing the home (new, sample or open) when it has unsaved changes asks: **Save to file / Don't save / Cancel**. The replaced home is kept aside once as *previous home*, restorable after an accidental "Don't save".
+- Replacing the home (new, sample or open) when it has changes not in a file asks: **Save first / Don't save / Cancel**; otherwise it just replaces it. (Until after phase 7 the replaced home was also kept aside once as the *previous home*; that half-way slot was dropped: one home, and files for the rest.)
+- **No start screen** (after phase 7): Odaja opens straight into the home. A one-time welcome covers the first visit (the sample, one room, a floor plan, a blank sheet, or a file); after that, new homes, files and (in the companion) other folders are in the home menu.
 - A small dot by the name shows when the home has changes not yet saved to a file.
 - **Address:** build and test on the GitHub Pages URL (`atanasovskipetar.github.io/odaja`). The final address is decided **before sharing with real users**, because browser storage is tied to it.
 
@@ -83,7 +84,7 @@ The website's address can change without touching code; only users' data needs c
                  └──────────────────┼────────────────────────────────────┘
                BrowserPlatform      │       ServerPlatform
      (website: GitHub Pages)        │       (companion: localhost:5180)
-     OPFS: home/, previous-home/,   │       /api → server/api.ts → folders on disk
+     OPFS: homes/<id>/,             │       /api → server/api.ts → folders on disk
      library/; IndexedDB: settings, │       tools run on the server (also for MCP)
      API keys, save-file handle     │       file watching → /api/events
 ```

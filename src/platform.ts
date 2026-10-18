@@ -36,8 +36,8 @@ export interface ProjectList {
   projects: ProjectSummary[];
   sampleDir: string;
   sampleCopied: boolean;
-  // The website: its one home, and the one it replaced (restorable once).
-  homes?: { current: HomeSummary | null; previous: HomeSummary | null; unsavedToFile: boolean };
+  // The website: its one home.
+  homes?: { current: HomeSummary | null; unsavedToFile: boolean };
 }
 
 export interface Platform {
@@ -47,7 +47,6 @@ export interface Platform {
   // Opens the user's copy of the sample flat, making it (or remaking it when fresh).
   openSample(fresh: boolean): Promise<void>;
   createProject(name: string, room?: StarterRoom): Promise<void>;
-  closeProject(): Promise<void>;
   listScenes(): Promise<{ dir: string; scenes: SceneSummary[] }>;
   createScene(name: string, content: SceneDoc): Promise<string>;
   renameScene(path: string, name: string): Promise<string>;
@@ -71,7 +70,7 @@ export interface Platform {
   exportHome(includeChats: boolean): Promise<Blob>;
   homeHasChats(): Promise<boolean>;
   // Open a .odaja file: on the website it replaces the home in the browser
-  // (kept as the previous one); in the companion it becomes a new folder.
+  // (asked first when it has changes not in a file); in the companion it becomes a new folder.
   importHome(data: Uint8Array): Promise<void>;
   // The open home was just saved to a file (the website tracks unsaved changes).
   markSavedToFile(): Promise<void>;
@@ -139,9 +138,6 @@ const serverPlatform: Platform = {
   },
   async createProject(name, room) {
     await post("/api/projects/create", { name, room });
-  },
-  async closeProject() {
-    await post("/api/projects/close", {});
   },
   listScenes: () => request("/api/project"),
   async createScene(name, content) {

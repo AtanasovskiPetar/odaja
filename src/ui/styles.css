@@ -252,37 +252,11 @@ svg {
   border-bottom: 1px solid var(--line);
 }
 
-.logo-button {
+.brand-logo {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 6px 4px 4px;
-  margin-left: -4px;
-  border: none;
-  border-radius: var(--r-s);
-  background: none;
   color: var(--ink);
-}
-
-.logo-button:hover {
-  background: var(--well);
-}
-
-.logo-button .back {
-  width: 0;
-  opacity: 0;
-  margin-right: -8px;
-  color: var(--muted);
-  transition:
-    width var(--settle) var(--ease),
-    opacity var(--settle) var(--ease),
-    margin var(--settle) var(--ease);
-}
-
-.logo-button:hover .back {
-  width: 14px;
-  opacity: 1;
-  margin-right: -4px;
 }
 
 .logo {
@@ -368,6 +342,7 @@ svg {
   left: 0;
   z-index: 30;
   min-width: 230px;
+  max-width: 320px;
   padding: 5px;
   border-radius: var(--r);
   background: var(--card);
@@ -407,6 +382,22 @@ svg {
   height: 1px;
   margin: 4px 6px;
   background: var(--line);
+}
+
+/* Long home names in the menu stay on one line. */
+.menu-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu-heading {
+  margin: 8px 9px 2px;
+  color: var(--faint);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
 .menu-note {
@@ -1805,7 +1796,7 @@ button.link.danger {
 }
 
 .start header {
-  max-width: 920px;
+  max-width: 560px;
   margin: 0 auto 40px;
   animation: appear 500ms var(--ease) both;
 }
@@ -1840,21 +1831,9 @@ button.link.danger {
   color: var(--accent-ink);
 }
 
-.start-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  gap: 22px;
-  max-width: 920px;
-  margin: 0 auto;
-  align-items: start;
-}
-
 @media (max-width: 760px) {
   .start {
     padding: 40px 16px;
-  }
-  .start-grid {
-    grid-template-columns: 1fr;
   }
   .logo.big {
     font-size: 48px;
@@ -1867,10 +1846,6 @@ button.link.danger {
   border-radius: var(--r-l);
   box-shadow: var(--shadow-card), 0 12px 30px -18px rgba(45, 33, 15, 0.25);
   animation: appear 500ms var(--ease) both;
-}
-
-.start-grid .card:nth-child(2) {
-  animation-delay: 60ms;
 }
 
 .card h2 {
@@ -1957,109 +1932,6 @@ button.link.danger {
   line-height: 1.4;
 }
 
-.project-list {
-  list-style: none;
-  margin: 0 -8px 14px;
-  padding: 0;
-}
-
-.project-list button {
-  display: grid;
-  grid-template-columns: 40px 1fr auto;
-  align-items: center;
-  column-gap: 12px;
-  width: 100%;
-  padding: 9px 8px;
-  border: none;
-  border-radius: var(--r);
-  background: none;
-  text-align: left;
-}
-
-.project-list button:hover {
-  background: var(--well);
-}
-
-.project-list .thumb {
-  grid-row: span 2;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--r-s);
-  background: var(--paper);
-  box-shadow: inset 0 0 0 1px var(--line);
-  color: var(--ink-2);
-}
-
-.project-list strong {
-  font-family: var(--serif);
-  font-size: 19px;
-  font-weight: 400;
-  line-height: 1.15;
-}
-
-.project-list .muted {
-  grid-column: 2;
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.project-list .when {
-  grid-row: 1;
-  grid-column: 3;
-  font-size: 11px;
-}
-
-.sample-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0 -8px 14px;
-}
-
-.sample-open {
-  flex: 1;
-  min-width: 0;
-  display: grid;
-  grid-template-columns: 40px 1fr;
-  align-items: center;
-  column-gap: 12px;
-  padding: 9px 8px;
-  border: 1px dashed var(--line-strong);
-  border-radius: var(--r);
-  background: none;
-  text-align: left;
-}
-
-.sample-open:hover {
-  border-style: solid;
-  background: var(--well);
-}
-
-.sample-open .thumb {
-  grid-row: span 2;
-  display: grid;
-  place-items: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--r-s);
-  background: var(--accent-wash);
-  color: var(--accent-ink);
-}
-
-.sample-open strong {
-  font-size: 13px;
-  font-weight: 600;
-}
-
-.sample-open .muted {
-  font-size: 11.5px;
-  line-height: 1.35;
-}
-
 .confirm-replace {
   margin-top: 10px;
   padding: 12px 14px;
@@ -2105,21 +1977,53 @@ button.link.danger {
   border-color: color-mix(in srgb, var(--ink) 40%, transparent);
 }
 
-.previous-home {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin: 0 0 4px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 12px;
+/* The welcome: one card to start from. */
+.welcome-card {
+  max-width: 560px;
+  margin: 0 auto;
 }
 
-.previous-home strong {
+.welcome-more {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.welcome-more .open-file {
+  margin-bottom: 10px;
+}
+
+.welcome-more .open-path,
+.dialog .open-path {
+  padding-top: 0;
+  border-top: none;
+}
+
+/* New home on the website: what happens to the open one. */
+.replaces-note {
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border-radius: var(--r);
+  background: var(--well);
   color: var(--ink-2);
-  font-weight: 500;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.replaces-note.warn {
+  background: var(--accent-wash);
+}
+
+.new-home-dialog {
+  width: min(520px, 100%);
+}
+
+.new-home .choice {
+  margin-top: 0;
+}
+
+.new-home .check {
+  margin: 4px 0 12px;
 }
 
 /* Where the browser may not keep the home (private window, Safari). */

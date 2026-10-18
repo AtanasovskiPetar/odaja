@@ -567,10 +567,6 @@ export async function createOdajaApi(): Promise<OdajaApi> {
             const { name, room } = await json();
             return send(200, { dir: await createProject(String(name ?? ""), room) });
           }
-          case "POST /projects/close":
-            watchProject(null);
-            projectDir = null;
-            return send(200, { ok: true });
           case "GET /project":
             return send(200, await listScenes());
           case "POST /scenes/create": {

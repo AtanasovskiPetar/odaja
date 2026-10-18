@@ -65,6 +65,9 @@ export type Dialog =
   // Opening a .odaja file over the home in the browser (asks first).
   | { kind: "open-home"; file: File; handle?: FileSystemFileHandle }
   | { kind: "export-image" }
+  // A new home (the home menu), and opening a project folder (companion).
+  | { kind: "new-home" }
+  | { kind: "open-folder" }
   // After opening a home: its library items you don't have yet.
   | { kind: "add-to-library"; items: MissingItem[] }
   | null;
@@ -78,7 +81,7 @@ interface FileEdit {
 type UndoEntry = FileEdit[];
 
 interface OdajaState {
-  // "start" shows the start screen (no project open).
+  // "start" shows the welcome (no home yet).
   status: "loading" | "start" | "project";
   projectsRoot: string;
   projects: ProjectSummary[];
@@ -152,7 +155,6 @@ interface OdajaState {
   setUnsavedToFile(unsaved: boolean): void;
   openProject(dir: string): Promise<void>;
   createProject(name: string, room?: StarterRoom): Promise<void>;
-  closeProject(): Promise<void>;
   openScene(path: string): Promise<void>;
   newScene(): Promise<string>;
   duplicateScene(withWalls?: boolean): Promise<string | null>;
@@ -327,6 +329,9 @@ export const useOdaja = create<OdajaState>((set, get) => {
   platform.onFileChanged(async (path) => {
     const s = get();
     if (s.status !== "project") return;
+    // On the website, changes come from the page itself (the AI tools, the
+    // library): the home now differs from its file.
+    if (platform.kind === "browser" && !s.unsavedToFile) set({ unsavedToFile: true });
     if (path.startsWith("scenes/")) await refreshScenes();
     if (path === "project.json") {
       const text = await platform.readFile(path).catch(() => null);
@@ -435,12 +440,6 @@ export const useOdaja = create<OdajaState>((set, get) => {
       await loadProject();
       // A new project starts in the plan view, where its size is visible.
       get().setViewMode("plan");
-    },
-
-    async closeProject() {
-      await platform.closeProject();
-      set({ ...EMPTY_PROJECT, status: "start" });
-      await get().refreshProjects();
     },
 
     async openScene(path) {

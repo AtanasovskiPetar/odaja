@@ -1033,7 +1033,7 @@ export const TOOLS: ToolDef[] = [
         const bytes = fromBase64(photo.data);
         const raster = await decode(bytes);
         // The chat's copy of a plan that is already the background (e.g. from
-        // the start screen) is a smaller version of the same image: keep the
+        // the new-home form) is a smaller version of the same image: keep the
         // sharper original. Image fractions mean the same on both.
         kept = Boolean(underlay && !input.replace && Math.abs(raster.width / raster.height - underlay.width / underlay.height) < 0.01);
         if (!kept) {

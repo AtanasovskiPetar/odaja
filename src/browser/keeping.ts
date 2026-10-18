@@ -18,7 +18,7 @@ const installed = () => matchMedia("(display-mode: standalone)").matches || (nav
 
 // Browsers don't say whether a window is private, and Chrome and Safari
 // deliberately look the same in both. Firefox private windows have no service
-// workers. Elsewhere, the start screen says it in words.
+// workers. Elsewhere, the new-home form says it in words.
 const looksPrivate = () => /firefox/i.test(navigator.userAgent) && isSecureContext && !("serviceWorker" in navigator);
 
 export type StorageNotice = "private" | "safari" | null;

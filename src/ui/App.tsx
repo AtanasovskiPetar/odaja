@@ -16,7 +16,8 @@ import { QuantitiesSection } from "./FinishesInspector";
 import { PartInspector, PartsSection } from "./PartsEditor";
 import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
-import { StartScreen } from "./StartScreen";
+import { Welcome, OpenFolderDialog } from "./Welcome";
+import { NewHomeDialog } from "./NewHome";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
 import { UnderlayPanel, UnderlayToolLayer } from "./UnderlayPanel";
@@ -27,7 +28,6 @@ import { isHomeFile, requestOpenHome, saveHome } from "./homeFileActions";
 import { isLibraryFile, openLibraryFileWithNotice } from "./libraryFiles";
 import { WalkOverlay, WalkStartPicker } from "./WalkOverlay";
 import {
-  IconBack,
   IconChat,
   IconCompare,
   IconCube,
@@ -171,7 +171,6 @@ function useShortcuts() {
 }
 
 function Sidebar() {
-  const closeProject = useOdaja((s) => s.closeProject);
   const scene = useOdaja((s) => s.scene);
   const selectedId = useOdaja((s) => s.selectedId);
   const select = useOdaja((s) => s.select);
@@ -182,11 +181,10 @@ function Sidebar() {
   return (
     <aside className="sidebar">
       <header className="brand">
-        <button className="logo-button" onClick={closeProject} title="Back to projects">
-          <IconBack className="back" size={14} />
+        <span className="brand-logo">
           <LogoMark />
           <span className="logo">Odaja</span>
-        </button>
+        </span>
         <HomeMenu />
         <ThemeCycleButton />
       </header>
@@ -450,6 +448,8 @@ function Dialogs() {
   if (dialog?.kind === "save-file") return <SaveFileDialog saveAs={dialog.saveAs} />;
   if (dialog?.kind === "open-home") return <OpenHomeDialog file={dialog.file} handle={dialog.handle} />;
   if (dialog?.kind === "export-image") return <ExportImageDialog />;
+  if (dialog?.kind === "new-home") return <NewHomeDialog />;
+  if (dialog?.kind === "open-folder") return <OpenFolderDialog />;
   if (dialog?.kind === "add-to-library") return <AddToLibraryDialog items={dialog.items} />;
   return null;
 }
@@ -497,7 +497,7 @@ export function App() {
   useShortcuts();
 
   if (status === "loading") return null;
-  if (status === "start") return <StartScreen />;
+  if (status === "start") return <Welcome />;
   return (
     <div className="app">
       <Sidebar />

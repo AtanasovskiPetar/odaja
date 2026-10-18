@@ -40,10 +40,9 @@ async function sha256(data: ArrayBuffer) {
 }
 
 export function createBrowserPlatform(): Platform {
-  // The home shown in the app. Going back to the start screen closes it for
-  // this visit; coming back to the site opens it straight away.
+  // The home shown in the app; coming back to the site opens it straight away.
   let open: string | null = null;
-  let closedThisVisit = false;
+  let tidied = false;
   let changed = false;
   const files = new UrlTable();
   const libraryFiles = new UrlTable();
@@ -101,7 +100,6 @@ export function createBrowserPlatform(): Platform {
     files.clear();
     open = id;
     changed = (await homes.readState()).unsavedToFile[id] ?? false;
-    closedThisVisit = false;
     for (const rel of await opfs.walk(homes.homePath(id))) {
       if (isData(rel)) continue;
       const file = await opfs.readFile(homes.homePath(id, rel));
@@ -161,7 +159,7 @@ export function createBrowserPlatform(): Platform {
     await openHome(await homes.addHome(content));
   }
 
-  // The open home, or (on the start screen) the one kept in the browser.
+  // The open home, or the one kept in the browser.
   async function homeForSaving(): Promise<string> {
     const id = open ?? (await homes.readState()).current;
     if (!id) throw new Error("there's no home to save");
@@ -192,23 +190,27 @@ export function createBrowserPlatform(): Platform {
 
     async listProjects() {
       const state = await homes.readState();
-      const [currentHome, previousHome] = await Promise.all([homes.summary(state.current), homes.summary(state.previous)]);
+      // Homes left over from older versions (the "previous home") go, once.
+      if (!tidied) {
+        tidied = true;
+        await homes.removeOthers(state.current).catch(() => {});
+      }
+      const currentHome = await homes.summary(state.current);
       // Coming back to the site goes straight into the home.
-      if (currentHome && !open && !closedThisVisit) await openHome(currentHome.id);
+      if (currentHome && !open) await openHome(currentHome.id);
       return {
         root: "this browser",
         current: open ? `browser:${open}` : null,
         projects: [],
         sampleDir: "",
         sampleCopied: false,
-        homes: { current: currentHome, previous: previousHome, unsavedToFile: currentHome ? (state.unsavedToFile[currentHome.id] ?? false) : false },
+        homes: { current: currentHome, unsavedToFile: currentHome ? (state.unsavedToFile[currentHome.id] ?? false) : false },
       };
     },
 
     async openProject(dir) {
       const state = await homes.readState();
-      if (dir === "previous") await openHome(await homes.swapWithPrevious());
-      else if (state.current && (dir === "current" || dir === `browser:${state.current}`)) await openHome(state.current);
+      if (state.current && (dir === "current" || dir === `browser:${state.current}`)) await openHome(state.current);
       else throw new Error("that home isn't in this browser");
     },
 
@@ -225,12 +227,6 @@ export function createBrowserPlatform(): Platform {
         "shell.json": formatJson(newShellFile(room)),
         "scenes/main.json": formatJson(newSceneFile("Main")),
       });
-    },
-
-    async closeProject() {
-      open = null;
-      closedThisVisit = true;
-      files.clear();
     },
 
     listScenes,
