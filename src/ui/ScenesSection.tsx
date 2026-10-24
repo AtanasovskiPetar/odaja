@@ -77,7 +77,7 @@ export function ScenesSection() {
   );
 }
 
-function RenameInput({ initial, onDone }: { initial: string; onDone: (name: string | null) => void }) {
+export function RenameInput({ initial, onDone }: { initial: string; onDone: (name: string | null) => void }) {
   const [value, setValue] = useState(initial);
   // Escape and blur can both fire; only report once.
   const done = useRef(false);

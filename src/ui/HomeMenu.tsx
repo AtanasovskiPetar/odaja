@@ -1,12 +1,14 @@
 // The home's name in the sidebar opens the home menu: a new home, open a
 // .odaja file, save to one, export an image. On the website a dot marks
 // changes not yet saved to a file; in the companion the menu lists the other
-// homes (folders) and opens any folder.
+// homes (folders) and opens any folder. Double-click the name (or "Rename…")
+// to rename the home: its name in project.json, undoably; the folder keeps its name.
 import { useEffect, useRef, useState } from "react";
 import { platform } from "../platform";
 import { useOdaja } from "../store";
 import { pickHomeFile, requestOpenHome, saveHome } from "./homeFileActions";
 import { IconChevron } from "./icons";
+import { RenameInput } from "./ScenesSection";
 
 const MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 const key = (k: string, shift = false) => `${shift ? (MAC ? "⇧" : "Shift+") : ""}${MAC ? "⌘" : "Ctrl+"}${k}`;
@@ -34,6 +36,7 @@ export function HomeMenu() {
   const projects = useOdaja((s) => s.projects);
   const others = projects.filter((p) => p.dir !== dir).slice(0, 6);
   const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,12 +59,30 @@ export function HomeMenu() {
   };
   const web = platform.kind === "browser";
 
+  if (renaming) {
+    return (
+      <div className="home-menu">
+        <RenameInput
+          initial={name}
+          onDone={(next) => {
+            setRenaming(false);
+            if (next && next !== name) useOdaja.getState().applyProject((doc) => ({ ...doc, name: next }));
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="home-menu" ref={ref}>
       <button
         className={`project-name ${open ? "open" : ""}`}
         onClick={() => setOpen(!open)}
-        title={web ? (unsaved ? "Changes not saved to a file yet" : "Kept in this browser") : (dir ?? undefined)}
+        onDoubleClick={() => {
+          setOpen(false);
+          setRenaming(true);
+        }}
+        title={`${web ? (unsaved ? "Changes not saved to a file yet" : "Kept in this browser") : (dir ?? "")} · double-click to rename`}
         aria-haspopup="menu"
         aria-expanded={open}
       >
@@ -94,6 +115,9 @@ export function HomeMenu() {
             </>
           )}
           <div className="menu-sep" />
+          <button role="menuitem" onClick={run(() => setRenaming(true))}>
+            Rename…
+          </button>
           <button role="menuitem" onClick={run(() => saveHome())}>
             Save to file<kbd>{key("S")}</kbd>
           </button>
