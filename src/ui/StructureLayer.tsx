@@ -1,6 +1,6 @@
 // Interactive layer over the plan in Structure mode: drawing walls and rooms,
-// placing doors and windows, selecting and dragging walls, corners and
-// openings. It also handles pan and zoom while it's active (scroll to zoom,
+// placing doors, windows and stairs, selecting and dragging walls, corners,
+// openings and stairs. It also handles pan and zoom while it's active (scroll to zoom,
 // right-drag, middle-drag or space+drag to pan).
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -16,7 +16,9 @@ import {
   wallOutline,
   type Vec,
 } from "../model/geometry";
+import { riseFrom } from "../model/levels";
 import { enclosedArea } from "../model/rooms";
+import { addStair, defaultStairSize, stairOutline, updateStair } from "../model/stairs";
 import { ShellSchema, type Opening, type Shell, type ShellDoc, type Wall } from "../model/schema";
 import { addOpening, addRectRoom, addWalls, moveCorner, moveWall, OPENING_DEFAULTS, updateOpening } from "../model/shellOps";
 import { snapPoint, type Snap } from "../model/snap";
@@ -33,9 +35,10 @@ type Drag =
   | { kind: "corner"; point: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "wall"; id: string; start: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "opening"; id: string; grab: number; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
+  | { kind: "stair"; id: string; start: Vec; origin: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "click"; startX: number; startY: number };
 
-type Hit = { kind: "wall" | "opening" | "room"; id: string } | { kind: "area"; polygon: Vec[] } | null;
+type Hit = { kind: "wall" | "opening" | "room" | "stair"; id: string } | { kind: "area"; polygon: Vec[] } | null;
 
 function useProjection(view: PlanView | null) {
   return useMemo(() => {
@@ -67,6 +70,8 @@ function hitTest(shell: Shell, p: Vec, tol: number): Hit {
     if (proj.across <= wall.thickness / 2 + tol && (!best || proj.across < best.d)) best = { id: wall.id, d: proj.across };
   }
   if (best) return { kind: "wall", id: best.id };
+  const stair = [...shell.stairs].reverse().find((s) => pointInPolygon(p, stairOutline(s)));
+  if (stair) return { kind: "stair", id: stair.id };
   const room = [...shell.rooms].reverse().find((r) => pointInPolygon(p, r.polygon));
   if (room) return { kind: "room", id: room.id };
   const area = enclosedArea(shell, p);
@@ -85,6 +90,8 @@ export function StructureLayer() {
   const applyShell = useOdaja((s) => s.applyShell);
   const selectStructure = useOdaja((s) => s.selectStructure);
   const setTool = useOdaja((s) => s.setTool);
+  // How high a new stair on this level climbs, for its size.
+  const rise = useOdaja((s) => (s.wholeShell ? riseFrom(s.wholeShell, s.level) : 280));
   const proj = useProjection(view);
 
   const [cursor, setCursor] = useState<Vec | null>(null); // raw plan position
@@ -264,6 +271,12 @@ export function StructureLayer() {
         setDrag({ kind: "wall", id: hit.id, start: p, startX: sx, startY: sy, moved: false, preview: null });
         return;
       }
+      if (hit?.kind === "stair") {
+        selectStructure(hit);
+        const stair = shell.stairs.find((x) => x.id === hit.id)!;
+        setDrag({ kind: "stair", id: hit.id, start: p, origin: stair.position, startX: sx, startY: sy, moved: false, preview: null });
+        return;
+      }
       if (hit?.kind === "opening") {
         selectStructure(hit);
         const o = shell.openings.find((x) => x.id === hit.id)!;
@@ -303,6 +316,10 @@ export function StructureLayer() {
       const n: Vec = [-(wall.to[1] - wall.from[1]) / len, (wall.to[0] - wall.from[0]) / len];
       const along = Math.round((p[0] - drag.start[0]) * n[0] + (p[1] - drag.start[1]) * n[1]);
       const preview = moveWall(drag.id, [n[0] * along, n[1] * along])(shellDoc);
+      setDrag({ ...drag, moved, preview: preview === shellDoc ? drag.preview : preview });
+    } else if (drag.kind === "stair") {
+      const position: Vec = [Math.round(drag.origin[0] + p[0] - drag.start[0]), Math.round(drag.origin[1] + p[1] - drag.start[1])];
+      const preview = updateStair(drag.id, { position })(shellDoc);
       setDrag({ ...drag, moved, preview: preview === shellDoc ? drag.preview : preview });
     } else if (drag.kind === "opening") {
       const o = shell.openings.find((x) => x.id === drag.id)!;
@@ -358,6 +375,14 @@ export function StructureLayer() {
       }
     } else if ((tool === "door" || tool === "window") && openingPreview?.offset != null) {
       applyShell(addOpening(openingPreview.wall.id, tool, openingPreview.offset));
+    } else if (tool === "stairs") {
+      // A straight stair centred on the click, then selected to adjust.
+      const before = new Set(shell.stairs.map((s) => s.id));
+      applyShell(addStair({ position: [Math.round(p[0]), Math.round(p[1])], size: defaultStairSize("straight", rise) })).then(() => {
+        const added = useOdaja.getState().shell?.stairs.find((s) => !before.has(s.id));
+        setTool("select");
+        if (added) selectStructure({ kind: "stair", id: added.id });
+      });
     }
   };
 
@@ -375,6 +400,10 @@ export function StructureLayer() {
       const o = shell.openings.find((x) => x.id === h.id);
       const wall = o && shell.walls.find((w) => w.id === o.wall);
       return o && wall && <polygon points={pts(openingRect(wall, o).map(toScreen))} className={className} />;
+    }
+    if (h.kind === "stair") {
+      const stair = shell.stairs.find((x) => x.id === h.id);
+      return stair && <polygon points={pts(stairOutline(stair).map(toScreen))} className={`${className} area`} />;
     }
     const polygon = h.kind === "area" ? h.polygon : shell.rooms.find((r) => r.id === h.id)?.polygon;
     return polygon && <polygon points={pts(polygon.map(toScreen))} className={`${className} area`} />;
@@ -403,6 +432,7 @@ export function StructureLayer() {
 
       {/* Live preview of a drag. */}
       {previewShell?.walls.map((w) => <polygon key={w.id} points={outline(w)} className="preview" />)}
+      {previewShell?.stairs.map((s) => drag?.kind === "stair" && s.id === drag.id && <polygon key={s.id} points={pts(stairOutline(s).map(toScreen))} className="preview" />)}
       {previewShell?.openings.map((o) => {
         const wall = previewShell.walls.find((w) => w.id === o.wall);
         return wall && <polygon key={o.id} points={pts(openingRect(wall, o).map(toScreen))} className="preview-opening" />;
@@ -426,6 +456,14 @@ export function StructureLayer() {
       {/* Door / window tool. */}
       {openingPreview && (
         <OpeningPreview wall={openingPreview.wall} offset={openingPreview.offset} width={openingPreview.width} span={openingPreview.span} type={tool as "door" | "window"} toScreen={toScreen} />
+      )}
+
+      {/* Stairs tool: the stair that a click places. */}
+      {tool === "stairs" && cursor && (
+        <polygon
+          points={pts(stairOutline({ id: "preview", type: "straight", position: cursor, rotation: 0, size: defaultStairSize("straight", rise), turn: "left" }).map(toScreen))}
+          className="preview"
+        />
       )}
 
       {/* Snap marker and guides. */}

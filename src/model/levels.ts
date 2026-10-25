@@ -7,7 +7,7 @@
 // (and its wall height), so snapping, rooms, checks and edits work unchanged.
 // An edited view is merged back into the whole shell.
 import { slugify } from "./defaults";
-import type { Level, LevelDoc, Scene, SceneDoc, Shell, ShellDoc } from "./schema";
+import type { Level, LevelDoc, Scene, SceneDoc, Shell, ShellDoc, Stair } from "./schema";
 
 export const GROUND_ID = "ground";
 export const GROUND: Level = { id: GROUND_ID, name: "Ground floor", elevation: 0, slab: 20 };
@@ -46,19 +46,63 @@ export function isLowest(shell: { levels?: Level[] }, level: Level): boolean {
   return levelsOf(shell).every((l) => l.elevation >= level.elevation);
 }
 
+// The next level up from a level, if any.
+export function levelAbove(shell: Shell, levelId: string): Level | undefined {
+  const here = levelById(shell, levelId);
+  return levelsOf(shell)
+    .filter((l) => l.elevation > here.elevation)
+    .sort((a, b) => a.elevation - b.elevation)[0];
+}
+
+// How high stairs on a level climb: up to the next level's floor, else a
+// storey's height.
+export function riseFrom(shell: Shell, levelId: string): number {
+  const here = levelById(shell, levelId);
+  const above = levelAbove(shell, here.id);
+  return above ? above.elevation - here.elevation : (here.height ?? shell.wallHeight) + here.slab;
+}
+
+// How high a stair climbs: its own rise, else riseFrom its level.
+export function stairRise(shell: Shell, stair: Stair): number {
+  return stair.rise ?? riseFrom(shell, levelOf(stair, shell));
+}
+
+// Stairs from the level below that arrive on a level (they cut openings in
+// its floor), with how high they climb. A stair with its own, different rise
+// (up to a gallery, say) doesn't arrive.
+export function stairsArriving(shell: Shell, levelId: string): { stair: Stair; rise: number; from: Level }[] {
+  const here = levelById(shell, levelId);
+  return shell.stairs.flatMap((stair) => {
+    const from = levelById(shell, levelOf(stair, shell));
+    const rise = stairRise(shell, stair);
+    const arrives = levelAbove(shell, from.id)?.id === here.id && Math.abs(rise - (here.elevation - from.elevation)) < 5;
+    return arrives ? [{ stair: { ...stair, rise }, rise, from }] : [];
+  });
+}
+
 // --- views ------------------------------------------------------------------
 
-export function levelShell(shell: Shell, levelId: string): Shell {
-  if (!shell.levels.length) return shell;
+// A level's view of the shell also knows the stairs coming up through its
+// floor (for checks); they aren't part of any file.
+export type ShellView = Shell & { arriving?: Stair[] };
+
+// A level's stairs have their rise filled in, since it depends on the level
+// above.
+export function levelShell(shell: Shell, levelId: string): ShellView {
   const level = levelById(shell, levelId);
+  const stairs = shell.stairs.filter((s) => levelOf(s, shell) === level.id).map((s) => (s.rise ? s : { ...s, rise: stairRise(shell, s) }));
+  if (!shell.levels.length) return stairs.length ? { ...shell, stairs } : shell;
   const walls = shell.walls.filter((w) => levelOf(w, shell) === level.id);
   const ids = new Set(walls.map((w) => w.id));
+  const arriving = stairsArriving(shell, level.id).map((a) => a.stair);
   return {
     ...shell,
     wallHeight: level.height ?? shell.wallHeight,
     walls,
     openings: shell.openings.filter((o) => ids.has(o.wall)),
     rooms: shell.rooms.filter((r) => levelOf(r, shell) === level.id),
+    stairs,
+    ...(arriving.length ? { arriving } : {}),
   };
 }
 
@@ -81,6 +125,7 @@ export function levelDoc(doc: ShellDoc, levelId: string): ShellDoc {
     walls,
     openings: (doc.openings ?? []).filter((o) => ids.has(o.wall)),
     rooms: (doc.rooms ?? []).filter(on),
+    stairs: (doc.stairs ?? []).filter(on),
   };
 }
 
@@ -93,23 +138,41 @@ function mergeList<T>(list: T[], on: (x: T) => boolean, next: T[]): T[] {
   return [...rest.slice(0, index), ...next, ...rest.slice(index)];
 }
 
+const itemIds = (d: ShellDoc) => [...(d.walls ?? []), ...(d.openings ?? []), ...(d.rooms ?? []), ...(d.stairs ?? [])].map((x) => x.id);
+
 // Put an edited level view back into the whole shell. New walls and rooms are
 // given the level (except on the first level, where they need none); a
-// changed wallHeight is the level's height.
+// changed wallHeight is the level's height. Edits only see their level, so a
+// new item can get an id another level already uses: it's renamed.
 export function mergeLevelDoc(doc: ShellDoc, levelId: string, edited: ShellDoc): ShellDoc {
   if (!doc.levels?.length) return edited;
   const level = doc.levels.find((l) => l.id === levelId) ?? doc.levels[0];
   const first = level.id === firstId(doc);
   const on = (x: { level?: string }) => levelOf(x, doc) === level.id;
-  const tag = <T extends { level?: string }>(x: T): T => (first || x.level ? x : { ...x, level: level.id });
   const before = levelDoc(doc, level.id);
+  const mine = new Set(itemIds(before));
+  const taken = new Set([...itemIds(doc).filter((id) => !mine.has(id)), ...itemIds(edited)]);
+  const renamed = new Map<string, string>();
+  for (const id of itemIds(edited)) {
+    if (mine.has(id) || !itemIds(doc).includes(id)) continue;
+    let next = `${id}-${level.id}`;
+    for (let n = 2; taken.has(next); n++) next = `${id}-${level.id}-${n}`;
+    taken.add(next);
+    renamed.set(id, next);
+  }
+  const tag = <T extends { id: string; level?: string }>(x: T): T => {
+    const id = renamed.get(x.id) ?? x.id;
+    return first || x.level ? (id === x.id ? x : { ...x, id }) : { ...x, id, level: level.id };
+  };
+  const openings = (edited.openings ?? []).map((o) => (renamed.has(o.id) || renamed.has(o.wall) ? { ...o, id: renamed.get(o.id) ?? o.id, wall: renamed.get(o.wall) ?? o.wall } : o));
   const wallIds = new Set((before.walls ?? []).map((w) => w.id));
   const height = edited.wallHeight !== undefined && edited.wallHeight !== before.wallHeight ? edited.wallHeight : undefined;
   return {
     ...(height === undefined ? doc : updateLevel(level.id, { height })(doc)),
     walls: mergeList(doc.walls ?? [], on, (edited.walls ?? []).map(tag)),
-    openings: mergeList(doc.openings ?? [], (o) => wallIds.has(o.wall), edited.openings ?? []),
+    openings: mergeList(doc.openings ?? [], (o) => wallIds.has(o.wall), openings),
     rooms: mergeList(doc.rooms ?? [], on, (edited.rooms ?? []).map(tag)),
+    ...(doc.stairs || edited.stairs?.length ? { stairs: mergeList(doc.stairs ?? [], on, (edited.stairs ?? []).map(tag)) } : {}),
   };
 }
 
@@ -129,7 +192,7 @@ export function levelOfItem(doc: ShellDoc, itemId: string): string | null {
   const opening = (doc.openings ?? []).find((o) => o.id === itemId);
   const host = opening && (doc.walls ?? []).find((w) => w.id === opening.wall);
   if (host) return levelOf(host, doc);
-  const room = (doc.rooms ?? []).find((r) => r.id === itemId);
+  const room = (doc.rooms ?? []).find((r) => r.id === itemId) ?? (doc.stairs ?? []).find((s) => s.id === itemId);
   return room ? levelOf(room, doc) : null;
 }
 
@@ -204,6 +267,7 @@ export function deleteLevel(levelId: string) {
       walls: (doc.walls ?? []).filter((w) => !on(w)),
       openings: (doc.openings ?? []).filter((o) => !gone.has(o.wall)),
       rooms: (doc.rooms ?? []).filter((r) => !on(r)),
+      ...(doc.stairs ? { stairs: doc.stairs.filter((s) => !on(s)) } : {}),
     };
   };
 }

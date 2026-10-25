@@ -128,6 +128,32 @@ export const RoomSchema = z.object({
   level: levelRef,
 });
 
+// A staircase from its level up to the level above. `position` is the
+// centre of its footprint and `rotation` turns it clockwise: at 0 you walk up
+// towards north (-y), starting at the south end. `size` is the footprint
+// [width, length] (a spiral uses size[0] as its diameter); `width` the flight
+// width of l- and u-shaped stairs; `turn` which way they turn going up (a
+// spiral: left = counter-clockwise seen from above). `rise` is the height
+// climbed (default: up to the next level's floor) in `steps` risers (default:
+// about 18 cm each). `open`: tread plates on stringers with nothing under
+// them, instead of solid steps (spiral stairs are always open). The floor
+// above gets an opening over the footprint.
+export const STAIR_TYPES = ["straight", "l", "u", "spiral"] as const;
+export const StairSchema = z.object({
+  id,
+  type: z.enum(STAIR_TYPES).default("straight"),
+  position: point2,
+  rotation: z.number().default(0),
+  size: point2,
+  width: z.number().positive().optional(),
+  turn: z.enum(["left", "right"]).default("left"),
+  rise: z.number().positive().optional(),
+  steps: z.number().int().min(2).max(40).optional(),
+  open: z.boolean().optional(),
+  material: z.string().optional(),
+  level: levelRef,
+});
+
 export const ShellSchema = z
   .object({
     version: z.literal(1),
@@ -136,11 +162,12 @@ export const ShellSchema = z
     walls: z.array(WallSchema).default([]),
     openings: z.array(OpeningSchema).default([]),
     rooms: z.array(RoomSchema).default([]),
+    stairs: z.array(StairSchema).default([]),
   })
   .superRefine((s, ctx) => {
     const ids = new Set(s.levels.map((l) => l.id));
     if (ids.size < s.levels.length) ctx.addIssue({ code: "custom", path: ["levels"], message: "level ids must be unique" });
-    for (const key of ["walls", "rooms"] as const) {
+    for (const key of ["walls", "rooms", "stairs"] as const) {
       s[key].forEach((item, i) => {
         if (item.level !== undefined && !ids.has(item.level)) {
           ctx.addIssue({ code: "custom", path: [key, i, "level"], message: s.levels.length ? `unknown level "${item.level}"` : "list the level in `levels` first" });
@@ -306,6 +333,8 @@ export type MaterialDoc = z.input<typeof MaterialSchema>;
 export type Level = z.infer<typeof LevelSchema>;
 export type LevelDoc = z.input<typeof LevelSchema>;
 export type Wall = z.infer<typeof WallSchema>;
+export type Stair = z.infer<typeof StairSchema>;
+export type StairDoc = z.input<typeof StairSchema>;
 export type Opening = z.infer<typeof OpeningSchema>;
 export type Room = z.infer<typeof RoomSchema>;
 export type Shell = z.infer<typeof ShellSchema>;

@@ -1,8 +1,10 @@
-// Inspector for Structure mode: edit the selected wall, door/window or room,
-// or turn an enclosed area into a room.
+// Inspector for Structure mode: edit the selected wall, door/window, room or
+// stair, or turn an enclosed area into a room.
 import { formatCm, polygonArea, wallLength } from "../model/geometry";
+import { levelAbove } from "../model/levels";
 import { addRoom, deleteOpening, deleteRoom, deleteWall, setWallLength, updateOpening, updateRoom, updateWall } from "../model/shellOps";
-import { DEFAULT_SHELL } from "../model/schema";
+import { DEFAULT_SHELL, STAIR_TYPES, type Stair } from "../model/schema";
+import { defaultStairSize, deleteStair, flightWidth, stepSizes, updateStair } from "../model/stairs";
 import { useOdaja } from "../store";
 import { JoineryFields, MaterialSelect, RoomFinishes, WallFinishes } from "./FinishesInspector";
 import { Field } from "./Inspector";
@@ -36,6 +38,7 @@ export function StructureInspector() {
       room: "Click two opposite corners, or click one corner and type the inside size like 420x330, then Enter.",
       door: "Click on a wall to add a door. It's kept clear of corners and other openings.",
       window: "Click on a wall to add a window.",
+      stairs: "Click where the stairs go: a straight flight up to the level above. Then drag it into place and set its type, size and direction here.",
     };
     return (
       <section className="inspector muted">
@@ -154,6 +157,11 @@ export function StructureInspector() {
     );
   }
 
+  if (selection.kind === "stair") {
+    const stair = shell.stairs.find((s) => s.id === selection.id);
+    return stair ? <StairInspector stair={stair} /> : null;
+  }
+
   const room = shell.rooms.find((r) => r.id === selection.id);
   if (!room) return null;
   return (
@@ -172,6 +180,83 @@ export function StructureInspector() {
           }}
         >
           Delete room (keeps walls)
+        </button>
+      </div>
+      <SharedNote />
+    </section>
+  );
+}
+
+export const STAIR_NAMES: Record<Stair["type"], string> = { straight: "Straight", l: "L-shaped", u: "U-shaped", spiral: "Spiral" };
+
+function StairInspector({ stair }: { stair: Stair }) {
+  const applyShell = useOdaja((s) => s.applyShell);
+  const selectStructure = useOdaja((s) => s.selectStructure);
+  const above = useOdaja((s) => (s.wholeShell ? levelAbove(s.wholeShell, s.level) : undefined));
+  // The level view fills in the rise (up to the level above).
+  const rise = stair.rise ?? 280;
+  const { count, riser, going } = stepSizes(stair, rise);
+  const set = (patch: Parameters<typeof updateStair>[1]) => applyShell(updateStair(stair.id, patch));
+  const size = (i: 0 | 1) => (v: string) => set({ size: (i === 0 ? [Number(v), stair.size[1]] : [stair.size[0], Number(v)]) as [number, number] });
+  return (
+    <section className="inspector">
+      <div className="group-title">Stairs · {stair.id}</div>
+      <label className="field">
+        <span>Type</span>
+        <select
+          value={stair.type}
+          onChange={(e) => {
+            const type = e.target.value as Stair["type"];
+            set({ type, size: defaultStairSize(type, rise), width: undefined });
+          }}
+        >
+          {STAIR_TYPES.map((t) => (
+            <option key={t} value={t}>
+              {STAIR_NAMES[t]}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="grid-2">
+        {stair.type === "spiral" ? (
+          <Field label="Diameter" numeric suffix="cm" min={100} max={400} value={stair.size[0]} onCommit={(v) => set({ size: [Number(v), Number(v)] })} />
+        ) : (
+          <>
+            <Field label="Width" numeric suffix="cm" min={50} max={1000} value={stair.size[0]} onCommit={size(0)} />
+            <Field label="Length" numeric suffix="cm" min={50} max={1500} value={stair.size[1]} onCommit={size(1)} />
+          </>
+        )}
+        {(stair.type === "l" || stair.type === "u") && (
+          <Field label="Flight width" numeric suffix="cm" min={50} max={300} value={Math.round(flightWidth(stair))} onCommit={(v) => set({ width: Number(v) })} />
+        )}
+        <Field label="Steps" numeric min={2} max={40} value={count} onCommit={(v) => set({ steps: Number(v) })} />
+        <Field label="Rotation" numeric suffix="°" min={-360} max={360} value={stair.rotation} onCommit={(v) => set({ rotation: Number(v) })} />
+      </div>
+      {stair.type !== "spiral" && (
+        <label className="check" title="Tread plates on stringers with nothing under them, instead of solid steps">
+          <input type="checkbox" checked={stair.open === true} onChange={(e) => set({ open: e.target.checked || undefined })} />
+          Open underneath
+        </label>
+      )}
+      <div className="actions">
+        <button onClick={() => set({ rotation: stair.rotation + 90 })}>Turn 90°</button>
+        {stair.type !== "straight" && <button onClick={() => set({ turn: stair.turn === "left" ? "right" : "left" })}>Turn {stair.turn === "left" ? "right" : "left"} instead</button>}
+      </div>
+      <MaterialSelect label="Material" value={stair.material ?? "oak"} onChange={(m) => set({ material: m && m !== "oak" ? m : undefined })} />
+      <p className="hint">
+        Up {formatCm(rise)} cm {above ? `to ${above.name}` : "(no level above yet)"} in {count} steps: {riser.toFixed(1)} cm risers, {Math.round(going)} cm treads.
+        {above && " The floor above gets an opening over the stairs."}
+      </p>
+      <div className="actions">
+        <button
+          className="danger"
+          onClick={() => {
+            applyShell(deleteStair(stair.id));
+            selectStructure(null);
+          }}
+          title="Delete (⌫)"
+        >
+          Delete stairs
         </button>
       </div>
       <SharedNote />

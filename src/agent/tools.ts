@@ -43,6 +43,8 @@ import {
   updateWall,
 } from "../model/shellOps";
 import { slugify } from "../model/defaults";
+import { addStair, defaultStairSize, deleteStair, stairOutline, stepSizes, updateStair } from "../model/stairs";
+import { STAIR_TYPES, type Stair } from "../model/schema";
 import { quantities } from "../model/finishes";
 import { addFinish, clearRoomWalls, finishRoomWalls, removeFinishes, setRoomFloor } from "../model/finishOps";
 import { compactPart } from "../model/partOps";
@@ -58,7 +60,11 @@ import {
   levelShell,
   levelsOf,
   levelsTopDown,
+  levelAbove,
   mergeLevelDoc,
+  riseFrom,
+  stairRise,
+  stairsArriving,
   removeLevelObjects,
   updateLevel,
 } from "../model/levels";
@@ -231,6 +237,26 @@ function onLevel(shell: Shell, scene: Scene, levelId: string) {
   return { level: levelById(shell, levelId), shell: levelShell(shell, levelId), scene: levelScene(scene, shell, levelId) };
 }
 
+// A stair as the tools describe it (the level view has its rise filled in).
+function describeStair(stair: Stair, whole: Shell) {
+  const rise = stair.rise ?? 280;
+  const { count, riser, going } = stepSizes(stair, rise);
+  const to = levelAbove(whole, levelOf(stair, whole));
+  return {
+    id: stair.id,
+    type: stair.type,
+    position: stair.position,
+    rotation: stair.rotation,
+    size: stair.size,
+    turn: stair.type === "straight" ? undefined : stair.turn,
+    open: stair.type !== "spiral" && stair.open ? true : undefined,
+    rise,
+    upTo: to?.id,
+    steps: `${count} × ${r1(riser)} cm risers, ${Math.round(going)} cm treads`,
+    footprint: stairOutline(stair).map(([x, y]) => [r1(x), r1(y)]),
+  };
+}
+
 const describeLevels = (shell: Shell) =>
   levelsTopDown(shell).map((l) => ({ id: l.id, name: l.name, elevation: l.elevation, wallHeight: l.height ?? shell.wallHeight, slab: l.slab }));
 
@@ -369,6 +395,10 @@ export const TOOLS: ToolDef[] = [
           return { id: r.id, name: r.name, polygon: r.polygon, clearWidth: size && r1(size.width), clearDepth: size && r1(size.depth), areaM2: r1(polygonArea(r.polygon) / 10000) };
         }),
         walls: shell.walls.map((w) => ({ id: w.id, from: w.from, to: w.to, thickness: w.thickness })),
+        stairs: shell.stairs.length ? shell.stairs.map((st) => describeStair(st, loaded.shell)) : undefined,
+        stairsFromBelow: multi
+          ? stairsArriving(loaded.shell, levelId).map((a) => ({ id: a.stair.id, from: a.from.id, openingInFloor: stairOutline(a.stair).map(([x, y]) => [r1(x), r1(y)]) }))
+          : undefined,
         openings: shell.openings.map((o) => ({ id: o.id, wall: o.wall, type: o.type, offset: o.offset, width: o.width, height: o.height, sill: o.sill || undefined, hinge: o.type === "door" ? o.hinge : undefined, swing: o.type === "door" ? o.swing : undefined })),
         objects: s.objects.map(describeObject),
         editingShape: ctx.editingObject?.() ?? undefined,
@@ -1156,6 +1186,78 @@ export const TOOLS: ToolDef[] = [
       const shell = await writeShell(ctx, loaded, next);
       const view = levelShell(shell, id);
       return { level: id, levels: describeLevels(shell), onLevel: { walls: view.walls.length, rooms: view.rooms.length } };
+    },
+  }),
+
+  tool({
+    name: "set_stairs",
+    description:
+      "Add, change or delete a staircase. Stairs stand on a level and climb to the next level up, which gets an opening in its floor over them (with a balustrade); walking in the app follows them. open: true makes them tread plates on stringers with nothing underneath (room for storage or a desk under the high end) instead of solid steps; spiral stairs are always open. position is the centre of the footprint; at rotation 0 you walk up towards north (-y), starting at the south end; rotation turns it clockwise. type: straight (size [width, length]), l (quarter turn with a landing in the far corner: up one side, then across the far end), u (half turn: up one side, across a landing, back down the other side; size [total width, length]) or spiral (size[0] = diameter). turn: which way l, u and spiral stairs turn going up (left = up the right-hand side, then across to the left). Without size it gets a comfortable one for the height (≈18 cm risers, 26 cm treads). Check get_overview's stairs (steps, footprint) and check_issues (steep stairs, furniture in the way or over the opening).",
+    input: z.object({
+      scene: sceneArg,
+      id: z.string().optional().describe("existing stairs to change or delete; omit to add"),
+      level: z.string().optional().describe("level for new stairs (default: the one open in the app)"),
+      type: z.enum(STAIR_TYPES).optional(),
+      position: vec2.optional(),
+      rotation: z.number().optional(),
+      size: vec2.optional().describe("footprint [width, length] cm"),
+      width: z.number().positive().optional().describe("flight width of l and u stairs"),
+      turn: z.enum(["left", "right"]).optional(),
+      steps: z.number().int().min(2).max(40).optional().describe("number of risers (default: about 18 cm each)"),
+      open: z.boolean().optional().describe("open underneath: treads on stringers instead of solid steps"),
+      material: z.string().optional(),
+      delete: z.boolean().optional(),
+    }),
+    async run(input, ctx) {
+      if (input.id) {
+        const id = input.id;
+        if (input.delete) {
+          await changeShell(ctx, input.scene, deleteStair(id), { item: id });
+          return `deleted ${id}`;
+        }
+        const patch = Object.fromEntries(
+          Object.entries({ type: input.type, position: input.position, rotation: input.rotation, size: input.size, width: input.width, turn: input.turn, steps: input.steps, open: input.open === undefined ? undefined : input.open || undefined, material: input.material }).filter(([k, v]) => v !== undefined || (k === "open" && input.open === false)),
+        );
+        const loaded = await loadScene(ctx, input.scene);
+        const found = loaded.shell.stairs.find((s) => s.id === id);
+        if (!found) throw new ToolError(`no stairs "${id}"`);
+        const rise = stairRise(loaded.shell, found);
+        const { levelShell: shell, shell: whole } = await changeShell(
+          ctx,
+          input.scene,
+          (doc) => {
+            // A new type without a size gets a size that suits it.
+            const resize = input.type && !input.size && input.type !== found.type;
+            return updateStair(id, { ...patch, ...(resize ? { size: defaultStairSize(input.type!, rise), width: undefined } : {}) })(doc);
+          },
+          { item: id },
+        );
+        return { stairs: describeStair(shell.stairs.find((s) => s.id === id)!, whole) };
+      }
+      if (!input.position) throw new ToolError("give position for new stairs");
+      const loaded = await loadScene(ctx, input.scene);
+      const level = pickLevel(ctx, loaded.shell, input.level);
+      const type = input.type ?? "straight";
+      const before = new Set(loaded.shell.stairs.map((s) => s.id));
+      const { levelShell: shell, shell: whole } = await changeShell(
+        ctx,
+        input.scene,
+        addStair({
+          type: input.type,
+          position: input.position as [number, number],
+          rotation: input.rotation || undefined,
+          size: (input.size as [number, number] | undefined) ?? defaultStairSize(type, riseFrom(loaded.shell, level)),
+          width: input.width,
+          turn: input.turn,
+          steps: input.steps,
+          open: input.open || undefined,
+          material: input.material,
+        }),
+        { level },
+      );
+      const added = shell.stairs.find((s) => !before.has(s.id))!;
+      const view = onLevel(whole, loaded.scene, level);
+      return { added: describeStair(added, whole), issues: issuesFor(view.scene, view.shell).filter((i) => i.targets.some((t) => t.id === added.id)).map((i) => i.message) };
     },
   }),
 

@@ -2,8 +2,10 @@ import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { finishRects, floorMaterial, sideVector } from "../model/finishes";
 import { pointOnWall, wallLength, wallPieces, type WallPiece } from "../model/geometry";
-import { isLowest, levelById, levelShell, levelsOf } from "../model/levels";
-import type { Finish, Opening, Room, Shell, Wall } from "../model/schema";
+import { isLowest, levelById, levelShell, levelsOf, stairsArriving } from "../model/levels";
+import type { Finish, Opening, Room, Shell, Stair, Wall } from "../model/schema";
+import { floorOpenings, isOpen, stairFlights, stairGuards, stairOutline, stairTreads, TREAD, treadBottom, type Flight } from "../model/stairs";
+import type { Vec } from "../model/geometry";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { JoineryView } from "./JoineryView";
@@ -74,14 +76,89 @@ function WallView({ wall, openings, shell, active, slab }: { wall: Wall; opening
 
 const CEILING = new THREE.MeshStandardMaterial({ color: "#f6f4f0", roughness: 0.95, side: THREE.DoubleSide });
 
-// Ceilings are only drawn when walking (they'd hide everything from above).
-// They don't cast shadows, so daylight still reaches the rooms.
-function RoomCeiling({ room, height }: { room: Room; height: number }) {
-  const geometry = useMemo(() => {
-    const shape = new THREE.Shape(room.polygon.map(([x, y]) => new THREE.Vector2(M(x), -M(y))));
-    return new THREE.ShapeGeometry(shape);
-  }, [room.polygon]);
-  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, M(height), 0]} material={CEILING} receiveShadow />;
+// A room's outline as a shape to lay flat, with holes (stair openings).
+// Shape coordinates are (x, -y) so that after laying the shape flat (rotating
+// -90° about X) plan y ends up on world +z.
+function useRoomShape(room: Room, openings: Vec[][]) {
+  const holes = useMemo(() => floorOpenings(room.polygon, openings), [room.polygon, openings]);
+  return useMemo(() => {
+    const flat = (poly: Vec[]) => poly.map(([x, y]) => new THREE.Vector2(M(x), -M(y)));
+    const shape = new THREE.Shape(flat(room.polygon));
+    shape.holes = holes.map((h) => new THREE.Path(flat(h)));
+    return shape;
+  }, [room.polygon, holes]);
+}
+
+// Ceilings are only drawn when walking (they'd hide everything from above),
+// open where stairs go up. They don't cast shadows, so daylight still reaches
+// the rooms. Just under the slab of a level above, which is the same surface.
+function RoomCeiling({ room, height, openings }: { room: Room; height: number; openings: Vec[][] }) {
+  const shape = useRoomShape(room, openings);
+  const geometry = useMemo(() => new THREE.ShapeGeometry(shape), [shape]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, M(height) - 0.003, 0]} material={CEILING} receiveShadow />;
+}
+
+// A stringer of open stairs: a beam under one side of a flight, following
+// its slope.
+function Stringer({ from, to, z0, z1, material }: { from: Vec; to: Vec; z0: number; z1: number; material: THREE.Material }) {
+  const run = Math.hypot(to[0] - from[0], to[1] - from[1]);
+  const angle = Math.atan2(to[1] - from[1], to[0] - from[0]);
+  const tilt = Math.atan2(z1 - z0, run);
+  // Its top edge just under the treads' front edges.
+  const drop = 11 / Math.cos(tilt) + TREAD;
+  return (
+    <group position={[M((from[0] + to[0]) / 2), M((z0 + z1) / 2 - drop), M((from[1] + to[1]) / 2)]} rotation={[0, -angle, 0]}>
+      <mesh rotation={[0, 0, tilt]} castShadow receiveShadow material={material}>
+        <boxGeometry args={[M(Math.hypot(run, z1 - z0)), 0.22, 0.04]} />
+      </mesh>
+    </group>
+  );
+}
+
+const stringerLines = (f: Flight): [Vec, Vec][] => {
+  const len = Math.hypot(f.b[0] - f.a[0], f.b[1] - f.a[1]) || 1;
+  const n: Vec = [-(f.b[1] - f.a[1]) / len, (f.b[0] - f.a[0]) / len];
+  return [-1, 1].map((s) => {
+    const k = s * (f.width / 2 - 2);
+    return [
+      [f.a[0] + n[0] * k, f.a[1] + n[1] * k],
+      [f.b[0] + n[0] * k, f.b[1] + n[1] * k],
+    ];
+  });
+};
+
+// Solid steps down to the floor, or for open stairs tread plates on
+// stringers (spiral: round a pole). `rise` is filled in by the level view.
+function StairView({ stair }: { stair: Stair }) {
+  const material = useMaterials();
+  const rise = stair.rise ?? 280;
+  const spiral = stair.type === "spiral";
+  const geometries = useMemo(
+    () =>
+      stairTreads(stair, rise).map((t) => {
+        const shape = new THREE.Shape(t.poly.map(([x, y]) => new THREE.Vector2(M(x), -M(y))));
+        const bottom = treadBottom(stair, t);
+        return { geometry: new THREE.ExtrudeGeometry(shape, { depth: M(t.top - bottom), bevelEnabled: false }), bottom };
+      }),
+    [stair, rise],
+  );
+  const flights = useMemo(() => (isOpen(stair) ? stairFlights(stair, rise) : []), [stair, rise]);
+  useEffect(() => () => geometries.forEach((g) => g.geometry.dispose()), [geometries]);
+  const mat = material(stair.material ?? "oak");
+  return (
+    <group userData={{ kind: "stair", id: stair.id }}>
+      {geometries.map((g, i) => (
+        <mesh key={i} geometry={g.geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, M(g.bottom), 0]} castShadow receiveShadow material={mat} />
+      ))}
+      {spiral && (
+        <mesh position={[M(stair.position[0]), M(rise + 90) / 2, M(stair.position[1])]} castShadow material={material("#3a3a3a")}>
+          <cylinderGeometry args={[0.05, 0.05, M(rise + 90), 16]} />
+        </mesh>
+      )}
+      {flights.flatMap((f, i) => stringerLines(f).map(([a, b], j) => <Stringer key={`${i}-${j}`} from={a} to={b} z0={f.z0} z1={f.z1} material={mat} />))}
+    </group>
+  );
 }
 
 // A finish on one side of a wall: thin panels on the face, with doors and
@@ -127,17 +204,14 @@ function WallFinish({ finish, shell, clip }: { finish: Finish; shell: Shell; cli
 // ceiling of the level under it, and it shades that level from the sun.
 const SLAB = new THREE.MeshStandardMaterial({ color: "#efece6", roughness: 0.95 });
 
-function RoomFloor({ room, slab }: { room: Room; slab: number }) {
+// `openings`: where stairs come up through this floor.
+function RoomFloor({ room, slab, openings }: { room: Room; slab: number; openings: Vec[][] }) {
   const material = useMaterials();
   const scene = useOdaja((s) => s.scene);
   const plan = useOdaja((s) => s.viewMode === "plan");
-  const shape = useMemo(
-    // Shape coordinates are (x, -y) so that after laying the shape flat
-    // (rotating -90° about X) plan y ends up on world +z.
-    () => new THREE.Shape(room.polygon.map(([x, y]) => new THREE.Vector2(M(x), -M(y)))),
-    [room.polygon],
-  );
+  const shape = useRoomShape(room, openings);
   const geometry = useMemo(() => new THREE.ShapeGeometry(shape), [shape]);
+  useEffect(() => () => geometry.dispose(), [geometry]);
   const slabGeometry = useMemo(() => (slab > 0 ? new THREE.ExtrudeGeometry(shape, { depth: M(slab), bevelEnabled: false }) : null), [shape, slab]);
   useEffect(() => () => slabGeometry?.dispose(), [slabGeometry]);
 
@@ -151,18 +225,47 @@ function RoomFloor({ room, slab }: { room: Room; slab: number }) {
   );
 }
 
-function LevelView({ shell, active, slab }: { shell: Shell; active: boolean; slab: number }) {
+const GUARD_HEIGHT = 100;
+const RAIL = new THREE.MeshStandardMaterial({ color: "#3a3a3a", roughness: 0.4, metalness: 0.6 });
+
+// A glass balustrade with a top rail along one edge of a stair opening.
+function Guard({ from, to }: { from: Vec; to: Vec }) {
+  const material = useMaterials();
+  const len = Math.hypot(to[0] - from[0], to[1] - from[1]);
+  const angle = Math.atan2(to[1] - from[1], to[0] - from[0]);
+  const [x, z] = [M((from[0] + to[0]) / 2), M((from[1] + to[1]) / 2)];
+  return (
+    <group position={[x, 0, z]} rotation={[0, -angle, 0]}>
+      <mesh position={[0, M(GUARD_HEIGHT - 4) / 2, 0]} material={material("glass")}>
+        <boxGeometry args={[M(len), M(GUARD_HEIGHT - 4), 0.012]} />
+      </mesh>
+      <mesh position={[0, M(GUARD_HEIGHT - 2), 0]} castShadow material={RAIL}>
+        <boxGeometry args={[M(len + 4), 0.04, 0.05]} />
+      </mesh>
+    </group>
+  );
+}
+
+// `arriving`: stairs from below coming up through this level's floor.
+function LevelView({ shell, active, slab, arriving }: { shell: Shell; active: boolean; slab: number; arriving: { stair: Stair; rise: number }[] }) {
+  const openings = useMemo(() => arriving.map((a) => stairOutline(a.stair)), [arriving]);
+  const guards = useMemo(() => arriving.flatMap((a) => stairGuards(a.stair, a.rise)), [arriving]);
   const walk = useOdaja((s) => s.viewMode === "walk");
   const plan = useOdaja((s) => s.viewMode === "plan");
   const wallsCut = useOdaja((s) => s.wallsCut || s.editingObjectId !== null);
   const finishes = useOdaja((s) => s.scene?.finishes);
   const clip = active && (plan || (wallsCut && !walk)) ? CUT_HEIGHT : Infinity;
+  const stairsUp = useMemo(() => shell.stairs.map(stairOutline), [shell.stairs]);
   return (
     <>
       {shell.rooms.map((room) => (
-        <RoomFloor key={room.id} room={room} slab={slab} />
+        <RoomFloor key={room.id} room={room} slab={slab} openings={openings} />
       ))}
-      {walk && active && shell.rooms.map((room) => <RoomCeiling key={`c-${room.id}`} room={room} height={shell.wallHeight} />)}
+      {walk && active && shell.rooms.map((room) => <RoomCeiling key={`c-${room.id}`} room={room} height={shell.wallHeight} openings={stairsUp} />)}
+      {shell.stairs.map((stair) => (
+        <StairView key={stair.id} stair={stair} />
+      ))}
+      {!plan && guards.map(([a, b], i) => <Guard key={i} from={a} to={b} />)}
       {shell.walls.map((wall) => (
         <WallView key={wall.id} wall={wall} shell={shell} openings={shell.openings.filter((o) => o.wall === wall.id)} active={active} slab={slab} />
       ))}
@@ -173,23 +276,32 @@ function LevelView({ shell, active, slab }: { shell: Shell; active: boolean; sla
 
 // The level being viewed sits at height 0, so cameras, dragging and walking
 // work the same on every level. The levels below are drawn under it (the
-// plan shows only the level itself); the levels above are hidden.
+// plan shows only the level itself); the levels above are hidden, except
+// when walking, where you see up the stairs.
 export function ShellView() {
   const whole = useOdaja((s) => s.wholeShell);
   const levelId = useOdaja((s) => s.level);
   const plan = useOdaja((s) => s.viewMode === "plan");
+  const walk = useOdaja((s) => s.viewMode === "walk");
   const shown = useMemo(() => {
     if (!whole) return [];
     const active = levelById(whole, levelId);
     return levelsOf(whole)
-      .filter((l) => (plan ? l.id === active.id : l.elevation <= active.elevation))
-      .map((l) => ({ id: l.id, shell: levelShell(whole, l.id), offset: l.elevation - active.elevation, active: l.id === active.id, slab: isLowest(whole, l) ? 0 : l.slab }));
-  }, [whole, levelId, plan]);
+      .filter((l) => (plan ? l.id === active.id : walk || l.elevation <= active.elevation))
+      .map((l) => ({
+        id: l.id,
+        shell: levelShell(whole, l.id),
+        offset: l.elevation - active.elevation,
+        active: l.id === active.id,
+        slab: isLowest(whole, l) ? 0 : l.slab,
+        arriving: stairsArriving(whole, l.id),
+      }));
+  }, [whole, levelId, plan, walk]);
   return (
     <group>
       {shown.map((l) => (
         <group key={l.id} position={[0, M(l.offset), 0]}>
-          <LevelView shell={l.shell} active={l.active} slab={l.slab} />
+          <LevelView shell={l.shell} active={l.active} slab={l.slab} arriving={l.arriving} />
         </group>
       ))}
     </group>

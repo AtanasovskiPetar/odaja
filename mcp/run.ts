@@ -17,7 +17,7 @@ Start with get_overview. Units are cm on a top-down plan (x east, y south); rota
 Prefer built-in templates (list_templates) or the user's library (list_library); build from parts when nothing fits.
 Tiles, paint and floors: set_material, set_finish, get_quantities. Door and window types: style on add_opening/update_opening.
 Floor plans: set_background (scale_from a printed dimension, or ask the user for one), image_to_plan to read positions off the image, build_shell for all walls, openings and rooms at once, then screenshot the plan view to compare with the background.
-Houses can have several levels (storeys): get_overview lists them; tools work on the level open in the app unless given level; set_level adds and changes levels.
+Houses can have several levels (storeys): get_overview lists them; tools work on the level open in the app unless given level; set_level adds and changes levels, set_stairs connects them.
 After changes, check_issues, and use screenshot to look at the result. Every change shows up live in the app and the user can undo it there.`;
 
 // Set when Odaja's chat starts Claude Code, so tools can use the chat's photos.

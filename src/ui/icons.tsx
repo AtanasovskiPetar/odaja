@@ -144,6 +144,15 @@ export const IconDoor = icon(
   </>,
 );
 
+// A flight in plan: treads and the arrow going up.
+export const IconStairs = icon(
+  <>
+    <path d="M5.5 2.5h9v15h-9Z" />
+    <path d="M5.5 6h9M5.5 9.5h9M5.5 13h9" strokeWidth={1} opacity={0.5} />
+    <path d="M10 15.5V5M8 7l2-2 2 2" strokeWidth={1.2} />
+  </>,
+);
+
 export const IconWindow = icon(
   <>
     <path d="M2 10h2.5M15.5 10H18" strokeWidth={3.2} strokeLinecap="square" />

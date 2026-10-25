@@ -16,6 +16,7 @@ import { QuantitiesSection } from "./FinishesInspector";
 import { PartInspector, PartsSection } from "./PartsEditor";
 import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
+import { STAIR_NAMES } from "./StructureInspector";
 import { LevelsSection } from "./LevelsSection";
 import { levelsTopDown } from "../model/levels";
 import { Welcome, OpenFolderDialog } from "./Welcome";
@@ -48,6 +49,7 @@ import {
   IconRedo,
   IconRoom,
   IconSelect,
+  IconStairs,
   IconStructure,
   IconSwatch,
   IconUndo,
@@ -154,7 +156,7 @@ function useShortcuts() {
 
       if (s.mode === "structure") {
         // Escape and Enter belong to the structure layer (drawing).
-        const tools: Record<string, Tool> = { v: "select", w: "wall", r: "room", d: "door", n: "window" };
+        const tools: Record<string, Tool> = { v: "select", w: "wall", r: "room", d: "door", n: "window", s: "stairs" };
         if (tools[key]) return s.setTool(tools[key]);
         if (key === "h") return s.toggleHideFurniture();
         if ((key === "delete" || key === "backspace") && s.structureSelection) {
@@ -300,6 +302,21 @@ function RoomsSection() {
           </li>
         ))}
       </ul>
+      {shell.stairs.length > 0 && (
+        <>
+          <h2 className="spaced">Stairs</h2>
+          <ul className="list">
+            {shell.stairs.map((s) => (
+              <li key={s.id}>
+                <button className={isSelected("stair", s.id) ? "active" : ""} onClick={() => selectStructure({ kind: "stair", id: s.id })}>
+                  {s.id}
+                  <span className="muted">{STAIR_NAMES[s.type]}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       <QuantitiesSection />
     </section>
   );
@@ -311,6 +328,7 @@ const TOOLS: { tool: Tool; label: string; key: string; Icon: typeof IconSelect }
   { tool: "room", label: "Room", key: "R", Icon: IconRoom },
   { tool: "door", label: "Door", key: "D", Icon: IconDoor },
   { tool: "window", label: "Window", key: "N", Icon: IconWindow },
+  { tool: "stairs", label: "Stairs", key: "S", Icon: IconStairs },
 ];
 
 function StructureToolbar() {

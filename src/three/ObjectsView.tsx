@@ -129,21 +129,23 @@ export function ObjectsView() {
   return (
     <group>
       {objects?.filter((o) => o.id !== editing).map((object) => <ObjectView key={object.id} object={object} ghost={structure || !!editing} />)}
-      <LowerLevelObjects />
+      <OtherLevelObjects />
     </group>
   );
 }
 
-// Furniture on the levels under the one being viewed, at their height (the
-// viewed level is at 0; see ShellView). Not in the plan.
-function LowerLevelObjects() {
+// Furniture on the levels under the one being viewed (and, when walking,
+// above it), at their height: the viewed level is at 0 (see ShellView). Not
+// in the plan.
+function OtherLevelObjects() {
   const whole = useOdaja((s) => s.wholeShell);
   const scene = useOdaja((s) => s.wholeScene);
   const levelId = useOdaja((s) => s.level);
   const plan = useOdaja((s) => s.viewMode === "plan");
+  const walk = useOdaja((s) => s.viewMode === "walk");
   if (!whole || !scene || plan || !whole.levels.length) return null;
   const active = levelById(whole, levelId);
-  const below = levelsOf(whole).filter((l) => l.id !== active.id && l.elevation <= active.elevation);
+  const below = levelsOf(whole).filter((l) => l.id !== active.id && (walk || l.elevation <= active.elevation));
   return (
     <>
       {below.map((l) => (

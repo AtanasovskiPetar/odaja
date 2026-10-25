@@ -20,8 +20,10 @@ import { deleteObjectField, moveObjectBy } from "./issueFixes";
 import { partFootprint } from "./parts";
 import type { Part, Scene, SceneDoc, SceneObject, Shell, ShellDoc } from "./schema";
 import { deleteOpening, deleteWall, MIN_WALL, updateOpening } from "./shellOps";
+import type { ShellView } from "./levels";
+import { defaultStairSize, stairOutline, stairTreads, stepSizes, treadBottom, updateStair } from "./stairs";
 
-export type IssueTarget = { kind: "object" | "wall" | "opening"; id: string };
+export type IssueTarget = { kind: "object" | "wall" | "opening" | "stair"; id: string };
 
 export interface Issue {
   key: string;
@@ -35,14 +37,14 @@ export interface Issue {
 // id. Objects built from parts are matched by words in their name. Bathtubs
 // aren't checked: they're used from a long side, not their front.
 const FRONT_CLEARANCE: [RegExp, number, string][] = [
-  [/toilet|wc/i, 60, "toilet"],
-  [/vanity|basin|sink unit/i, 70, "basin"],
-  [/shower/i, 70, "shower"],
+  [/toilet|wc/i, 60, "a toilet"],
+  [/vanity|basin|sink unit/i, 70, "a basin"],
+  [/shower/i, 70, "a shower"],
   [/base-cabinet|base cabinet|kitchen/i, 90, "kitchen units"],
-  [/tall-cabinet|tall cabinet/i, 90, "tall cabinet"],
-  [/fridge/i, 90, "fridge"],
-  [/wardrobe/i, 70, "wardrobe"],
-  [/washing/i, 70, "washing machine"],
+  [/tall-cabinet|tall cabinet/i, 90, "a tall cabinet"],
+  [/fridge/i, 90, "a fridge"],
+  [/wardrobe/i, 70, "a wardrobe"],
+  [/washing/i, 70, "a washing machine"],
 ];
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -236,18 +238,17 @@ export function computeIssues(scene: Scene, shell: Shell): Issue[] {
     const b = localBounds(obj.parts);
     const front = rotate([0, -1], obj.rotation);
     // Obstacles: walls, and low parts of other objects.
-    const edges = [
-      ...wallEdgeList,
-      ...scene.objects
-        .filter((o) => o.id !== obj.id)
-        .flatMap((o) => solids.get(o.id)!.filter((s) => s.bottom < 100))
-        .flatMap((s) => s.poly.map((p, i) => [p, s.poly[(i + 1) % 4]] as [Vec, Vec])),
-    ];
+    const low = scene.objects.filter((o) => o.id !== obj.id).flatMap((o) => solids.get(o.id)!.filter((s) => s.bottom < 100));
+    const edges = [...wallEdgeList, ...low.flatMap((s) => s.poly.map((p, i) => [p, s.poly[(i + 1) % 4]] as [Vec, Vec]))];
     const inset = Math.min(5, (b.maxX - b.minX) / 4);
     let free = Infinity;
     for (const x of [b.minX + inset, (b.minX + b.maxX) / 2, b.maxX - inset]) {
       const local = rotate([x, b.minY], obj.rotation);
       const origin: Vec = [local[0] + obj.position[0], local[1] + obj.position[1]];
+      // Front covered by a unit standing against it: the blind part of a
+      // corner cabinet, not a lack of space.
+      const justInFront: Vec = [origin[0] + front[0] * 2, origin[1] + front[1] * 2];
+      if (low.some((s) => pointInPolygon(justInFront, s.poly))) continue;
       const d = rayToWalls(origin, front, edges, needed + 50);
       if (d !== null) free = Math.min(free, d);
     }
@@ -255,7 +256,7 @@ export function computeIssues(scene: Scene, shell: Shell): Issue[] {
       issues.push({
         key: `space-${obj.id}`,
         severity: "warning",
-        message: `Only ${r1(free)} cm in front of ${obj.name} (${needed} cm recommended for a ${what}).`,
+        message: `Only ${r1(free)} cm in front of ${obj.name} (${needed} cm recommended for ${what}).`,
         targets: [{ kind: "object", id: obj.id }],
       });
     }
@@ -279,6 +280,52 @@ export function computeIssues(scene: Scene, shell: Shell): Issue[] {
         targets: [{ kind: "object", id: obj.id }],
         fix: { label: "Detach", scene: deleteObjectField(obj.id, "attachedTo") },
       });
+    }
+  }
+
+  // --- stairs ------------------------------------------------------------
+  for (const stair of shell.stairs) {
+    // The level view fills in the rise.
+    const rise = stair.rise ?? 280;
+    const { riser, going } = stepSizes(stair, rise);
+    // Spiral stairs are steeper by nature.
+    const [maxRiser, minGoing] = stair.type === "spiral" ? [22, 18] : [20, 22];
+    if (riser > maxRiser || going < minGoing) {
+      const longer = stair.type === "straight" ? defaultStairSize("straight", rise)[1] : 0;
+      issues.push({
+        key: `steep-${stair.id}`,
+        severity: "warning",
+        message: `${stair.id} is steep: ${r1(riser)} cm risers and ${Math.round(going)} cm treads (comfortable: 16–19 cm risers, 25–30 cm treads).`,
+        targets: [{ kind: "stair", id: stair.id }],
+        fix: longer > stair.size[1] ? { label: `Lengthen to ${longer} cm`, shell: updateStair(stair.id, { size: [stair.size[0], longer], steps: undefined }) } : undefined,
+      });
+    }
+    // Under open stairs there's room for furniture where the treads are high enough.
+    const treads = stairTreads(stair, rise).map((t) => ({ poly: t.poly, top: t.top, bottom: treadBottom(stair, t) }));
+    for (const obj of scene.objects) {
+      if (solids.get(obj.id)!.some((s) => treads.some((t) => heightsOverlap(s, t) && overlapDepth(s.poly, t.poly) > 2))) {
+        issues.push({
+          key: `on-stairs-${obj.id}-${stair.id}`,
+          severity: "error",
+          message: `${obj.name} is in the way of ${stair.id}.`,
+          targets: [{ kind: "object", id: obj.id }, { kind: "stair", id: stair.id }],
+        });
+      }
+    }
+  }
+  // Stairs from the level below: an opening in this floor.
+  for (const stair of (shell as ShellView).arriving ?? []) {
+    const opening = stairOutline(stair);
+    for (const obj of scene.objects) {
+      const over = solids.get(obj.id)!.some((s) => s.bottom < 30 && (s.poly.some((p) => pointInPolygon(p, opening)) || opening.some((p) => pointInPolygon(p, s.poly))));
+      if (over) {
+        issues.push({
+          key: `over-opening-${obj.id}-${stair.id}`,
+          severity: "error",
+          message: `${obj.name} stands over the opening for ${stair.id} coming up from below.`,
+          targets: [{ kind: "object", id: obj.id }],
+        });
+      }
     }
   }
 

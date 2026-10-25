@@ -23,7 +23,9 @@ import {
   type Vec,
 } from "../model/geometry";
 import { issuesFor, objectOutlines } from "../model/issues";
-import { levelById, levelShell, levelsTopDown } from "../model/levels";
+import { levelById, levelShell, levelsTopDown, stairsArriving } from "../model/levels";
+import { stairOutline, stairPath, stairTreads } from "../model/stairs";
+import type { Stair } from "../model/schema";
 import type { Shell } from "../model/schema";
 import { M } from "../model/units";
 import { useOdaja, type PlanView } from "../store";
@@ -312,12 +314,54 @@ function IssueHighlights({ shell, toScreen }: { shell: Shell; toScreen: ToScreen
             const r = [pointOnWall(wall, o.offset, -h), pointOnWall(wall, o.offset + o.width, -h), pointOnWall(wall, o.offset + o.width, h), pointOnWall(wall, o.offset, h)];
             return <polygon key={`${issue.key}-${i}`} points={poly(r)} className={cls} />;
           }
+          if (t.kind === "stair") {
+            const stair = shell.stairs.find((x) => x.id === t.id);
+            return stair ? <polygon key={`${issue.key}-${i}`} points={poly(stairOutline(stair))} className={cls} /> : null;
+          }
           // Walls are only outlined for the focused issue (they'd clutter otherwise).
           if (focused !== issue.key) return null;
           const wall = shell.walls.find((w) => w.id === t.id);
           return wall ? <polygon key={`${issue.key}-${i}`} points={poly(wallOutline(wall))} className={cls} /> : null;
         }),
       )}
+    </g>
+  );
+}
+
+// Stairs as a plan draws them: the treads, and the walking line with an
+// arrow pointing up. A stair arriving from the level below is drawn over the
+// opening in this floor, its arrow pointing down.
+function StairDrawing({ stair, rise, down, toScreen }: { stair: Stair; rise: number; down?: boolean; toScreen: ToScreen }) {
+  const poly = (points: Vec[]) => points.map((p) => toScreen(p).join(",")).join(" ");
+  const path = stairPath(stair, rise);
+  const line = (down ? [...path].reverse() : path).map((p) => toScreen(p).join(",")).join(" ");
+  const label = toScreen(down ? path.at(-1)! : path[0]);
+  return (
+    <g className={`stair ${down ? "down" : ""}`}>
+      <polygon points={poly(stairOutline(stair))} className="outline" />
+      {stairTreads(stair, rise).map((t, i) => (
+        <polygon key={i} points={poly(t.poly)} className="tread" />
+      ))}
+      <polyline points={line} className="walk-line" markerEnd="url(#odaja-arrow)" />
+      <text x={label[0]} y={label[1] + 4} textAnchor="middle" className="stair-label">
+        {down ? "Down" : "Up"}
+      </text>
+    </g>
+  );
+}
+
+function Stairs({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  const whole = useOdaja((s) => s.wholeShell);
+  const levelId = useOdaja((s) => s.level);
+  const arriving = useMemo(() => (whole ? stairsArriving(whole, levelById(whole, levelId).id) : []), [whole, levelId]);
+  return (
+    <g className="stairs">
+      {arriving.map((a) => (
+        <StairDrawing key={a.stair.id} stair={a.stair} rise={a.rise} down toScreen={toScreen} />
+      ))}
+      {shell.stairs.map((s) => (
+        <StairDrawing key={s.id} stair={s} rise={s.rise ?? 280} toScreen={toScreen} />
+      ))}
     </g>
   );
 }
@@ -384,6 +428,7 @@ export function PlanOverlay() {
       </defs>
       <LevelBelow toScreen={toScreen} />
       <WallChanges shell={shell} toScreen={toScreen} />
+      <Stairs shell={shell} toScreen={toScreen} />
       <DoorSwings shell={shell} toScreen={toScreen} />
       <RoomLabels shell={shell} toScreen={toScreen} />
       <WallDims shell={shell} toScreen={toScreen} />

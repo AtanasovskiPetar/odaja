@@ -12,7 +12,7 @@ immediately. To change the design, edit the files directly.
 | Path | Contents |
 |---|---|
 | `project.json` | Project name and the named **materials** (colours) |
-| `shell.json` | The home as it is: its **levels** (storeys), **walls**, **openings** (doors, windows) and **rooms** (floors) |
+| `shell.json` | The home as it is: its **levels** (storeys), **walls**, **openings** (doors, windows), **rooms** (floors) and **stairs** |
 | `shells/*.json` | Other versions of the walls, for renovation options that move or remove walls |
 | `assets/models/*.glb` | 3D models used by objects (imported files are converted to GLB) |
 | `assets/textures/*` | Photo textures used by tile materials |
@@ -183,6 +183,41 @@ them, and walls, rooms and objects say which level they are on with `level`:
   ones below at the same plan positions (copy them, with new ids).
 - In the app you view and edit one level at a time; the 3D view shows it with
   the levels below it. Checks (overlaps, clearances) are per level.
+
+### Stairs
+
+```json
+"stairs": [
+  { "id": "stairs-1", "type": "straight", "position": [300, 380], "size": [100, 420] },
+  { "id": "stairs-2", "level": "first-floor", "type": "u", "position": [620, 500], "rotation": 90, "size": [210, 300], "turn": "right" }
+]
+```
+
+A staircase stands on its `level` and climbs to the next level up. That
+level's floor gets an opening over the stairs' footprint, with a balustrade
+around it except where the stairs arrive. Walking in the app follows the
+treads from one level to the other.
+
+- `position` is the centre of the footprint. At `rotation` 0 you walk up
+  towards north (−y), starting at the south end; `rotation` turns the stairs
+  clockwise like an object.
+- `type`: `straight` (`size` = `[width, length]`); `l`, a quarter turn with a
+  landing in the far corner (up one side, then across the far end); `u`, a
+  half turn (up one side, across a landing, back down the other side; `size`
+  is the whole footprint); `spiral` (`size[0]` is the diameter).
+- `turn` (`left`, default, or `right`): which way `l`, `u` and spiral stairs
+  turn going up. `left` goes up the right-hand side first.
+- `width`: the flight width of `l` and `u` stairs (default: `l` half the
+  footprint, at most 100; `u` half the width less a 10 cm gap). `steps`: the number of risers (default: the height
+  divided into risers of about 18 cm). `rise`: the height climbed, only for
+  stairs that don't reach the next level (default: up to its floor).
+  `open: true`: tread plates on stringers with nothing underneath, instead of
+  solid steps down to the floor (spiral stairs always are), leaving room for
+  storage or a desk under the high end. `material` (default `oak`).
+- Comfortable stairs have 16–19 cm risers and 25–30 cm treads: a straight
+  flight up 280 cm needs about 100 × 420 cm. The app warns about steeper ones,
+  furniture in their way (under open stairs, furniture fits where the treads
+  are above it), and furniture standing over the opening above.
 
 ## scenes/*.json
 

@@ -3494,3 +3494,39 @@ button.link.danger {
   stroke-dasharray: 4 3;
   opacity: 0.55;
 }
+
+/* Stairs: treads in thin lines, the walking line with its arrow. Stairs
+   coming up from below sit over an opening in the floor. */
+.plan-overlay .stair .outline {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.2;
+}
+
+.plan-overlay .stair .tread {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 0.6;
+}
+
+.plan-overlay .stair .walk-line {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1;
+}
+
+.plan-overlay .stair.down .outline {
+  fill: var(--paper);
+  stroke-dasharray: 5 3;
+}
+
+.plan-overlay .stair.down .tread {
+  stroke-dasharray: 2 2;
+}
+
+.plan-overlay .stair-label {
+  fill: var(--ink-2);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

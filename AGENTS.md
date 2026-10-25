@@ -120,6 +120,7 @@ there, or it's refused. The policy isn't applied in development.
 | `src/model/shellOps.ts` | Named shell edits (add walls/rooms/openings, move corners and walls, resize, delete). Tools only produce valid geometry. |
 | `src/model/attach.ts` | Snapping objects against walls and moving attached objects when walls move |
 | `src/model/rooms.ts` | Finding enclosed areas in the wall graph ("Make room") |
+| `src/model/stairs.ts` | Stairs (straight, L, U, spiral): treads, footprint (the opening in the floor above), walking line, step sizes, balustrade edges, clipping openings to rooms, and the edits. Drawn by `ShellView` (steps, openings, balustrades) and `PlanOverlay`; `walk.ts` follows the treads and changes level halfway up or down |
 | `src/model/levels.ts`, `src/ui/LevelsSection.tsx` | Levels (storeys): a level's view of the shell and scene (only its walls, rooms and furniture), merging an edited view back, adding, changing, deleting and copying levels. The store's `shell`/`shellDoc`/`scene` are the open level's view (`wholeShell`/`wholeScene` are the files), so editing, snapping and checks work per level; the 3D view puts the open level at height 0 with the levels below under it. The sidebar's level list (PageUp/PageDown) |
 | `src/model/snap.ts` | Snapping for the wall tools (ends, onto walls, 45° angles, alignment, grid) |
 | `src/model/issues.ts` | Design checks (furniture in walls, overlaps, blocked doors, clearances) with quick fixes |

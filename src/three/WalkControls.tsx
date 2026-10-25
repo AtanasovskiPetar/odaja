@@ -1,10 +1,11 @@
 // First-person walking: click the view to look around with the mouse (Esc
 // releases it) or drag to look; W A S D / arrow keys to move, Shift to hurry.
 // You can't walk through walls or tall furniture; door openings are open.
+// Stairs carry you up and down: halfway, the level you're on changes.
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
-import { defaultStart, obstacles, walkStep } from "../model/walk";
+import { climbStep, defaultStart, floorAt, levelStairs, obstacles, walkStep, type LevelStairs } from "../model/walk";
 import type { Vec } from "../model/geometry";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
@@ -14,6 +15,7 @@ const RUN_SPEED = 300;
 const LOOK_SPEED = 0.0025; // radians per pixel
 const KEY_TURN = 1.8; // radians per second with Q / E
 const MAX_PITCH = 1.35;
+const NO_STAIRS: LevelStairs = { up: [], down: [] };
 
 export function WalkControls() {
   const camera = useThree((s) => s.camera);
@@ -23,8 +25,15 @@ export function WalkControls() {
   const walkStart = useOdaja((s) => s.walkStart);
   const eyeHeight = useOdaja((s) => s.eyeHeight);
   const setWalkPose = useOdaja((s) => s.setWalkPose);
+  const whole = useOdaja((s) => s.wholeShell);
+  const level = useOdaja((s) => s.level);
 
   const segments = useMemo(() => (shell ? obstacles(shell, scene) : []), [shell, scene]);
+  const stairs = useMemo(() => (whole ? levelStairs(whole, level) : NO_STAIRS), [whole, level]);
+  // Height of the floor under the walker, eased so steps feel smooth, and
+  // as it is (to tell walking under open stairs from climbing them).
+  const lift = useRef<number | null>(null);
+  const ground = useRef(0);
   const pos = useRef<Vec>([0, 0]);
   const yaw = useRef(0);
   const pitch = useRef(0);
@@ -37,6 +46,8 @@ export function WalkControls() {
     const start = walkStart ?? defaultStart(shell);
     if (!start) return;
     pos.current = start.position;
+    lift.current = null;
+    ground.current = 0;
     const [dx, dy] = start.heading;
     yaw.current = Math.atan2(-dx, -dy);
     pitch.current = 0;
@@ -112,9 +123,22 @@ export function WalkControls() {
       const f: Vec = [-Math.sin(yaw.current), -Math.cos(yaw.current)];
       const r: Vec = [Math.cos(yaw.current), -Math.sin(yaw.current)];
       const move: Vec = [((f[0] * forward + r[0] * strafe) / norm) * speed, ((f[1] * forward + r[1] * strafe) / norm) * speed];
-      pos.current = walkStep(pos.current, move, segments);
+      pos.current = climbStep(pos.current, walkStep(pos.current, move, segments), stairs, ground.current);
     }
-    camera.position.set(M(pos.current[0]), M(eyeHeight), M(pos.current[1]));
+    // After a change of level, wait for this level's stairs to come in.
+    if (useOdaja.getState().level === level) {
+      const under = floorAt(stairs, pos.current, ground.current);
+      let target = under.height;
+      if (under.switchTo) {
+        // Same place, measured from the other level's floor.
+        lift.current = (lift.current ?? target) + under.shift!;
+        target += under.shift!;
+        useOdaja.getState().setLevel(under.switchTo);
+      }
+      ground.current = target;
+      lift.current = lift.current === null ? target : lift.current + (target - lift.current) * Math.min(1, delta * 12);
+    }
+    camera.position.set(M(pos.current[0]), M(eyeHeight + (lift.current ?? 0)), M(pos.current[1]));
     camera.rotation.set(pitch.current, yaw.current, 0, "YXZ");
 
     // Tell the mini-map where we are, a few times a second.
