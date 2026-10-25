@@ -24,7 +24,9 @@ import {
   ProjectSchema,
   SceneSchema,
   ShellSchema,
+  type Scene,
   type SceneDoc,
+  type Shell,
   type ShellDoc,
 } from "../model/schema";
 import {
@@ -44,6 +46,22 @@ import { slugify } from "../model/defaults";
 import { quantities } from "../model/finishes";
 import { addFinish, clearRoomWalls, finishRoomWalls, removeFinishes, setRoomFloor } from "../model/finishOps";
 import { compactPart } from "../model/partOps";
+import {
+  addLevel,
+  copyLevelWalls,
+  deleteLevel,
+  levelById,
+  levelDoc,
+  levelOf,
+  levelOfItem,
+  levelScene,
+  levelShell,
+  levelsOf,
+  levelsTopDown,
+  mergeLevelDoc,
+  removeLevelObjects,
+  updateLevel,
+} from "../model/levels";
 import { checkPath, extension, fromBase64, sha256Hex, toBase64, type AgentFiles, type FileArea } from "./files";
 import { adjust, autoColor, crop, decode, encodeJpeg, fit, getEdit, rectify, rotate, seamless, storeEdit, type Raster } from "./photos";
 
@@ -57,13 +75,16 @@ export interface ToolContext {
   // The open home's files and the library; null when no home is open.
   files(): AgentFiles | null;
   scenePath(): string | null; // the scene open in the app
-  screenshot(view: "plan" | "3d"): Promise<{ data: string; mimeType: string }>;
+  // `level`: show that level first (the app goes back to its own after).
+  screenshot(view: "plan" | "3d", level?: string): Promise<{ data: string; mimeType: string }>;
   openScene(path: string): void;
   // Photos shared in the chat this tool call comes from (photo-1, photo-2, …),
   // if it comes from an Odaja chat.
   photos?(): Promise<{ mimeType: string; data: string }[]>;
   // The object whose shape the user is editing in the app, if any.
   editingObject?(): string | null;
+  // The level shown in the app, if known.
+  level?(): string | null;
 }
 
 export interface ToolDef<S extends z.ZodType = z.ZodType> {
@@ -107,6 +128,7 @@ const toParts = (parts: z.infer<typeof toolPart>[]) =>
     return p as z.input<typeof PartSchema>;
   });
 const sceneArg = z.string().optional().describe('Scene file, e.g. "scenes/current.json". Default: the scene open in the app.');
+const levelArg = z.string().optional().describe("Level (storey) id, in homes with several levels (get_overview lists them). Default: the level open in the app.");
 
 class ToolError extends Error {}
 
@@ -190,25 +212,60 @@ async function changeScene(ctx: ToolContext, scene: string | undefined, change: 
   return { ...loaded, doc: next, scene: check.data };
 }
 
-// Change the walls of a scene's shell; attached furniture follows in every
-// scene that uses the same shell (like editing walls in the app).
-async function changeShell(ctx: ToolContext, scene: string | undefined, change: (doc: ShellDoc) => ShellDoc) {
-  const loaded = await loadScene(ctx, scene);
-  const next = change(loaded.shellDoc);
-  if (next === loaded.shellDoc) throw new ToolError("nothing changed (the edit was not possible, e.g. an opening that doesn't fit or a wall that would be too short)");
+type Loaded = Awaited<ReturnType<typeof loadScene>>;
+
+// The level to work on: the one asked for, else the one open in the app,
+// else the first.
+function pickLevel(ctx: ToolContext, shell: Shell, wanted?: string): string {
+  const levels = levelsOf(shell);
+  if (wanted !== undefined) {
+    if (!levels.some((l) => l.id === wanted)) throw new ToolError(`no level "${wanted}"; the levels are ${levels.map((l) => l.id).join(", ")}`);
+    return wanted;
+  }
+  const open = ctx.level?.();
+  return levels.find((l) => l.id === open)?.id ?? levels[0].id;
+}
+
+// A scene and its walls as seen on one level.
+function onLevel(shell: Shell, scene: Scene, levelId: string) {
+  return { level: levelById(shell, levelId), shell: levelShell(shell, levelId), scene: levelScene(scene, shell, levelId) };
+}
+
+const describeLevels = (shell: Shell) =>
+  levelsTopDown(shell).map((l) => ({ id: l.id, name: l.name, elevation: l.elevation, wallHeight: l.height ?? shell.wallHeight, slab: l.slab }));
+
+// Write a changed shell file; attached furniture follows in every scene that
+// uses the same shell (like editing walls in the app), and `alsoScenes` can
+// change those scenes further.
+async function writeShell(ctx: ToolContext, loaded: Loaded, next: ShellDoc, alsoScenes?: (doc: SceneDoc) => SceneDoc): Promise<Shell> {
   const shell = ShellSchema.parse(next);
   await writeJson(ctx, loaded.shellRel, next);
   for (const rel of await listScenes(ctx)) {
     try {
       const doc = (await readJson(ctx, rel)) as SceneDoc;
       if ((doc.shell ?? DEFAULT_SHELL) !== loaded.shellRel) continue;
-      const followed = followWalls(doc, loaded.shell, shell);
+      let followed = followWalls(doc, loaded.shell, shell);
+      if (alsoScenes) followed = alsoScenes(followed);
       if (followed !== doc) await writeJson(ctx, rel, followed);
     } catch {
       // Unreadable scene: leave it.
     }
   }
-  return { ...loaded, shellDoc: next, shell };
+  return shell;
+}
+
+// Change the walls of one level of a scene's shell: the change gets that
+// level's view (its walls, openings and rooms). The level is the one the
+// wall, opening or room `item` is on, else `level` (see pickLevel).
+async function changeShell(ctx: ToolContext, scene: string | undefined, change: (doc: ShellDoc) => ShellDoc, where: { level?: string; item?: string } = {}) {
+  const loaded = await loadScene(ctx, scene);
+  const level = (where.item && levelOfItem(loaded.shellDoc, where.item)) || pickLevel(ctx, loaded.shell, where.level);
+  const view = levelDoc(loaded.shellDoc, level);
+  const edited = change(view);
+  if (edited === view) throw new ToolError("nothing changed (the edit was not possible, e.g. an opening that doesn't fit or a wall that would be too short)");
+  const next = mergeLevelDoc(loaded.shellDoc, level, edited);
+  const shell = await writeShell(ctx, loaded, next);
+  return { ...loaded, shellDoc: next, shell, level, levelShell: levelShell(shell, level) };
 }
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
@@ -289,10 +346,14 @@ export const TOOLS: ToolDef[] = [
   tool({
     name: "get_overview",
     description:
-      "Start here. Summary of the open project and scene: rooms with clear sizes and areas, walls, doors and windows, every object with its footprint, and current issues. Units are cm on a top-down plan: x east, y south; rotation in degrees clockwise from above, 0 = object's front faces north.",
-    input: z.object({ scene: sceneArg }),
-    async run({ scene }, ctx) {
-      const { rel, scene: s, shell, shellRel } = await loadScene(ctx, scene);
+      "Start here. Summary of the open project and scene: rooms with clear sizes and areas, walls, doors and windows, every object with its footprint, and current issues. Units are cm on a top-down plan: x east, y south; rotation in degrees clockwise from above, 0 = object's front faces north. A home with several levels (storeys) lists them in `levels`; the rooms, walls, openings, objects and issues are those of one level (`level`: the one asked for, else the one open in the app). Heights are always from that level's floor.",
+    input: z.object({ scene: sceneArg, level: levelArg }),
+    async run({ scene, level }, ctx) {
+      const loaded = await loadScene(ctx, scene);
+      const { rel, shellRel } = loaded;
+      const levelId = pickLevel(ctx, loaded.shell, level);
+      const { shell, scene: s } = onLevel(loaded.shell, loaded.scene, levelId);
+      const multi = loaded.shell.levels.length > 0;
       const project = ProjectSchema.parse(await readJson(ctx, "project.json"));
       const edges = wallEdges(shell);
       const b = shellBounds(shell);
@@ -300,6 +361,8 @@ export const TOOLS: ToolDef[] = [
         project: project.name,
         scene: { file: rel, name: s.name, description: s.description, shell: shellRel },
         scenes: await listScenes(ctx),
+        levels: multi ? describeLevels(loaded.shell) : undefined,
+        level: multi ? levelId : undefined,
         flatOutline: b && { minX: r1(b.minX), minY: r1(b.minY), maxX: r1(b.maxX), maxY: r1(b.maxY) },
         rooms: shell.rooms.map((r) => {
           const size = roomClearSize(r, edges);
@@ -309,7 +372,7 @@ export const TOOLS: ToolDef[] = [
         openings: shell.openings.map((o) => ({ id: o.id, wall: o.wall, type: o.type, offset: o.offset, width: o.width, height: o.height, sill: o.sill || undefined, hinge: o.type === "door" ? o.hinge : undefined, swing: o.type === "door" ? o.swing : undefined })),
         objects: s.objects.map(describeObject),
         editingShape: ctx.editingObject?.() ?? undefined,
-        finishes: s.finishes,
+        finishes: s.finishes.filter((f) => (f.wall ? shell.walls.some((w) => w.id === f.wall) : shell.rooms.some((r) => r.id === f.room))),
         materials: Object.fromEntries(
           Object.entries(project.materials).map(([k, m]) => [k, m.tile ? `${m.color} tiles ${m.tile.size[0]}×${m.tile.size[1]} ${m.tile.pattern}${m.tile.image ? " (photo)" : ""}` : m.color]),
         ),
@@ -377,8 +440,11 @@ export const TOOLS: ToolDef[] = [
       parts: z.array(toolPart).optional(),
       attached_to: z.string().optional(),
       notes: z.string().optional(),
+      level: levelArg,
     }),
     async run(input, ctx) {
+      const loaded = await loadScene(ctx, input.scene);
+      const levelId = pickLevel(ctx, loaded.shell, input.level);
       const kinds = [input.template, input.library_item, input.parts].filter((k) => k !== undefined).length;
       if (kinds !== 1) throw new ToolError("give exactly one of template, library_item or parts");
       let fields: Partial<ObjectDoc> = {};
@@ -419,21 +485,23 @@ export const TOOLS: ToolDef[] = [
           ...fields,
           position: input.position as [number, number],
           rotation: input.rotation || undefined,
+          level: levelId === levelsOf(loaded.shell)[0].id ? undefined : levelId,
           attachedTo: input.attached_to,
           notes: fields.notes ?? input.notes,
         } as ObjectDoc)(doc);
       });
       const added = result.scene.objects.at(-1)!;
+      const view = onLevel(result.shell, result.scene, levelId);
       // Record the room it landed in.
-      const room = roomAt(result.shell, added.position);
+      const room = roomAt(view.shell, added.position);
       if (room) await changeScene(ctx, input.scene, setObjectProps(added.id, { room }));
-      return { added: describeObject({ ...added, room }), issues: issuesFor(result.scene, result.shell).filter((i) => i.targets.some((t) => t.id === added.id)).map((i) => i.message) };
+      return { added: describeObject({ ...added, room }), issues: issuesFor(view.scene, view.shell).filter((i) => i.targets.some((t) => t.id === added.id)).map((i) => i.message) };
     },
   }),
 
   tool({
     name: "update_object",
-    description: "Change an object: move (position), turn (rotation), raise (elevation), rename, resize a template object (params), replace its parts, attach to / detach from a wall (attached_to: wall id or null), notes, locked.",
+    description: "Change an object: move (position), turn (rotation), raise (elevation), rename, resize a template object (params), replace its parts, attach to / detach from a wall (attached_to: wall id or null), notes, locked, or move it to another level (level; it keeps its plan position).",
     input: z.object({
       scene: sceneArg,
       id: z.string(),
@@ -446,8 +514,11 @@ export const TOOLS: ToolDef[] = [
       attached_to: z.string().nullable().optional(),
       notes: z.string().optional(),
       locked: z.boolean().optional(),
+      level: z.string().optional().describe("move the object to this level"),
     }),
     async run(input, ctx) {
+      const loaded = await loadScene(ctx, input.scene);
+      const toLevel = input.level === undefined ? undefined : pickLevel(ctx, loaded.shell, input.level);
       const result = await changeScene(ctx, input.scene, (doc) => {
         const current = doc.objects?.find((o) => o.id === input.id);
         if (!current) throw new ToolError(`no object "${input.id}"`);
@@ -461,6 +532,12 @@ export const TOOLS: ToolDef[] = [
           ...(input.notes !== undefined ? { notes: input.notes || undefined } : {}),
           ...(input.locked !== undefined ? { locked: input.locked || undefined } : {}),
         })(doc);
+        if (toLevel !== undefined && toLevel !== levelOf(current, loaded.shell)) {
+          // On another level: the room and the wall it stood against were on the old one.
+          const moved = next.objects!.find((o) => o.id === input.id)!;
+          const room = roomAt(levelShell(loaded.shell, toLevel), moved.position);
+          next = setObjectProps(input.id, { level: toLevel === levelsOf(loaded.shell)[0].id ? undefined : toLevel, room, attachedTo: undefined })(next);
+        }
         if (input.params) {
           if (!current.template) throw new ToolError("params only apply to template objects");
           next = setTemplateParams(input.id, input.params)(next);
@@ -468,7 +545,8 @@ export const TOOLS: ToolDef[] = [
         return next;
       });
       const o = result.scene.objects.find((x) => x.id === input.id)!;
-      return { updated: describeObject(o), issues: issuesFor(result.scene, result.shell).filter((i) => i.targets.some((t) => t.id === o.id)).map((i) => i.message) };
+      const view = onLevel(result.shell, result.scene, levelOf(o, result.shell));
+      return { updated: { ...describeObject(o), level: result.shell.levels.length ? view.level.id : undefined }, issues: issuesFor(view.scene, view.shell).filter((i) => i.targets.some((t) => t.id === o.id)).map((i) => i.message) };
     },
   }),
 
@@ -532,9 +610,12 @@ export const TOOLS: ToolDef[] = [
     description: "Exact footprint of an object and the free distance from each side (west/east/north/south) to the nearest wall face or other object.",
     input: z.object({ scene: sceneArg, id: z.string() }),
     async run({ scene, id }, ctx) {
-      const { scene: s, shell } = await loadScene(ctx, scene);
-      const o = s.objects.find((x) => x.id === id);
-      if (!o) throw new ToolError(`no object "${id}"`);
+      const loaded = await loadScene(ctx, scene);
+      const found = loaded.scene.objects.find((x) => x.id === id);
+      if (!found) throw new ToolError(`no object "${id}"`);
+      // Walls and furniture on the object's own level.
+      const { scene: s, shell } = onLevel(loaded.shell, loaded.scene, levelOf(found, loaded.shell));
+      const o = found;
       const r = objectFootprint(o);
       const edges = [...wallEdges(shell), ...s.objects.filter((x) => x.id !== id).flatMap((x) => rectEdges(objectFootprint(x)))];
       const c = clearances(r, edges);
@@ -545,32 +626,37 @@ export const TOOLS: ToolDef[] = [
 
   tool({
     name: "check_issues",
-    description: "Design checks for a scene: furniture in walls, overlaps, blocked doors, too little space in front of fixtures, misplaced openings.",
-    input: z.object({ scene: sceneArg }),
-    async run({ scene }, ctx) {
-      const { scene: s, shell } = await loadScene(ctx, scene);
-      const issues = issuesFor(s, shell);
-      return issues.length ? issues.map((i) => ({ severity: i.severity, message: i.message, targets: i.targets, quickFix: i.fix?.label })) : "No issues.";
+    description: "Design checks for a scene: furniture in walls, overlaps, blocked doors, too little space in front of fixtures, misplaced openings. Every level, unless level is given.",
+    input: z.object({ scene: sceneArg, level: z.string().optional().describe("only this level") }),
+    async run({ scene, level }, ctx) {
+      const loaded = await loadScene(ctx, scene);
+      const ids = level !== undefined ? [pickLevel(ctx, loaded.shell, level)] : levelsOf(loaded.shell).map((l) => l.id);
+      const multi = loaded.shell.levels.length > 0;
+      const issues = ids.flatMap((id) => {
+        const { scene: s, shell } = onLevel(loaded.shell, loaded.scene, id);
+        return issuesFor(s, shell).map((i) => ({ level: multi ? id : undefined, severity: i.severity, message: i.message, targets: i.targets, quickFix: i.fix?.label }));
+      });
+      return issues.length ? issues : "No issues.";
     },
   }),
 
   tool({
     name: "screenshot",
-    description: "See the scene as the user does: 'plan' is a to-scale top view, '3d' a perspective view. Use it to check your work visually.",
-    input: z.object({ view: z.enum(["plan", "3d"]).default("plan") }),
-    async run({ view }, ctx) {
-      const shot = await ctx.screenshot(view);
-      return { content: [{ type: "image", data: shot.data, mimeType: shot.mimeType }, { type: "text", text: `Screenshot of the ${view} view.` }] };
+    description: "See the scene as the user does: 'plan' is a to-scale top view, '3d' a perspective view. Use it to check your work visually. It shows one level (the one open in the app, or `level`): the plan only that level, the 3D view that level with the ones below.",
+    input: z.object({ view: z.enum(["plan", "3d"]).default("plan"), level: levelArg }),
+    async run({ view, level }, ctx) {
+      const shot = await ctx.screenshot(view, level);
+      return { content: [{ type: "image", data: shot.data, mimeType: shot.mimeType }, { type: "text", text: `Screenshot of the ${view} view${level ? ` of level ${level}` : ""}.` }] };
     },
   }),
 
   tool({
     name: "add_wall",
-    description: "Add a straight wall between two plan points (wall centreline). Typical thickness: 25 outer, 12 inner. Walls apply to every scene sharing this scene's shell.",
-    input: z.object({ scene: sceneArg, from: vec2, to: vec2, thickness: z.number().positive().default(12) }),
-    async run({ scene, from, to, thickness }, ctx) {
+    description: "Add a straight wall between two plan points (wall centreline), on one level. Typical thickness: 25 outer, 12 inner. Walls apply to every scene sharing this scene's shell.",
+    input: z.object({ scene: sceneArg, from: vec2, to: vec2, thickness: z.number().positive().default(12), level: levelArg }),
+    async run({ scene, from, to, thickness, level }, ctx) {
       const before = new Set((await loadScene(ctx, scene)).shell.walls.map((w) => w.id));
-      const { shell } = await changeShell(ctx, scene, addWalls([from as Vec, to as Vec], thickness));
+      const { shell } = await changeShell(ctx, scene, addWalls([from as Vec, to as Vec], thickness), { level });
       return { added: shell.walls.filter((w) => !before.has(w.id)) };
     },
   }),
@@ -594,7 +680,7 @@ export const TOOLS: ToolDef[] = [
         if (length) next = setWallLength(id, length)(next);
         if (thickness || height) next = updateWall(id, { ...(thickness ? { thickness } : {}), ...(height ? { height } : {}) })(next);
         return next;
-      });
+      }, { item: id });
       return { wall: shell.walls.find((w) => w.id === id) };
     },
   }),
@@ -604,7 +690,7 @@ export const TOOLS: ToolDef[] = [
     description: "Remove a wall (and its doors/windows).",
     input: z.object({ scene: sceneArg, id: z.string() }),
     async run({ scene, id }, ctx) {
-      await changeShell(ctx, scene, deleteWall(id));
+      await changeShell(ctx, scene, deleteWall(id), { item: id });
       return `deleted ${id}`;
     },
   }),
@@ -630,7 +716,7 @@ export const TOOLS: ToolDef[] = [
         if (!added) return next;
         const extra = Object.fromEntries(Object.entries({ style, frame, frameMaterial: frame_material, panes, open }).filter(([, v]) => v !== undefined));
         return Object.keys(extra).length ? updateOpening(added.id, extra)(next) : next;
-      });
+      }, { item: wall });
       return { added: shell.openings.filter((o) => !before.has(o.id)) };
     },
   }),
@@ -652,7 +738,7 @@ export const TOOLS: ToolDef[] = [
     }),
     async run({ scene, id, frame_material, ...patch }, ctx) {
       if (frame_material !== undefined) Object.assign(patch, { frameMaterial: frame_material });
-      const { shell } = await changeShell(ctx, scene, updateOpening(id, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))));
+      const { shell } = await changeShell(ctx, scene, updateOpening(id, Object.fromEntries(Object.entries(patch).filter(([, v]) => v !== undefined))), { item: id });
       return { opening: shell.openings.find((o) => o.id === id) };
     },
   }),
@@ -662,7 +748,7 @@ export const TOOLS: ToolDef[] = [
     description: "Remove a door, window or opening.",
     input: z.object({ scene: sceneArg, id: z.string() }),
     async run({ scene, id }, ctx) {
-      await changeShell(ctx, scene, deleteOpening(id));
+      await changeShell(ctx, scene, deleteOpening(id), { item: id });
       return `deleted ${id}`;
     },
   }),
@@ -678,21 +764,25 @@ export const TOOLS: ToolDef[] = [
       inside_point: vec2.optional(),
       polygon: z.array(vec2).optional(),
       delete: z.boolean().optional(),
+      level: z.string().optional().describe("level for a new room (default: the one open in the app)"),
     }),
     async run(input, ctx) {
       if (input.id) {
         const id = input.id;
-        await changeShell(ctx, input.scene, input.delete ? deleteRoom(id) : updateRoom(id, { ...(input.name ? { name: input.name } : {}), ...(input.floor ? { floor: input.floor } : {}) }));
+        await changeShell(ctx, input.scene, input.delete ? deleteRoom(id) : updateRoom(id, { ...(input.name ? { name: input.name } : {}), ...(input.floor ? { floor: input.floor } : {}) }), { item: id });
         return input.delete ? `deleted ${id}` : `updated ${id}`;
       }
+      const loaded = await loadScene(ctx, input.scene);
+      const level = pickLevel(ctx, loaded.shell, input.level);
       let polygon = input.polygon as Vec[] | undefined;
       if (!polygon && input.inside_point) {
-        polygon = enclosedArea((await loadScene(ctx, input.scene)).shell, input.inside_point as Vec) ?? undefined;
+        polygon = enclosedArea(levelShell(loaded.shell, level), input.inside_point as Vec) ?? undefined;
         if (!polygon) throw new ToolError("that point is not inside an area enclosed by walls");
       }
       if (!polygon) throw new ToolError("give inside_point or polygon");
-      const { shell } = await changeShell(ctx, input.scene, addRoom(polygon, input.name, input.floor));
-      return { added: shell.rooms.at(-1) };
+      const before = new Set(loaded.shell.rooms.map((r) => r.id));
+      const { shell } = await changeShell(ctx, input.scene, addRoom(polygon, input.name, input.floor), { level });
+      return { added: shell.rooms.find((r) => !before.has(r.id)) };
     },
   }),
 
@@ -752,8 +842,9 @@ export const TOOLS: ToolDef[] = [
           return setRoomFloor(input.room, input.material)(doc);
         }
         if (input.surface === "room_walls") {
-          if (!loaded.shell.rooms.some((r) => r.id === input.room)) throw new ToolError(`no room "${input.room}"`);
-          return finishRoomWalls(loaded.shell, input.room!, input.material, input.bottom ?? 0, input.top)(doc);
+          const room = loaded.shell.rooms.find((r) => r.id === input.room);
+          if (!room) throw new ToolError(`no room "${input.room}"`);
+          return finishRoomWalls(levelShell(loaded.shell, levelOf(room, loaded.shell)), room.id, input.material, input.bottom ?? 0, input.top)(doc);
         }
         if (!input.wall || !input.side) throw new ToolError("give wall and side");
         const sameSide = (doc.finishes ?? []).filter((f) => f.wall === input.wall && f.side === input.side && (f.from ?? -Infinity) < (input.to ?? Infinity) && (f.to ?? Infinity) > (input.from ?? -Infinity)).map((f) => f.id);
@@ -772,7 +863,9 @@ export const TOOLS: ToolDef[] = [
       await changeScene(ctx, scene, (doc) => {
         if (id) return removeFinishes([id])(doc);
         if (room && floor) return setRoomFloor(room, null)(doc);
-        if (room) return clearRoomWalls(loaded.shell, room)(doc);
+        const found = room && loaded.shell.rooms.find((r) => r.id === room);
+        if (found) return clearRoomWalls(levelShell(loaded.shell, levelOf(found, loaded.shell)), found.id)(doc);
+        if (room) throw new ToolError(`no room "${room}"`);
         throw new ToolError("give id or room");
       });
       return "removed";
@@ -784,9 +877,15 @@ export const TOOLS: ToolDef[] = [
     description: "What to buy for the scene's finishes: area per surface and material, and tile counts including 10% for cuts.",
     input: z.object({ scene: sceneArg }),
     async run({ scene }, ctx) {
-      const { scene: s, shell } = await loadScene(ctx, scene);
+      const loaded = await loadScene(ctx, scene);
       const project = ProjectSchema.parse(await readJson(ctx, "project.json"));
-      const lines = quantities(s, shell, project.materials);
+      // Each finish measured on its own level (finishes elsewhere measure 0).
+      const multi = loaded.shell.levels.length > 0;
+      const lines = levelsOf(loaded.shell).flatMap((l) => {
+        const { scene: s, shell } = onLevel(loaded.shell, loaded.scene, l.id);
+        const on = s.finishes.filter((f) => (f.wall ? shell.walls.some((w) => w.id === f.wall) : shell.rooms.some((r) => r.id === f.room)));
+        return quantities({ ...s, finishes: on }, shell, project.materials).map((q) => (multi ? { ...q, label: `${l.name}: ${q.label}` } : q));
+      });
       return lines.length ? lines : "This scene has no finishes yet.";
     },
   }),
@@ -883,7 +982,7 @@ export const TOOLS: ToolDef[] = [
   tool({
     name: "build_shell",
     description:
-      "Build the flat's walls, doors, windows and rooms in one go (e.g. from a floor plan), replacing the current walls unless replace is false. Walls are centrelines [x, y] cm (x east, y south); outer walls ~25 thick, inner ~12. Wall ends within 3 cm are joined, and ends touching another wall snap onto it. Openings name their wall by id (or \"#n\" for the n-th wall in this call, from 0), with offset = cm from the wall's from point to the opening's near edge. Rooms take a polygon or a point inside walls that enclose them. Returns what was built and anything to fix (loose wall ends, openings that had to move, rooms that aren't enclosed).",
+      "Build the flat's walls, doors, windows and rooms in one go (e.g. from a floor plan), replacing the current walls unless replace is false. In a home with several levels it builds one level (level; wall_height is then that level's). Walls are centrelines [x, y] cm (x east, y south); outer walls ~25 thick, inner ~12. Wall ends within 3 cm are joined, and ends touching another wall snap onto it. Openings name their wall by id (or \"#n\" for the n-th wall in this call, from 0), with offset = cm from the wall's from point to the opening's near edge. Rooms take a polygon or a point inside walls that enclose them. Returns what was built and anything to fix (loose wall ends, openings that had to move, rooms that aren't enclosed).",
     input: z.object({
       scene: sceneArg,
       replace: z.boolean().default(true),
@@ -905,12 +1004,18 @@ export const TOOLS: ToolDef[] = [
         )
         .optional(),
       rooms: z.array(z.object({ name: z.string(), polygon: z.array(vec2).optional(), inside_point: vec2.optional(), floor: z.string().optional() })).optional(),
+      level: levelArg,
     }),
     async run(input, ctx) {
       const notes: string[] = [];
       const loaded = await loadScene(ctx, input.scene);
-      const base = input.replace ? { ...loaded.shellDoc, walls: [], openings: [], rooms: [] } : loaded.shellDoc;
-      const taken = new Set([...(base.walls ?? []), ...(base.openings ?? []), ...(base.rooms ?? [])].map((x) => x.id));
+      const levelId = pickLevel(ctx, loaded.shell, input.level);
+      const view = levelDoc(loaded.shellDoc, levelId);
+      const base = input.replace ? { ...view, walls: [], openings: [], rooms: [] } : view;
+      const items = (d: ShellDoc) => [...(d.walls ?? []), ...(d.openings ?? []), ...(d.rooms ?? [])].map((x) => x.id);
+      // Ids in use: the other levels' and what stays on this one.
+      const onView = new Set(items(view));
+      const taken = new Set([...items(loaded.shellDoc).filter((id) => !onView.has(id)), ...items(base)]);
       const freeId = (prefix: string, wanted?: string) => {
         let id = wanted && /^[a-z0-9][a-z0-9-]*$/.test(wanted) && !taken.has(wanted) ? wanted : "";
         for (let n = 1; !id; n++) if (!taken.has(`${prefix}-${n}`)) id = `${prefix}-${n}`;
@@ -998,13 +1103,59 @@ export const TOOLS: ToolDef[] = [
         }
         doc = { ...doc, rooms: [...(doc.rooms ?? []), { id: freeId(slugify(r.name).replace(/[^a-z0-9-]/g, "") || "room"), name: r.name, polygon: polygon.map((p) => [r1(p[0]), r1(p[1])] as [number, number]), floor: r.floor ?? "oak" }] };
       }
-      const { shell } = await changeShell(ctx, input.scene, () => doc);
+      const { levelShell: shell } = await changeShell(ctx, input.scene, () => doc, { level: levelId });
       const b = shellBounds(shell);
       return {
         built: { walls: shell.walls.length, openings: shell.openings.length, rooms: shell.rooms.length },
         outline: b && { width: r1(b.maxX - b.minX), depth: r1(b.maxY - b.minY) },
         toFix: notes.length ? notes : "Nothing; all walls connect. Take a plan screenshot to compare with the floor plan.",
       };
+    },
+  }),
+
+  tool({
+    name: "set_level",
+    description:
+      "Add, change or delete a level (storey) of the home. A new level goes on top of the highest one unless elevation is given (cm: its floor above the ground floor's; negative for a basement). height is its wall height, slab the floor thickness under it (default 20). copy_walls_from copies another level's walls and rooms onto it (not doors or windows), a start for an upper floor with the same outline. delete removes the level with its walls, rooms, furniture and finishes in every scene sharing these walls. Then pass level to the other tools to work on it.",
+    input: z.object({
+      scene: sceneArg,
+      id: z.string().optional().describe("existing level to change or delete; omit to add one"),
+      name: z.string().optional(),
+      elevation: z.number().optional(),
+      height: z.number().positive().optional(),
+      slab: z.number().min(0).max(100).optional(),
+      copy_walls_from: z.string().optional().describe("level id"),
+      delete: z.boolean().optional(),
+    }),
+    async run(input, ctx) {
+      const loaded = await loadScene(ctx, input.scene);
+      const listed = (loaded.shellDoc.levels ?? []).map((l) => l.id);
+      const known = levelsOf(loaded.shell).map((l) => l.id);
+      const check = (id: string) => {
+        if (!known.includes(id)) throw new ToolError(`no level "${id}"; the levels are ${known.join(", ")}`);
+        return id;
+      };
+      if (input.delete) {
+        if (!input.id) throw new ToolError("give the id of the level to delete");
+        check(input.id);
+        if (listed.length < 2) throw new ToolError("a home keeps at least one level");
+        const shell = await writeShell(ctx, loaded, deleteLevel(input.id)(loaded.shellDoc), (doc) => removeLevelObjects(doc, loaded.shellDoc, input.id!));
+        return { deleted: input.id, levels: describeLevels(shell) };
+      }
+      const fields = { name: input.name, elevation: input.elevation, height: input.height, slab: input.slab };
+      let next: ShellDoc;
+      let id: string;
+      if (input.id) {
+        id = check(input.id);
+        next = updateLevel(id, fields)(loaded.shellDoc);
+      } else {
+        ({ doc: next, id } = addLevel(loaded.shellDoc, fields));
+      }
+      if (input.copy_walls_from) next = copyLevelWalls(check(input.copy_walls_from), id)(next);
+      if (next === loaded.shellDoc) throw new ToolError("nothing changed");
+      const shell = await writeShell(ctx, loaded, next);
+      const view = levelShell(shell, id);
+      return { level: id, levels: describeLevels(shell), onLevel: { walls: view.walls.length, rooms: view.rooms.length } };
     },
   }),
 

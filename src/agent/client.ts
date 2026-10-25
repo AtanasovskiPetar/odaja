@@ -15,7 +15,8 @@ async function localContext(photos?: Photos): Promise<ToolContext> {
     files: () => local.files(),
     scenePath: () => useOdaja.getState().scenePath,
     editingObject: () => useOdaja.getState().editingObjectId,
-    screenshot: (view) => captureView(view),
+    level: () => useOdaja.getState().level,
+    screenshot: (view, level) => captureView(view, level),
     openScene: (path) => local.openScene(path),
     photos,
   };

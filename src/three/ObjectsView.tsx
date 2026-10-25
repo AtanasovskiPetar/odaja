@@ -6,7 +6,8 @@ import type { Part, SceneObject } from "../model/schema";
 import { moveObject } from "../model/operations";
 import { snapToWall } from "../model/attach";
 import { roomAt } from "../model/geometry";
-import { planToWorld, rotationToWorld, worldToPlan } from "../model/units";
+import { levelById, levelOf, levelsOf } from "../model/levels";
+import { M, planToWorld, rotationToWorld, worldToPlan } from "../model/units";
 import { useOdaja } from "../store";
 import { sceneTheme } from "./theme";
 import { useMaterials } from "./materials";
@@ -38,7 +39,9 @@ function SelectionBox({ target }: { target: THREE.Object3D }) {
   return <primitive object={helper} />;
 }
 
-function ObjectView({ object, ghost }: { object: SceneObject; ghost: boolean }) {
+// `inert`: furniture on a level below the one being viewed, drawn but not
+// selectable.
+function ObjectView({ object, ghost, inert = false }: { object: SceneObject; ghost: boolean; inert?: boolean }) {
   const selected = useOdaja((s) => s.selectedId === object.id);
   const select = useOdaja((s) => s.select);
   const apply = useOdaja((s) => s.apply);
@@ -48,7 +51,7 @@ function ObjectView({ object, ghost }: { object: SceneObject; ghost: boolean }) 
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     // While walking, clicks are for looking around.
-    if (ghost || useOdaja.getState().viewMode === "walk") return;
+    if (ghost || inert || useOdaja.getState().viewMode === "walk") return;
     e.stopPropagation();
     select(object.id);
   };
@@ -90,7 +93,7 @@ function ObjectView({ object, ghost }: { object: SceneObject; ghost: boolean }) 
         rotation={[0, rotationToWorld(object.rotation), 0]}
         onClick={onClick}
         onDoubleClick={(e) => {
-          if (ghost || useOdaja.getState().viewMode === "walk") return;
+          if (ghost || inert || useOdaja.getState().viewMode === "walk") return;
           e.stopPropagation();
           useOdaja.getState().editShape(object.id);
         }}
@@ -107,8 +110,8 @@ function ObjectView({ object, ghost }: { object: SceneObject; ghost: boolean }) 
           object.parts.map((part, i) => <PartMesh key={i} part={part} ghost={ghost} />)
         )}
       </group>
-      {selected && !ghost && group && <SelectionBox target={group} />}
-      {selected && !ghost && group && !object.locked && (
+      {selected && !ghost && !inert && group && <SelectionBox target={group} />}
+      {selected && !ghost && !inert && group && !object.locked && (
         <TransformControls object={group} mode="translate" showY={false} translationSnap={0.05} size={0.8} onMouseDown={() => (gizmo.lastUsed = performance.now())} onObjectChange={onDrag} onMouseUp={onDragEnd} />
       )}
     </>
@@ -126,6 +129,28 @@ export function ObjectsView() {
   return (
     <group>
       {objects?.filter((o) => o.id !== editing).map((object) => <ObjectView key={object.id} object={object} ghost={structure || !!editing} />)}
+      <LowerLevelObjects />
     </group>
+  );
+}
+
+// Furniture on the levels under the one being viewed, at their height (the
+// viewed level is at 0; see ShellView). Not in the plan.
+function LowerLevelObjects() {
+  const whole = useOdaja((s) => s.wholeShell);
+  const scene = useOdaja((s) => s.wholeScene);
+  const levelId = useOdaja((s) => s.level);
+  const plan = useOdaja((s) => s.viewMode === "plan");
+  if (!whole || !scene || plan || !whole.levels.length) return null;
+  const active = levelById(whole, levelId);
+  const below = levelsOf(whole).filter((l) => l.id !== active.id && l.elevation <= active.elevation);
+  return (
+    <>
+      {below.map((l) => (
+        <group key={l.id} position={[0, M(l.elevation - active.elevation), 0]}>
+          {scene.objects.filter((o) => levelOf(o, whole) === l.id).map((o) => <ObjectView key={o.id} object={o} ghost={false} inert />)}
+        </group>
+      ))}
+    </>
   );
 }

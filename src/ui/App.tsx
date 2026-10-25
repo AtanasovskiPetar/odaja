@@ -16,6 +16,8 @@ import { QuantitiesSection } from "./FinishesInspector";
 import { PartInspector, PartsSection } from "./PartsEditor";
 import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
+import { LevelsSection } from "./LevelsSection";
+import { levelsTopDown } from "../model/levels";
 import { Welcome, OpenFolderDialog } from "./Welcome";
 import { NewHomeDialog } from "./NewHome";
 import { TraceGuide } from "./TraceGuide";
@@ -103,6 +105,16 @@ function useShortcuts() {
       }
       if (mod) return;
       const key = e.key.toLowerCase();
+
+      // PageUp / PageDown: the level above / below.
+      if ((key === "pageup" || key === "pagedown") && s.wholeShell && !s.editingObjectId) {
+        e.preventDefault();
+        const levels = levelsTopDown(s.wholeShell);
+        const i = levels.findIndex((l) => l.id === s.level);
+        const next = levels[key === "pageup" ? i - 1 : i + 1];
+        if (next) s.setLevel(next.id);
+        return;
+      }
 
       // While walking, the walk controls own the keyboard (W A S D Q E…);
       // only view switches and undo apply.
@@ -196,6 +208,7 @@ function Sidebar() {
       </header>
 
       <ScenesSection />
+      {!editingShape && <LevelsSection />}
 
       {editingShape ? (
         <>

@@ -93,10 +93,10 @@ export interface Platform {
   localTools?: { files(): AgentFiles | null; openScene(path: string): void };
   onFileChanged(callback: (path: string) => void): void;
   // Tell the server what the app is showing (tools default to the open scene).
-  reportUiState(state: { scenePath?: string | null; editingObject?: string | null }): void;
+  reportUiState(state: { scenePath?: string | null; editingObject?: string | null; level?: string | null }): void;
   // Requests from the server: open a scene, take a screenshot.
   onOpenSceneRequest(callback: (path: string) => void): void;
-  onScreenshotRequest(callback: (view: "plan" | "3d") => Promise<{ data: string; mimeType: string }>): void;
+  onScreenshotRequest(callback: (view: "plan" | "3d", level?: string) => Promise<{ data: string; mimeType: string }>): void;
 }
 
 // Where a conversation is kept in a home.
@@ -229,9 +229,9 @@ const serverPlatform: Platform = {
     onEvent<{ path: string }>("open-scene", (data) => callback(data.path));
   },
   onScreenshotRequest(callback) {
-    onEvent<{ id: string; view: "plan" | "3d" }>("screenshot", async (data) => {
+    onEvent<{ id: string; view: "plan" | "3d"; level?: string }>("screenshot", async (data) => {
       try {
-        const shot = await callback(data.view);
+        const shot = await callback(data.view, data.level);
         await post("/api/screenshot-result", { id: data.id, ...shot });
       } catch (err) {
         await post("/api/screenshot-result", { id: data.id, error: (err as Error).message });

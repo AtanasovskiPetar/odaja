@@ -1,7 +1,8 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import { finishRects, floorMaterial, sideVector } from "../model/finishes";
-import { pointOnWall, wallPieces, type WallPiece } from "../model/geometry";
+import { pointOnWall, wallLength, wallPieces, type WallPiece } from "../model/geometry";
+import { isLowest, levelById, levelShell, levelsOf } from "../model/levels";
 import type { Finish, Opening, Room, Shell, Wall } from "../model/schema";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
@@ -18,12 +19,16 @@ function cut(pieces: WallPiece[], wallsCut: boolean): WallPiece[] {
   return pieces.filter((p) => p.bottom < CUT_HEIGHT).map((p) => ({ ...p, top: Math.min(p.top, CUT_HEIGHT) }));
 }
 
-function WallView({ wall, openings, shell }: { wall: Wall; openings: Opening[]; shell: Shell }) {
+// `active`: on the level being viewed (only its walls are cut). `slab`: the
+// floor under an upper level; the wall reaches down through it, so outer
+// walls run on from the level below.
+function WallView({ wall, openings, shell, active, slab }: { wall: Wall; openings: Opening[]; shell: Shell; active: boolean; slab: number }) {
   const material = useMaterials();
   const plan = useOdaja((s) => s.viewMode === "plan");
   const walk = useOdaja((s) => s.viewMode === "walk");
   // Walls are cut low while editing a shape, so they don't hide it.
-  const wallsCut = ((useOdaja((s) => s.wallsCut || s.editingObjectId !== null)) && !walk) || plan;
+  const cutOn = useOdaja((s) => s.wallsCut || s.editingObjectId !== null);
+  const wallsCut = active && ((cutOn && !walk) || plan);
   const { solid, glass } = wallPieces(wall, openings, shell.wallHeight);
   const angle = Math.atan2(wall.to[1] - wall.from[1], wall.to[0] - wall.from[0]);
   const dir: [number, number] = [Math.cos(angle), Math.sin(angle)];
@@ -48,6 +53,11 @@ function WallView({ wall, openings, shell }: { wall: Wall; openings: Opening[]; 
           </mesh>
         );
       })}
+      {slab > 0 && !plan && (
+        <mesh position={box({ start: 0, end: wallLength(wall), bottom: -slab, top: 0 }, wall.thickness).position} rotation={[0, -angle, 0]} castShadow receiveShadow material={material(wall.material ?? "wall")}>
+          <boxGeometry args={[M(wallLength(wall)), M(slab), M(wall.thickness)]} />
+        </mesh>
+      )}
       {/* The plan shows windows as a glass line; other views get full joinery. */}
       {!plan && <JoineryView wall={wall} openings={openings} clip={wallsCut ? CUT_HEIGHT : Infinity} />}
       {plan && cut(glass, wallsCut).map((p, i) => {
@@ -113,44 +123,75 @@ function WallFinish({ finish, shell, clip }: { finish: Finish; shell: Shell; cli
   );
 }
 
-function RoomFloor({ room }: { room: Room }) {
+// The floor construction under an upper level: seen from below it's the
+// ceiling of the level under it, and it shades that level from the sun.
+const SLAB = new THREE.MeshStandardMaterial({ color: "#efece6", roughness: 0.95 });
+
+function RoomFloor({ room, slab }: { room: Room; slab: number }) {
   const material = useMaterials();
   const scene = useOdaja((s) => s.scene);
-  const geometry = useMemo(() => {
+  const plan = useOdaja((s) => s.viewMode === "plan");
+  const shape = useMemo(
     // Shape coordinates are (x, -y) so that after laying the shape flat
     // (rotating -90° about X) plan y ends up on world +z.
-    const shape = new THREE.Shape(room.polygon.map(([x, y]) => new THREE.Vector2(M(x), -M(y))));
-    return new THREE.ShapeGeometry(shape);
-  }, [room.polygon]);
+    () => new THREE.Shape(room.polygon.map(([x, y]) => new THREE.Vector2(M(x), -M(y)))),
+    [room.polygon],
+  );
+  const geometry = useMemo(() => new THREE.ShapeGeometry(shape), [shape]);
+  const slabGeometry = useMemo(() => (slab > 0 ? new THREE.ExtrudeGeometry(shape, { depth: M(slab), bevelEnabled: false }) : null), [shape, slab]);
+  useEffect(() => () => slabGeometry?.dispose(), [slabGeometry]);
 
-  const plan = useOdaja((s) => s.viewMode === "plan");
   return (
     <>
       <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} receiveShadow material={material(floorMaterial(scene, room))} />
+      {slabGeometry && !plan && <mesh geometry={slabGeometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, -M(slab) - 0.001, 0]} castShadow receiveShadow material={SLAB} />}
       {/* The plan tints floors like a watercolour wash, so walls and furniture read first. */}
       {plan && <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, 0.002, 0]} material={planMaterials.wash} renderOrder={1} />}
     </>
   );
 }
 
-export function ShellView() {
-  const shell = useOdaja((s) => s.shell);
+function LevelView({ shell, active, slab }: { shell: Shell; active: boolean; slab: number }) {
   const walk = useOdaja((s) => s.viewMode === "walk");
   const plan = useOdaja((s) => s.viewMode === "plan");
   const wallsCut = useOdaja((s) => s.wallsCut || s.editingObjectId !== null);
   const finishes = useOdaja((s) => s.scene?.finishes);
-  if (!shell) return null;
-  const clip = plan || (wallsCut && !walk) ? CUT_HEIGHT : Infinity;
+  const clip = active && (plan || (wallsCut && !walk)) ? CUT_HEIGHT : Infinity;
   return (
-    <group>
+    <>
       {shell.rooms.map((room) => (
-        <RoomFloor key={room.id} room={room} />
+        <RoomFloor key={room.id} room={room} slab={slab} />
       ))}
-      {walk && shell.rooms.map((room) => <RoomCeiling key={`c-${room.id}`} room={room} height={shell.wallHeight} />)}
+      {walk && active && shell.rooms.map((room) => <RoomCeiling key={`c-${room.id}`} room={room} height={shell.wallHeight} />)}
       {shell.walls.map((wall) => (
-        <WallView key={wall.id} wall={wall} shell={shell} openings={shell.openings.filter((o) => o.wall === wall.id)} />
+        <WallView key={wall.id} wall={wall} shell={shell} openings={shell.openings.filter((o) => o.wall === wall.id)} active={active} slab={slab} />
       ))}
       {!plan && finishes?.filter((f) => f.surface === "wall").map((f) => <WallFinish key={f.id} finish={f} shell={shell} clip={clip} />)}
+    </>
+  );
+}
+
+// The level being viewed sits at height 0, so cameras, dragging and walking
+// work the same on every level. The levels below are drawn under it (the
+// plan shows only the level itself); the levels above are hidden.
+export function ShellView() {
+  const whole = useOdaja((s) => s.wholeShell);
+  const levelId = useOdaja((s) => s.level);
+  const plan = useOdaja((s) => s.viewMode === "plan");
+  const shown = useMemo(() => {
+    if (!whole) return [];
+    const active = levelById(whole, levelId);
+    return levelsOf(whole)
+      .filter((l) => (plan ? l.id === active.id : l.elevation <= active.elevation))
+      .map((l) => ({ id: l.id, shell: levelShell(whole, l.id), offset: l.elevation - active.elevation, active: l.id === active.id, slab: isLowest(whole, l) ? 0 : l.slab }));
+  }, [whole, levelId, plan]);
+  return (
+    <group>
+      {shown.map((l) => (
+        <group key={l.id} position={[0, M(l.offset), 0]}>
+          <LevelView shell={l.shell} active={l.active} slab={l.slab} />
+        </group>
+      ))}
     </group>
   );
 }

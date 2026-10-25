@@ -71,6 +71,22 @@ export const ProjectSchema = z.object({
   site: SiteSchema.optional(),
 });
 
+// A storey. `elevation` is the height of its floor above the ground floor's
+// (cm); `height` its wall height (default: the shell's wallHeight); `slab` the
+// floor construction under it, drawn below its rooms on every level but the
+// lowest. A shell without levels is one level, the ground floor.
+export const LevelSchema = z.object({
+  id,
+  name: z.string(),
+  elevation: z.number(),
+  height: z.number().positive().optional(),
+  slab: z.number().min(0).max(100).default(20),
+});
+
+// Walls, rooms and objects name their level; without `level` they are on the
+// first level listed.
+const levelRef = id.optional().describe("level id; default: the first level");
+
 export const WallSchema = z.object({
   id,
   from: point2,
@@ -78,6 +94,7 @@ export const WallSchema = z.object({
   thickness: z.number().positive().default(12),
   height: z.number().positive().optional(),
   material: z.string().optional(),
+  level: levelRef,
 });
 
 export const OpeningSchema = z.object({
@@ -108,15 +125,29 @@ export const RoomSchema = z.object({
   name: z.string(),
   polygon: z.array(point2).min(3),
   floor: z.string().optional(),
+  level: levelRef,
 });
 
-export const ShellSchema = z.object({
-  version: z.literal(1),
-  wallHeight: z.number().positive().default(260),
-  walls: z.array(WallSchema).default([]),
-  openings: z.array(OpeningSchema).default([]),
-  rooms: z.array(RoomSchema).default([]),
-});
+export const ShellSchema = z
+  .object({
+    version: z.literal(1),
+    wallHeight: z.number().positive().default(260),
+    levels: z.array(LevelSchema).default([]),
+    walls: z.array(WallSchema).default([]),
+    openings: z.array(OpeningSchema).default([]),
+    rooms: z.array(RoomSchema).default([]),
+  })
+  .superRefine((s, ctx) => {
+    const ids = new Set(s.levels.map((l) => l.id));
+    if (ids.size < s.levels.length) ctx.addIssue({ code: "custom", path: ["levels"], message: "level ids must be unique" });
+    for (const key of ["walls", "rooms"] as const) {
+      s[key].forEach((item, i) => {
+        if (item.level !== undefined && !ids.has(item.level)) {
+          ctx.addIssue({ code: "custom", path: [key, i, "level"], message: s.levels.length ? `unknown level "${item.level}"` : "list the level in `levels` first" });
+        }
+      });
+    }
+  });
 
 // Cut-outs through a box or an extrusion, in its profile plane relative to
 // the part's centre (for a box or vertical extrusion: plan x, y). A rectangle
@@ -181,6 +212,7 @@ export const ObjectSchema = z
     position: point2,
     elevation: z.number().default(0),
     rotation: z.number().default(0),
+    level: levelRef,
     room: id.optional(),
     // The wall this object stands against; it moves when that wall moves.
     attachedTo: id.optional(),
@@ -271,6 +303,8 @@ export type Finish = z.infer<typeof FinishSchema>;
 export type Project = z.infer<typeof ProjectSchema>;
 export type ProjectDoc = z.input<typeof ProjectSchema>;
 export type MaterialDoc = z.input<typeof MaterialSchema>;
+export type Level = z.infer<typeof LevelSchema>;
+export type LevelDoc = z.input<typeof LevelSchema>;
 export type Wall = z.infer<typeof WallSchema>;
 export type Opening = z.infer<typeof OpeningSchema>;
 export type Room = z.infer<typeof RoomSchema>;

@@ -68,14 +68,15 @@ async function overlayImage(svg: SVGSVGElement): Promise<HTMLImageElement> {
 
 // Draw a view into a canvas: the 3D picture plus, in the plan, the overlay.
 // `maxWidth` limits the size (screenshots); otherwise it's the full screen
-// resolution (exports).
-export async function renderView(view: ViewMode, maxWidth?: number): Promise<HTMLCanvasElement> {
+// resolution (exports). `level` shows that level for the picture.
+export async function renderView(view: ViewMode, maxWidth?: number, level?: string): Promise<HTMLCanvasElement> {
   const state = useOdaja.getState();
   const previous = state.viewMode;
-  if (view !== previous) {
-    state.setViewMode(view);
-    await frames(4);
-  }
+  const previousLevel = state.level;
+  const otherLevel = level !== undefined && level !== previousLevel;
+  if (otherLevel) state.setLevel(level);
+  if (view !== previous) state.setViewMode(view);
+  if (view !== previous || otherLevel) await frames(4);
   try {
     const { gl, scene, camera } = viewport;
     if (!gl || !scene || !camera) throw new Error("the 3D view isn't ready");
@@ -93,12 +94,13 @@ export async function renderView(view: ViewMode, maxWidth?: number): Promise<HTM
     return canvas;
   } finally {
     if (view !== previous) useOdaja.getState().setViewMode(previous);
+    if (otherLevel) useOdaja.getState().setLevel(previousLevel);
   }
 }
 
 // A small JPEG for AI tools.
-export async function captureView(view: ViewMode): Promise<{ data: string; mimeType: string }> {
-  const canvas = await renderView(view, MAX_WIDTH);
+export async function captureView(view: ViewMode, level?: string): Promise<{ data: string; mimeType: string }> {
+  const canvas = await renderView(view, MAX_WIDTH, level);
   const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
   return { data: dataUrl.slice(dataUrl.indexOf(",") + 1), mimeType: "image/jpeg" };
 }

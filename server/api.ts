@@ -141,6 +141,8 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
   // and the object whose shape is being edited.
   let openScenePath: string | null = null;
   let editingObject: string | null = null;
+  // The level shown in the app, the default level for tools.
+  let openLevel: string | null = null;
   // Open /api/events streams. Events go from here to the app; the app
   // answers over ordinary requests (/screenshot-result, /ui-state).
   const listeners = new Set<ServerResponse>();
@@ -180,11 +182,12 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
     files: () => (projectDir ? folderFiles(projectDir, LIBRARY_ROOT) : null),
     scenePath: () => openScenePath,
     editingObject: () => editingObject,
-    screenshot(view) {
+    level: () => openLevel,
+    screenshot(view, level) {
       const id = Math.random().toString(36).slice(2);
       return new Promise((resolve, reject) => {
         pendingShots.set(id, { resolve, reject });
-        broadcast("screenshot", { id, view });
+        broadcast("screenshot", { id, view, level });
         setTimeout(() => {
           if (pendingShots.delete(id)) reject(new Error("Odaja didn't answer; is the app open in a browser window?"));
         }, 15000);
@@ -664,6 +667,7 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
             const state = await json();
             if ("scenePath" in state) openScenePath = typeof state.scenePath === "string" ? state.scenePath : null;
             if ("editingObject" in state) editingObject = typeof state.editingObject === "string" ? state.editingObject : null;
+            if ("level" in state) openLevel = typeof state.level === "string" ? state.level : null;
             return send(200, { ok: true });
           }
           case "POST /screenshot-result": {

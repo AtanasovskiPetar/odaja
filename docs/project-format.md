@@ -12,7 +12,7 @@ immediately. To change the design, edit the files directly.
 | Path | Contents |
 |---|---|
 | `project.json` | Project name and the named **materials** (colours) |
-| `shell.json` | The flat as it is: **walls**, **openings** (doors, windows) and **rooms** (floors) |
+| `shell.json` | The home as it is: its **levels** (storeys), **walls**, **openings** (doors, windows) and **rooms** (floors) |
 | `shells/*.json` | Other versions of the walls, for renovation options that move or remove walls |
 | `assets/models/*.glb` | 3D models used by objects (imported files are converted to GLB) |
 | `assets/textures/*` | Photo textures used by tile materials |
@@ -45,7 +45,8 @@ described here, and zip them again (keep `project.json` at the top level).
 - **Centimetres** everywhere.
 - Positions are on a **top-down floor plan**: `x` grows to the right (east),
   `y` grows **down the page** (south). `[0, 0]` is the top-left (north-west) of the plan.
-- Heights (`elevation`, `sill`, part `z`) are measured **up from the floor**.
+- Heights (`elevation`, `sill`, part `z`) are measured **up from the floor** of
+  the level the thing is on.
 - `rotation` is in **degrees, clockwise when seen from above**. At rotation `0`
   an object's **front faces north** (towards smaller `y`) and its back faces south.
   `90` = front faces east, `180` = front faces south, `270` = front faces west.
@@ -155,6 +156,34 @@ looked up online.
   and `left`.
 - **Room**: a floor polygon (plan points) with a `name` and a `floor` material.
 
+### Levels (storeys)
+
+A flat is one level and needs no `levels`. A house with several storeys lists
+them, and walls, rooms and objects say which level they are on with `level`:
+
+```json
+"levels": [
+  { "id": "ground", "name": "Ground floor", "elevation": 0 },
+  { "id": "first-floor", "name": "First floor", "elevation": 280, "height": 250 }
+],
+"walls": [
+  { "id": "wall-north", "from": [0, 0], "to": [900, 0], "thickness": 25 },
+  { "id": "wall-north-up", "level": "first-floor", "from": [0, 0], "to": [900, 0], "thickness": 25 }
+]
+```
+
+- `elevation`: the level's floor height above the ground floor's, in cm
+  (negative for a basement). `height`: its wall height (default `wallHeight`).
+  `slab`: the floor thickness under it (default 20), drawn under its rooms;
+  usually `elevation` = the level below's elevation + its wall height + `slab`.
+- Anything **without `level` is on the first level listed**, so keep the
+  existing ground floor first and add new levels after it. Doors and windows
+  are on their wall's level, and finishes follow their wall or room.
+- Every level draws its own walls: an upper floor's outer walls stand on the
+  ones below at the same plan positions (copy them, with new ids).
+- In the app you view and edit one level at a time; the 3D view shows it with
+  the levels below it. Checks (overlaps, clearances) are per level.
+
 ## scenes/*.json
 
 ```json
@@ -206,7 +235,8 @@ automatically. A floor finish replaces the room's own `floor` in this scene.
 | `position` | `[x, y]` on the plan: where the object's origin sits. Required. |
 | `elevation` | Height of the origin above the floor (default 0). Use it for wall cabinets, shelves, mirrors. |
 | `rotation` | Degrees clockwise from above (default 0, front facing north). |
-| `room` | Optional id of the room it belongs to. |
+| `level` | The level it stands on, in a home with several levels (default: the first level). |
+| `room` | Optional id of the room it belongs to (on the same level). |
 | `attachedTo` | Optional id of the wall the object's back stands against. When that wall moves, the object moves with it. Set it for kitchen runs, wardrobes, toilets and anything else fixed to a wall, with the object's back (+y side) touching the wall face. |
 | `locked` | `true` stops it being dragged in the app (default false). |
 | `notes` | Free text, such as a product link, price or reminder. |

@@ -3480,3 +3480,17 @@ button.link.danger {
 .walk-sun .icon {
   padding: 3px 6px;
 }
+
+/* ——— Levels ——— */
+
+.level-fields {
+  margin-top: 8px;
+}
+
+.plan-overlay .level-below polygon {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  opacity: 0.55;
+}

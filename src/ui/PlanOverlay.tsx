@@ -23,6 +23,7 @@ import {
   type Vec,
 } from "../model/geometry";
 import { issuesFor, objectOutlines } from "../model/issues";
+import { levelById, levelShell, levelsTopDown } from "../model/levels";
 import type { Shell } from "../model/schema";
 import { M } from "../model/units";
 import { useOdaja, type PlanView } from "../store";
@@ -321,6 +322,26 @@ function IssueHighlights({ shell, toScreen }: { shell: Shell; toScreen: ToScreen
   );
 }
 
+// The walls of the level just below, faint, to line up walls and stairs with.
+function LevelBelow({ toScreen }: { toScreen: ToScreen }) {
+  const whole = useOdaja((s) => s.wholeShell);
+  const levelId = useOdaja((s) => s.level);
+  const below = useMemo(() => {
+    if (!whole || whole.levels.length < 2) return null;
+    const active = levelById(whole, levelId);
+    const level = levelsTopDown(whole).find((l) => l.elevation < active.elevation);
+    return level ? levelShell(whole, level.id) : null;
+  }, [whole, levelId]);
+  if (!below) return null;
+  return (
+    <g className="level-below">
+      {below.walls.map((w) => (
+        <polygon key={w.id} points={wallOutline(w).map((p) => toScreen(p).join(",")).join(" ")} />
+      ))}
+    </g>
+  );
+}
+
 // What a renovation option changes compared with the flat as it is
 // (shell.json): walls to take down in red, new walls in green.
 function WallChanges({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
@@ -361,6 +382,7 @@ export function PlanOverlay() {
           <path d="M 0 0 L 10 5 L 0 10 z" style={{ fill: "var(--ink)" }} />
         </marker>
       </defs>
+      <LevelBelow toScreen={toScreen} />
       <WallChanges shell={shell} toScreen={toScreen} />
       <DoorSwings shell={shell} toScreen={toScreen} />
       <RoomLabels shell={shell} toScreen={toScreen} />

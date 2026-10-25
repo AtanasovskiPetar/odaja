@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { z } from "zod";
 import { followWalls } from "./model/attach";
+import { addLevel, copyLevelWalls, deleteLevel, GROUND_ID, levelById, levelDoc, levelScene, levelShell, mergeLevelDoc, placeNewObjects, removeLevelObjects, updateLevel } from "./model/levels";
 import { detachTemplate } from "./model/operations";
 import { compactPart } from "./model/partOps";
 import { newSceneFile, type StarterRoom } from "./model/defaults";
@@ -102,12 +103,20 @@ interface OdajaState {
   // only the fields their author wrote); scene and shell are the same data
   // with defaults filled in, used for rendering.
   sceneDoc: SceneDoc | null;
-  scene: Scene | null;
+  wholeScene: Scene | null;
   shellPath: string;
-  shellDoc: ShellDoc | null;
-  shell: Shell | null;
+  wholeShellDoc: ShellDoc | null;
+  wholeShell: Shell | null;
   // shell.json when the open scene uses a different shell, to show what a
   // renovation option changes.
+  wholeBaseShell: Shell | null;
+  // The level being viewed and edited, and its view of the files (see
+  // model/levels.ts): only its walls, rooms and furniture. Editing, snapping
+  // and checks use these; the 3D view also draws the levels below.
+  level: string;
+  shellDoc: ShellDoc | null;
+  shell: Shell | null;
+  scene: Scene | null;
   baseShell: Shell | null;
   errors: FileError[];
   selectedId: string | null;
@@ -190,7 +199,13 @@ interface OdajaState {
   setUnderlayPanel(open: boolean): void;
   setUnderlayTool(tool: OdajaState["underlayTool"]): void;
   apply(change: (doc: SceneDoc) => SceneDoc): void;
+  // Change the open level's walls (the change gets the level's view).
   applyShell(change: (doc: ShellDoc) => ShellDoc): Promise<void>;
+  setLevel(id: string): void;
+  addLevel(): Promise<void>;
+  updateLevel(id: string, patch: Parameters<typeof updateLevel>[1]): Promise<void>;
+  deleteLevel(id: string): Promise<void>;
+  copyLevelWalls(fromId: string): Promise<void>;
   undo(): void;
   redo(): void;
 }
@@ -224,10 +239,15 @@ const EMPTY_PROJECT = {
   scenes: [],
   scenePath: null,
   sceneDoc: null,
-  scene: null,
+  wholeScene: null,
   shellPath: DEFAULT_SHELL,
+  wholeShellDoc: null,
+  wholeShell: null,
+  wholeBaseShell: null,
+  level: GROUND_ID,
   shellDoc: null,
   shell: null,
+  scene: null,
   baseShell: null,
   errors: [],
   selectedId: null,
@@ -236,6 +256,20 @@ const EMPTY_PROJECT = {
   undoStack: [],
   redoStack: [],
 };
+
+type ViewSource = Pick<OdajaState, "wholeShellDoc" | "wholeShell" | "wholeScene" | "wholeBaseShell" | "level">;
+
+// The open level's view of the files.
+function levelView(s: ViewSource) {
+  const level = s.wholeShell ? levelById(s.wholeShell, s.level).id : s.level;
+  return {
+    level,
+    shellDoc: s.wholeShellDoc && levelDoc(s.wholeShellDoc, level),
+    shell: s.wholeShell && levelShell(s.wholeShell, level),
+    scene: s.wholeScene && s.wholeShell ? levelScene(s.wholeScene, s.wholeShell, level) : s.wholeScene,
+    baseShell: s.wholeBaseShell && levelShell(s.wholeBaseShell, level),
+  };
+}
 
 async function readJson<S extends z.ZodType>(path: string, schema: S): Promise<{ data: z.infer<S>; raw: z.input<S> }> {
   const text = await platform.readFile(path);
@@ -266,6 +300,11 @@ export const useOdaja = create<OdajaState>((set, get) => {
     }
   }
 
+  // Set file state, keeping the level view in step.
+  function setFiles(patch: Partial<ViewSource & Pick<OdajaState, "sceneDoc" | "shellPath">>) {
+    set((s) => ({ ...patch, ...levelView({ ...s, ...patch }) }));
+  }
+
   function write(path: string, doc: unknown) {
     if (platform.kind === "browser" && !get().unsavedToFile) set({ unsavedToFile: true });
     const text = formatJson(doc);
@@ -277,8 +316,8 @@ export const useOdaja = create<OdajaState>((set, get) => {
   // and save it.
   function applyFile(path: string, doc: unknown) {
     const s = get();
-    if (path === s.scenePath) set({ sceneDoc: doc as SceneDoc, scene: SceneSchema.parse(doc) });
-    if (path === s.shellPath) set({ shellDoc: doc as ShellDoc, shell: ShellSchema.parse(doc) });
+    if (path === s.scenePath) setFiles({ sceneDoc: doc as SceneDoc, wholeScene: SceneSchema.parse(doc) });
+    if (path === s.shellPath) setFiles({ wholeShellDoc: doc as ShellDoc, wholeShell: ShellSchema.parse(doc) });
     if (path === "project.json") set({ projectDoc: doc as ProjectDoc, project: ProjectSchema.parse(doc) });
     write(path, doc);
   }
@@ -291,13 +330,42 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
   async function loadShell(path: string) {
     const loaded = await loadFile(path, ShellSchema);
-    set({ shellPath: path, shellDoc: loaded?.raw ?? null, shell: loaded?.data ?? null });
+    setFiles({ shellPath: path, wholeShellDoc: loaded?.raw ?? null, wholeShell: loaded?.data ?? null });
     if (path === DEFAULT_SHELL) {
-      set({ baseShell: null });
+      setFiles({ wholeBaseShell: null });
     } else {
       const base = await loadFile(DEFAULT_SHELL, ShellSchema);
-      set({ baseShell: base?.data ?? null });
+      setFiles({ wholeBaseShell: base?.data ?? null });
     }
+  }
+
+  // Change the shell file (every level). Objects attached to walls that moved
+  // follow them, in every scene that uses this shell; `alsoScenes` can change
+  // those scenes further. All in one undo step.
+  async function changeShellFile(nextDoc: ShellDoc, alsoScenes?: (doc: SceneDoc) => SceneDoc) {
+    const { wholeShellDoc, wholeShell, shellPath, sceneDoc, scenePath, scenes } = get();
+    if (!wholeShellDoc || !wholeShell || nextDoc === wholeShellDoc) return;
+    const next = ShellSchema.parse(nextDoc);
+    const follow = (doc: SceneDoc) => {
+      const followed = followWalls(doc, wholeShell, next);
+      return alsoScenes ? alsoScenes(followed) : followed;
+    };
+    const edits: FileEdit[] = [{ path: shellPath, before: wholeShellDoc, after: nextDoc }];
+    if (sceneDoc && scenePath) {
+      const followed = follow(sceneDoc);
+      if (followed !== sceneDoc) edits.push({ path: scenePath, before: sceneDoc, after: followed });
+    }
+    const others = scenes.filter((sc) => sc.path !== scenePath && sc.shell === shellPath);
+    for (const other of others) {
+      try {
+        const doc = JSON.parse(await platform.readFile(other.path)) as SceneDoc;
+        const followed = follow(doc);
+        if (followed !== doc) edits.push({ path: other.path, before: doc, after: followed });
+      } catch {
+        // Unreadable scene: leave it alone; it shows its own error when opened.
+      }
+    }
+    commit(edits);
   }
 
   async function refreshScenes() {
@@ -313,6 +381,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
   async function loadProject() {
     const { dir, scenes } = await platform.listScenes();
     set({ ...EMPTY_PROJECT, status: "project", projectDir: dir, scenes, mode: "furnish", tool: "select", viewMode: "3d", frameRequest: get().frameRequest + 1 });
+    platform.reportUiState({ level: null });
     const project = await loadFile("project.json", ProjectSchema);
     set({ project: project?.data ?? null, projectDoc: project?.raw ?? null });
     const remembered = lastScene(dir);
@@ -345,9 +414,9 @@ export const useOdaja = create<OdajaState>((set, get) => {
     const isScene = path === s.scenePath;
     const isShell = path === s.shellPath;
     if (!isScene && !isShell) {
-      if (path === DEFAULT_SHELL && s.baseShell) {
+      if (path === DEFAULT_SHELL && s.wholeBaseShell) {
         const base = await loadFile(path, ShellSchema);
-        if (base) set({ baseShell: base.data });
+        if (base) setFiles({ wholeBaseShell: base.data });
       }
       return;
     }
@@ -355,14 +424,14 @@ export const useOdaja = create<OdajaState>((set, get) => {
     if (text === null || text === lastWritten.get(path)) return;
     const loaded = await loadFile(path, isScene ? SceneSchema : ShellSchema);
     if (!loaded) return;
-    const before = isScene ? get().sceneDoc : get().shellDoc;
+    const before = isScene ? get().sceneDoc : get().wholeShellDoc;
     if (isScene) {
-      set({ sceneDoc: loaded.raw as SceneDoc, scene: loaded.data as Scene });
+      setFiles({ sceneDoc: loaded.raw as SceneDoc, wholeScene: loaded.data as Scene });
       // A scene can switch to a different shell.
       const shellPath = (loaded.data as Scene).shell ?? DEFAULT_SHELL;
       if (shellPath !== get().shellPath) await loadShell(shellPath);
     } else {
-      set({ shellDoc: loaded.raw as ShellDoc, shell: loaded.data as Shell });
+      setFiles({ wholeShellDoc: loaded.raw as ShellDoc, wholeShell: loaded.data as Shell });
     }
     // External edits are undoable too, so you can roll back an agent's change.
     if (before) set((st) => ({ undoStack: [...st.undoStack, [{ path, before, after: loaded.raw }]], redoStack: [] }));
@@ -449,7 +518,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
       const loaded = await loadFile(path, SceneSchema);
       // Ignore a slow load that finished after the user switched scenes.
       if (get().scenePath !== path) return;
-      set({ sceneDoc: loaded?.raw ?? null, scene: loaded?.data ?? null });
+      setFiles({ sceneDoc: loaded?.raw ?? null, wholeScene: loaded?.data ?? null });
       platform.reportUiState({ scenePath: path });
       await loadShell(loaded?.data.shell ?? DEFAULT_SHELL);
       const dir = get().projectDir;
@@ -487,13 +556,9 @@ export const useOdaja = create<OdajaState>((set, get) => {
       if (get().scenePath === path) {
         // Keep the open scene under its new file name. Its undo history points
         // at the old file name, so start a fresh one.
-        set((s) => ({
-          scenePath: next,
-          sceneDoc: s.sceneDoc ? { ...s.sceneDoc, name: trimmed } : null,
-          scene: s.scene ? { ...s.scene, name: trimmed } : null,
-          undoStack: [],
-          redoStack: [],
-        }));
+        const { sceneDoc, wholeScene } = get();
+        set({ scenePath: next, undoStack: [], redoStack: [] });
+        setFiles({ sceneDoc: sceneDoc ? { ...sceneDoc, name: trimmed } : null, wholeScene: wholeScene ? { ...wholeScene, name: trimmed } : null });
         const dir = get().projectDir;
         if (dir) rememberScene(dir, next);
         platform.reportUiState({ scenePath: next });
@@ -657,37 +722,54 @@ export const useOdaja = create<OdajaState>((set, get) => {
       set({ focus: { center, radius, at: Date.now() } });
     },
 
+    // Change the scene. Objects it adds go on the open level.
     apply(change) {
-      const { sceneDoc, scenePath } = get();
+      const { sceneDoc, scenePath, wholeShell, level } = get();
       if (!sceneDoc || !scenePath) return;
-      const next = change(sceneDoc);
+      let next = change(sceneDoc);
+      if (next !== sceneDoc && wholeShell) next = placeNewObjects(sceneDoc, next, wholeShell, level);
       if (next !== sceneDoc) commit([{ path: scenePath, before: sceneDoc, after: next }]);
     },
 
-    // Change the walls. Objects attached to walls that moved follow them, in
-    // every scene that uses this shell, all in one undo step.
     async applyShell(change) {
-      const { shellDoc, shell, shellPath, sceneDoc, scenePath, scenes } = get();
-      if (!shellDoc || !shell) return;
-      const nextDoc = change(shellDoc);
-      if (nextDoc === shellDoc) return;
-      const next = ShellSchema.parse(nextDoc);
-      const edits: FileEdit[] = [{ path: shellPath, before: shellDoc, after: nextDoc }];
-      if (sceneDoc && scenePath) {
-        const followed = followWalls(sceneDoc, shell, next);
-        if (followed !== sceneDoc) edits.push({ path: scenePath, before: sceneDoc, after: followed });
-      }
-      const others = scenes.filter((sc) => sc.path !== scenePath && sc.shell === shellPath);
-      for (const other of others) {
-        try {
-          const doc = JSON.parse(await platform.readFile(other.path)) as SceneDoc;
-          const followed = followWalls(doc, shell, next);
-          if (followed !== doc) edits.push({ path: other.path, before: doc, after: followed });
-        } catch {
-          // Unreadable scene: leave it alone; it shows its own error when opened.
-        }
-      }
-      commit(edits);
+      const { shellDoc, wholeShellDoc, level } = get();
+      if (!shellDoc || !wholeShellDoc) return;
+      const edited = change(shellDoc);
+      if (edited === shellDoc) return;
+      await changeShellFile(mergeLevelDoc(wholeShellDoc, level, edited));
+    },
+
+    setLevel(id) {
+      if (id === get().level) return;
+      set({ selectedId: null, structureSelection: null, dragPreview: null, editingObjectId: null, partSelection: [], pickingWalkStart: false });
+      setFiles({ level: id });
+      platform.reportUiState({ level: get().level, editingObject: null });
+    },
+
+    async addLevel() {
+      const { wholeShellDoc } = get();
+      if (!wholeShellDoc) return;
+      const { doc, id } = addLevel(wholeShellDoc);
+      await changeShellFile(doc);
+      get().setLevel(id);
+    },
+
+    async updateLevel(id, patch) {
+      const { wholeShellDoc } = get();
+      if (wholeShellDoc) await changeShellFile(updateLevel(id, patch)(wholeShellDoc));
+    },
+
+    // A level goes with its walls and rooms, and its furniture and finishes in
+    // every scene using these walls.
+    async deleteLevel(id) {
+      const { wholeShellDoc } = get();
+      if (!wholeShellDoc) return;
+      await changeShellFile(deleteLevel(id)(wholeShellDoc), (doc) => removeLevelObjects(doc, wholeShellDoc, id));
+    },
+
+    async copyLevelWalls(fromId) {
+      const { wholeShellDoc, level } = get();
+      if (wholeShellDoc) await changeShellFile(copyLevelWalls(fromId, level)(wholeShellDoc));
     },
 
     undo() {
