@@ -10,6 +10,7 @@ import {
   exteriorSide,
   formatCm,
   objectFootprint,
+  pointInPolygon,
   pointOnWall,
   polygonArea,
   rectEdges,
@@ -248,10 +249,14 @@ function SiteDrawing({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) 
           })}
         </>
       )}
-      {shell.areas.map((a) => {
+      {shell.areas.map((a, i) => {
         const xs = a.polygon.map((p) => p[0]);
         const ys = a.polygon.map((p) => p[1]);
-        const c = toScreen([(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]);
+        // Labelled in the middle, or near its top edge when an area on top of
+        // it (a pool in its deck) covers the middle.
+        const middle: Vec = [(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2];
+        const covered = shell.areas.slice(i + 1).some((b) => pointInPolygon(middle, b.polygon));
+        const c = toScreen(covered ? [middle[0], Math.min(...ys) + 30] : middle);
         if (toScreen([Math.max(...xs), 0])[0] - toScreen([Math.min(...xs), 0])[0] < 50) return null;
         return (
           <g key={a.id}>
