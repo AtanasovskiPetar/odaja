@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { shellBounds } from "../model/geometry";
+import { siteBounds } from "../model/site";
 import { momentOf, skyColor, sunDirection, sunlight, sunPosition } from "../model/sun";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
@@ -30,17 +31,20 @@ function SunCeiling({ bounds, height }: { bounds: { minX: number; minY: number; 
 function Sun({ theme, walk }: { theme: SceneTheme; walk: boolean }) {
   const site = useOdaja((s) => s.project?.site);
   const shell = useOdaja((s) => s.shell);
+  const whole = useOdaja((s) => s.wholeShell);
   const day = useSun((s) => s.day);
   const minutes = useSun((s) => s.minutes);
   const scene = useThree((s) => s.scene);
   const light = useRef<THREE.DirectionalLight>(null);
 
-  const bounds = useMemo(() => (shell ? shellBounds(shell) : null), [shell]);
+  // The shadow-only ceiling covers the house; shadows fall across the plot.
+  const house = useMemo(() => (shell ? shellBounds(shell) : null), [shell]);
+  const bounds = useMemo(() => (whole ? siteBounds(whole) : null), [whole]);
   const pos = sunPosition(momentOf(SUN_YEAR, day, minutes), site!.latitude, site!.longitude);
   const dir = sunDirection(pos, site!.north);
   const { strength, color } = sunlight(pos.altitude);
   const center: [number, number, number] = bounds ? [M((bounds.minX + bounds.maxX) / 2), 0, M((bounds.minY + bounds.maxY) / 2)] : [0, 0, 0];
-  // The shadow box just covers the flat, for the sharpest shadows.
+  // The shadow box just covers the house and garden, for the sharpest shadows.
   const radius = bounds ? Math.hypot(M(bounds.maxX - bounds.minX), M(bounds.maxY - bounds.minY)) / 2 + 1 : 10;
 
   useEffect(() => {
@@ -76,7 +80,7 @@ function Sun({ theme, walk }: { theme: SceneTheme; walk: boolean }) {
       >
         <orthographicCamera attach="shadow-camera" args={[-radius, radius, radius, -radius, 0.5, distance + radius * 2]} />
       </directionalLight>
-      {bounds && shell && <SunCeiling bounds={bounds} height={shell.wallHeight} />}
+      {house && shell && <SunCeiling bounds={house} height={shell.wallHeight} />}
     </>
   );
 }

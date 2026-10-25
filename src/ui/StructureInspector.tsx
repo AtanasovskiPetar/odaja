@@ -3,7 +3,8 @@
 import { formatCm, polygonArea, wallLength } from "../model/geometry";
 import { levelAbove } from "../model/levels";
 import { addRoom, deleteOpening, deleteRoom, deleteWall, setWallLength, updateOpening, updateRoom, updateWall } from "../model/shellOps";
-import { DEFAULT_SHELL, STAIR_TYPES, type Stair } from "../model/schema";
+import { AREA_KINDS, DEFAULT_SHELL, FENCE_STYLES, STAIR_TYPES, type Area, type Fence, type Stair } from "../model/schema";
+import { addGate, AREA_LOOK, deleteArea, deleteFence, FENCE_LOOK, fenceHeight, fenceLength, fenceThickness, setPlot, updateArea, updateFence, updatePlot } from "../model/site";
 import { defaultStairSize, deleteStair, flightWidth, stepSizes, updateStair } from "../model/stairs";
 import { useOdaja } from "../store";
 import { JoineryFields, MaterialSelect, RoomFinishes, WallFinishes } from "./FinishesInspector";
@@ -39,6 +40,9 @@ export function StructureInspector() {
       door: "Click on a wall to add a door. It's kept clear of corners and other openings.",
       window: "Click on a wall to add a window.",
       stairs: "Click where the stairs go: a straight flight up to the level above. Then drag it into place and set its type, size and direction here.",
+      garden: "Click the corners of a lawn, terrace, path or pool (pick the kind in the toolbar). Click the first corner again, double-click or press Enter to finish.",
+      fence: "Click to start a fence, click again for each corner. Double-click or Esc to finish. Add gates in its inspector.",
+      plot: "Click the corners of the plot's boundary, then the first corner again (or Enter) to finish. Drawing a new plot replaces the old one.",
     };
     return (
       <section className="inspector muted">
@@ -161,6 +165,15 @@ export function StructureInspector() {
     const stair = shell.stairs.find((s) => s.id === selection.id);
     return stair ? <StairInspector stair={stair} /> : null;
   }
+  if (selection.kind === "garden") {
+    const area = shell.areas.find((a) => a.id === selection.id);
+    return area ? <AreaInspector area={area} /> : null;
+  }
+  if (selection.kind === "fence") {
+    const fence = shell.fences.find((f) => f.id === selection.id);
+    return fence ? <FenceInspector fence={fence} /> : null;
+  }
+  if (selection.kind === "plot") return shell.plot ? <PlotInspector /> : null;
 
   const room = shell.rooms.find((r) => r.id === selection.id);
   if (!room) return null;
@@ -257,6 +270,122 @@ function StairInspector({ stair }: { stair: Stair }) {
           title="Delete (⌫)"
         >
           Delete stairs
+        </button>
+      </div>
+      <SharedNote />
+    </section>
+  );
+}
+
+function AreaInspector({ area }: { area: Area }) {
+  const applyShell = useOdaja((s) => s.applyShell);
+  const selectStructure = useOdaja((s) => s.selectStructure);
+  const set = (patch: Parameters<typeof updateArea>[1]) => applyShell(updateArea(area.id, patch));
+  return (
+    <section className="inspector">
+      <div className="group-title">{AREA_LOOK[area.kind].label} · {area.id}</div>
+      <Field label="Name" value={area.name} onCommit={(v) => v.trim() && set({ name: v.trim() })} />
+      <label className="field">
+        <span>Kind</span>
+        <select value={area.kind} onChange={(e) => set({ kind: e.target.value as Area["kind"], material: undefined })}>
+          {AREA_KINDS.map((k) => (
+            <option key={k} value={k}>
+              {AREA_LOOK[k].label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <MaterialSelect label="Surface" value={area.material ?? null} allowNone={`${AREA_LOOK[area.kind].label} colour`} onChange={(m) => set({ material: m ?? undefined })} />
+      {area.kind !== "water" && (
+        <Field label="Raised by (deck, terrace)" numeric suffix="cm" min={0} max={300} value={area.height ?? 0} onCommit={(v) => set({ height: Number(v) || undefined })} />
+      )}
+      <p className="hint">{(polygonArea(area.polygon) / 10000).toFixed(1)} m². Drag it to move it.</p>
+      <div className="actions">
+        <button
+          className="danger"
+          onClick={() => {
+            applyShell(deleteArea(area.id));
+            selectStructure(null);
+          }}
+          title="Delete (⌫)"
+        >
+          Delete area
+        </button>
+      </div>
+      <SharedNote />
+    </section>
+  );
+}
+
+function FenceInspector({ fence }: { fence: Fence }) {
+  const applyShell = useOdaja((s) => s.applyShell);
+  const selectStructure = useOdaja((s) => s.selectStructure);
+  const set = (patch: Parameters<typeof updateFence>[1]) => applyShell(updateFence(fence.id, patch));
+  const look = FENCE_LOOK[fence.style];
+  const setGate = (i: number, patch: Partial<Fence["gates"][number]>) => set({ gates: fence.gates.map((g, k) => (k === i ? { ...g, ...patch } : g)) });
+  return (
+    <section className="inspector">
+      <div className="group-title">{look.label} · {fence.id}</div>
+      <label className="field">
+        <span>Style</span>
+        <select value={fence.style} onChange={(e) => set({ style: e.target.value as Fence["style"], height: undefined, thickness: undefined, material: undefined })}>
+          {FENCE_STYLES.map((k) => (
+            <option key={k} value={k}>
+              {FENCE_LOOK[k].label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="grid-2">
+        <Field label="Height" numeric suffix="cm" min={20} max={400} value={fenceHeight(fence)} onCommit={(v) => set({ height: Number(v) === look.height ? undefined : Number(v) })} />
+        <Field label="Thickness" numeric suffix="cm" min={1} max={200} value={fenceThickness(fence)} onCommit={(v) => set({ thickness: Number(v) === look.thickness ? undefined : Number(v) })} />
+      </div>
+      <MaterialSelect label="Material" value={fence.material ?? null} allowNone={`${look.label} colour`} onChange={(m) => set({ material: m ?? undefined })} />
+      {fence.gates.map((g, i) => (
+        <div key={i} className="grid-2">
+          <Field label={`Gate ${i + 1} from start`} numeric suffix="cm" min={0} value={g.offset} onCommit={(v) => setGate(i, { offset: Number(v) })} />
+          <Field label="Width" numeric suffix="cm" min={30} value={g.width} onCommit={(v) => setGate(i, { width: Number(v) })} />
+        </div>
+      ))}
+      <p className="hint">{formatCm(fenceLength(fence))} cm long.</p>
+      <div className="actions">
+        <button onClick={() => applyShell(addGate(fence.id))}>Add gate</button>
+        {fence.gates.length > 0 && <button onClick={() => set({ gates: fence.gates.slice(0, -1) })}>Remove last gate</button>}
+        <button
+          className="danger"
+          onClick={() => {
+            applyShell(deleteFence(fence.id));
+            selectStructure(null);
+          }}
+          title="Delete (⌫)"
+        >
+          Delete fence
+        </button>
+      </div>
+      <SharedNote />
+    </section>
+  );
+}
+
+function PlotInspector() {
+  const plot = useOdaja((s) => s.shell?.plot);
+  const applyShell = useOdaja((s) => s.applyShell);
+  const selectStructure = useOdaja((s) => s.selectStructure);
+  if (!plot) return null;
+  return (
+    <section className="inspector">
+      <div className="group-title">Plot</div>
+      <MaterialSelect label="Ground" value={plot.material ?? null} allowNone="Grass colour" onChange={(m) => applyShell(updatePlot({ material: m }))} />
+      <p className="hint">{(polygonArea(plot.polygon) / 10000).toFixed(1)} m². To change its shape, draw it again with the Plot tool.</p>
+      <div className="actions">
+        <button
+          className="danger"
+          onClick={() => {
+            applyShell(setPlot(null));
+            selectStructure(null);
+          }}
+        >
+          Delete plot
         </button>
       </div>
       <SharedNote />

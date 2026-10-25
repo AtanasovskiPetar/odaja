@@ -8,7 +8,7 @@ import { placeLibraryEntry } from "./libraryActions";
 import { openLibraryFile, saveItemFile, saveLibraryFile } from "./libraryFiles";
 import { IconArrowUp } from "./icons";
 
-const CATEGORIES: Template["category"][] = ["Kitchen", "Living", "Bedroom", "Bathroom", "Basic"];
+const CATEGORIES: Template["category"][] = ["Kitchen", "Living", "Bedroom", "Bathroom", "Garden", "Basic"];
 
 // Your own furniture, saved from scenes or imported, shared by all projects.
 function MyLibrary({ onPlaced }: { onPlaced: () => void }) {

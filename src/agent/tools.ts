@@ -44,7 +44,8 @@ import {
 } from "../model/shellOps";
 import { slugify } from "../model/defaults";
 import { addStair, defaultStairSize, deleteStair, stairOutline, stepSizes, updateStair } from "../model/stairs";
-import { STAIR_TYPES, type Stair } from "../model/schema";
+import { AREA_KINDS, FENCE_STYLES, STAIR_TYPES, type Stair } from "../model/schema";
+import { addArea, addFences, AREA_LOOK, deleteArea, deleteFence, FENCE_LOOK, fenceHeight, fenceLength, setPlot, updateArea, updateFence, updatePlot } from "../model/site";
 import { quantities } from "../model/finishes";
 import { addFinish, clearRoomWalls, finishRoomWalls, removeFinishes, setRoomFloor } from "../model/finishOps";
 import { compactPart } from "../model/partOps";
@@ -257,6 +258,9 @@ function describeStair(stair: Stair, whole: Shell) {
   };
 }
 
+// The garden is on the first level.
+const siteLevel = (shell: Shell) => levelsOf(shell)[0].id;
+
 const describeLevels = (shell: Shell) =>
   levelsTopDown(shell).map((l) => ({ id: l.id, name: l.name, elevation: l.elevation, wallHeight: l.height ?? shell.wallHeight, slab: l.slab }));
 
@@ -396,6 +400,14 @@ export const TOOLS: ToolDef[] = [
         }),
         walls: shell.walls.map((w) => ({ id: w.id, from: w.from, to: w.to, thickness: w.thickness })),
         stairs: shell.stairs.length ? shell.stairs.map((st) => describeStair(st, loaded.shell)) : undefined,
+        garden:
+          shell.plot || shell.areas.length || shell.fences.length
+            ? {
+                plot: shell.plot && { polygon: shell.plot.polygon, areaM2: r1(polygonArea(shell.plot.polygon) / 10000), ground: shell.plot.material },
+                areas: shell.areas.map((a) => ({ id: a.id, name: a.name, kind: a.kind, polygon: a.polygon, areaM2: r1(polygonArea(a.polygon) / 10000), height: a.height, material: a.material })),
+                fences: shell.fences.map((f) => ({ id: f.id, from: f.from, to: f.to, style: f.style, height: fenceHeight(f), length: r1(fenceLength(f)), gates: f.gates.length ? f.gates : undefined })),
+              }
+            : undefined,
         stairsFromBelow: multi
           ? stairsArriving(loaded.shell, levelId).map((a) => ({ id: a.stair.id, from: a.from.id, openingInFloor: stairOutline(a.stair).map(([x, y]) => [r1(x), r1(y)]) }))
           : undefined,
@@ -1262,6 +1274,107 @@ export const TOOLS: ToolDef[] = [
   }),
 
   tool({
+    name: "set_plot",
+    description:
+      "Set the plot: the boundary of the land around the house (a polygon, plan cm), drawn as ground at the ground floor's level; or delete it. ground: a material name or #rrggbb for the ground outside areas (default grass green). The house should stand inside it.",
+    input: z.object({ scene: sceneArg, polygon: z.array(vec2).min(3).optional(), ground: z.string().optional(), delete: z.boolean().optional() }),
+    async run({ scene, polygon, ground, delete: remove }, ctx) {
+      const loaded = await loadScene(ctx, scene);
+      const level = siteLevel(loaded.shell);
+      if (remove) {
+        await changeShell(ctx, scene, setPlot(null), { level });
+        return "deleted the plot";
+      }
+      if (!polygon && !loaded.shell.plot) throw new ToolError("give the plot's polygon");
+      const change = polygon ? setPlot(polygon as Vec[], ground) : updatePlot({ material: ground });
+      const { levelShell: shell } = await changeShell(ctx, scene, change, { level });
+      return { plot: shell.plot, areaM2: r1(polygonArea(shell.plot!.polygon) / 10000) };
+    },
+  }),
+
+  tool({
+    name: "set_area",
+    description:
+      "Add, change or delete an outdoor area of the garden: lawn, paving (terrace, path, driveway), gravel, deck, bed (planting bed) or water (pool, pond). polygon in plan cm. height raises it (a deck or terrace, cm above the ground). material: a material name or #rrggbb (default: a colour for the kind). Areas listed later lie on top of earlier ones, so a path can cross a lawn. Keep areas out of the house's rooms. Plants are objects: add_object with template tree, conifer, shrub or planter.",
+    input: z.object({
+      scene: sceneArg,
+      id: z.string().optional().describe("existing area to change or delete; omit to add"),
+      name: z.string().optional(),
+      kind: z.enum(AREA_KINDS).optional(),
+      polygon: z.array(vec2).min(3).optional(),
+      height: z.number().min(0).max(300).optional(),
+      material: z.string().optional(),
+      delete: z.boolean().optional(),
+    }),
+    async run(input, ctx) {
+      const loaded = await loadScene(ctx, input.scene);
+      const level = siteLevel(loaded.shell);
+      if (input.id) {
+        const id = input.id;
+        if (!loaded.shell.areas.some((a) => a.id === id)) throw new ToolError(`no area "${id}"`);
+        if (input.delete) {
+          await changeShell(ctx, input.scene, deleteArea(id), { level });
+          return `deleted ${id}`;
+        }
+        const patch = Object.fromEntries(Object.entries({ name: input.name, kind: input.kind, polygon: input.polygon, height: input.height === 0 ? undefined : input.height, material: input.material }).filter(([k, v]) => v !== undefined || (k === "height" && input.height === 0)));
+        const { levelShell: shell } = await changeShell(ctx, input.scene, updateArea(id, patch), { level });
+        return { area: shell.areas.find((a) => a.id === id) };
+      }
+      if (!input.polygon) throw new ToolError("give polygon for a new area");
+      const kind = input.kind ?? "lawn";
+      const before = new Set(loaded.shell.areas.map((a) => a.id));
+      const { levelShell: shell, shell: whole } = await changeShell(
+        ctx,
+        input.scene,
+        addArea({ name: input.name ?? AREA_LOOK[kind].label, kind, polygon: input.polygon as Vec[], height: input.height || undefined, material: input.material }),
+        { level },
+      );
+      const added = shell.areas.find((a) => !before.has(a.id))!;
+      const view = onLevel(whole, loaded.scene, level);
+      return { added: { ...added, areaM2: r1(polygonArea(added.polygon) / 10000) }, issues: issuesFor(view.scene, view.shell).filter((i) => i.targets.some((t) => t.id === added.id)).map((i) => i.message) };
+    },
+  }),
+
+  tool({
+    name: "set_fence",
+    description:
+      "Add, change or delete garden fences. To add, give points: a fence runs along them, one straight fence per stretch (close a loop by repeating the first point). style: slats (default, 180 high), panel (boards), rail (post and rail, 110), hedge (150 high, 60 thick) or wall (garden wall). gates: openings, offset cm from the fence's from point and width. Fences block walking except at gates.",
+    input: z.object({
+      scene: sceneArg,
+      id: z.string().optional().describe("existing fence to change or delete; omit to add"),
+      points: z.array(vec2).min(2).optional(),
+      style: z.enum(FENCE_STYLES).optional(),
+      height: z.number().positive().optional(),
+      thickness: z.number().positive().optional(),
+      material: z.string().optional(),
+      gates: z.array(z.object({ offset: z.number().min(0), width: z.number().positive() })).optional(),
+      delete: z.boolean().optional(),
+    }),
+    async run(input, ctx) {
+      const loaded = await loadScene(ctx, input.scene);
+      const level = siteLevel(loaded.shell);
+      const fields = Object.fromEntries(Object.entries({ style: input.style, height: input.height, thickness: input.thickness, material: input.material, gates: input.gates }).filter(([, v]) => v !== undefined));
+      if (input.id) {
+        const id = input.id;
+        if (!loaded.shell.fences.some((f) => f.id === id)) throw new ToolError(`no fence "${id}"`);
+        if (input.delete) {
+          await changeShell(ctx, input.scene, deleteFence(id), { level });
+          return `deleted ${id}`;
+        }
+        // A new style without sizes takes that style's sizes.
+        const restyle = input.style && input.height === undefined && input.thickness === undefined ? { height: undefined, thickness: undefined } : {};
+        const { levelShell: shell } = await changeShell(ctx, input.scene, updateFence(id, { ...restyle, ...fields }), { level });
+        return { fence: shell.fences.find((f) => f.id === id) };
+      }
+      if (!input.points) throw new ToolError("give points for new fences");
+      const before = new Set(loaded.shell.fences.map((f) => f.id));
+      const { levelShell: shell } = await changeShell(ctx, input.scene, addFences(input.points as Vec[], fields), { level });
+      const added = shell.fences.filter((f) => !before.has(f.id));
+      return { added: added.map((f) => ({ id: f.id, from: f.from, to: f.to, style: FENCE_LOOK[f.style].label, length: r1(fenceLength(f)) })) };
+    },
+  }),
+
+  tool({
     name: "set_background",
     description:
       "Show a floor plan image under the Plan view (it never changes the design) and/or set its scale and position. photo: a chat photo to use (\"photo-1\"). scale_from: two points on the image as fractions (0..1, x right, y down) and their real distance in cm, e.g. the ends of a dimension line. center: plan cm where the image's middle goes; rotation degrees clockwise. If the project already has a background (get_overview shows it) leave out photo; a photo of the same plan keeps the existing image unless replace is true. Returns how image points map to the plan.",
@@ -1354,7 +1467,7 @@ export const TOOLS: ToolDef[] = [
   tool({
     name: "save_to_library",
     description: "Save an object from a scene to the user's furniture library (shared by all projects), e.g. a piece you built from a photo that the user wants to keep.",
-    input: z.object({ scene: sceneArg, object_id: z.string(), name: z.string(), category: z.enum(["Kitchen", "Living", "Bedroom", "Bathroom", "Lighting", "Decor", "Other"]), notes: z.string().optional() }),
+    input: z.object({ scene: sceneArg, object_id: z.string(), name: z.string(), category: z.enum(["Kitchen", "Living", "Bedroom", "Bathroom", "Garden", "Lighting", "Decor", "Other"]), notes: z.string().optional() }),
     async run({ scene, object_id, name, category, notes }, ctx) {
       const { doc } = await loadScene(ctx, scene);
       const o = doc.objects?.find((x) => x.id === object_id);

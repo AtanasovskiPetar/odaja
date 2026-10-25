@@ -219,6 +219,54 @@ function DoorSwings({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
   );
 }
 
+// The garden: each outdoor area's name and size, and the plot boundary,
+// dashed, with the length of each side outside it.
+function SiteDrawing({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  const plot = shell.plot?.polygon;
+  const clockwise = plot ? plot.reduce((s, p, i) => s + (plot[(i + 1) % plot.length][0] - p[0]) * (plot[(i + 1) % plot.length][1] + p[1]), 0) < 0 : true;
+  return (
+    <g className="site">
+      {plot && (
+        <>
+          <polygon points={plot.map((p) => toScreen(p).join(",")).join(" ")} className="plot-line" />
+          {plot.map((a, i) => {
+            const b = plot[(i + 1) % plot.length];
+            const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+            if (len < 50) return null;
+            // Outward normal (plan y is down), 30 cm out.
+            const k = (clockwise ? 1 : -1) * (30 / len);
+            const mid: Vec = [(a[0] + b[0]) / 2 + (b[1] - a[1]) * k, (a[1] + b[1]) / 2 - (b[0] - a[0]) * k];
+            let angle = (Math.atan2(toScreen(b)[1] - toScreen(a)[1], toScreen(b)[0] - toScreen(a)[0]) * 180) / Math.PI;
+            if (angle > 90) angle -= 180;
+            if (angle < -90) angle += 180;
+            return (
+              <Label key={i} at={toScreen(mid)} angle={angle} className="plot-size">
+                {formatCm(len)}
+              </Label>
+            );
+          })}
+        </>
+      )}
+      {shell.areas.map((a) => {
+        const xs = a.polygon.map((p) => p[0]);
+        const ys = a.polygon.map((p) => p[1]);
+        const c = toScreen([(Math.min(...xs) + Math.max(...xs)) / 2, (Math.min(...ys) + Math.max(...ys)) / 2]);
+        if (toScreen([Math.max(...xs), 0])[0] - toScreen([Math.min(...xs), 0])[0] < 50) return null;
+        return (
+          <g key={a.id}>
+            <Label at={[c[0], c[1] - 6]} className="area-name">
+              {a.name}
+            </Label>
+            <Label at={[c[0], c[1] + 9]} className="room-size">
+              {(polygonArea(a.polygon) / 10000).toFixed(1)} m²{a.height ? ` · +${formatCm(a.height)}` : ""}
+            </Label>
+          </g>
+        );
+      })}
+    </g>
+  );
+}
+
 function RoomLabels({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
   const edges = useMemo(() => wallEdges(shell), [shell]);
   return (
@@ -313,6 +361,10 @@ function IssueHighlights({ shell, toScreen }: { shell: Shell; toScreen: ToScreen
             const h = wall.thickness / 2 + 2;
             const r = [pointOnWall(wall, o.offset, -h), pointOnWall(wall, o.offset + o.width, -h), pointOnWall(wall, o.offset + o.width, h), pointOnWall(wall, o.offset, h)];
             return <polygon key={`${issue.key}-${i}`} points={poly(r)} className={cls} />;
+          }
+          if (t.kind === "garden" || t.kind === "plot") {
+            const polygon = t.kind === "plot" ? shell.plot?.polygon : shell.areas.find((a) => a.id === t.id)?.polygon;
+            return polygon ? <polygon key={`${issue.key}-${i}`} points={poly(polygon)} className={cls} /> : null;
           }
           if (t.kind === "stair") {
             const stair = shell.stairs.find((x) => x.id === t.id);
@@ -426,6 +478,7 @@ export function PlanOverlay() {
           <path d="M 0 0 L 10 5 L 0 10 z" style={{ fill: "var(--ink)" }} />
         </marker>
       </defs>
+      <SiteDrawing shell={shell} toScreen={toScreen} />
       <LevelBelow toScreen={toScreen} />
       <WallChanges shell={shell} toScreen={toScreen} />
       <Stairs shell={shell} toScreen={toScreen} />

@@ -153,6 +153,30 @@ export const IconStairs = icon(
   </>,
 );
 
+// An outdoor area: a free shape with grass strokes.
+export const IconArea = icon(
+  <>
+    <path d="M3 13.5 5 5l7-2 5 5.5-2.5 7.5H6Z" />
+    <path d="M7 12.5v-2M9.5 13v-2.5M12 12v-2M8.5 8.5V7M11 9V7.5" strokeWidth={1.1} opacity={0.6} />
+  </>,
+);
+
+// A fence: posts with two rails.
+export const IconFence = icon(
+  <>
+    <path d="M4 16V5.5l1-1.5 1 1.5V16M9.5 16V5.5l1-1.5 1 1.5V16M15 16V5.5l1-1.5 1 1.5V16" strokeWidth={1.2} />
+    <path d="M2.5 8.5h15M2.5 13h15" strokeWidth={1.1} opacity={0.7} />
+  </>,
+);
+
+// The plot: a dashed boundary with corner marks.
+export const IconPlot = icon(
+  <>
+    <path d="M3.5 4h13v12h-13Z" strokeDasharray="2.2 2" strokeWidth={1.2} />
+    <path d="M2 2.5 5 5.5M15 5.5l3-3M2 17.5l3-3M15 14.5l3 3" strokeWidth={1.1} opacity={0.6} />
+  </>,
+);
+
 export const IconWindow = icon(
   <>
     <path d="M2 10h2.5M15.5 10H18" strokeWidth={3.2} strokeLinecap="square" />

@@ -3530,3 +3530,46 @@ button.link.danger {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+
+/* Drawing the garden: an outline closing back to its first point; a
+   selected fence as a thick line. */
+.structure-layer .rubber .outline-draft {
+  fill: color-mix(in srgb, var(--accent) 12%, transparent);
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+
+.structure-layer .rubber .outline-close {
+  stroke: var(--accent);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.structure-layer .fence-line {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+}
+
+/* The garden on the plan: the plot boundary and outdoor area names. */
+.plan-overlay .plot-line {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.2;
+  stroke-dasharray: 10 4 2 4;
+}
+
+.plan-overlay .plot-size {
+  fill: var(--ink-2);
+  font-size: 10px;
+}
+
+.plan-overlay .area-name {
+  fill: var(--ink);
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: 15px;
+  letter-spacing: 0;
+  stroke: color-mix(in srgb, var(--paper) 55%, transparent);
+  stroke-width: 2.5px;
+}

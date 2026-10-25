@@ -80,6 +80,10 @@ export function stairsArriving(shell: Shell, levelId: string): { stair: Stair; r
   });
 }
 
+// The plot, outdoor areas and fences are on the first level (the site is at
+// its floor height); other levels' views leave them out.
+const NO_SITE = { plot: undefined, areas: [], fences: [] };
+
 // --- views ------------------------------------------------------------------
 
 // A level's view of the shell also knows the stairs coming up through its
@@ -97,6 +101,7 @@ export function levelShell(shell: Shell, levelId: string): ShellView {
   const arriving = stairsArriving(shell, level.id).map((a) => a.stair);
   return {
     ...shell,
+    ...(level.id === shell.levels[0].id ? {} : NO_SITE),
     wallHeight: level.height ?? shell.wallHeight,
     walls,
     openings: shell.openings.filter((o) => ids.has(o.wall)),
@@ -121,6 +126,7 @@ export function levelDoc(doc: ShellDoc, levelId: string): ShellDoc {
   const ids = new Set(walls.map((w) => w.id));
   return {
     ...doc,
+    ...(level.id === doc.levels[0].id ? {} : NO_SITE),
     wallHeight: level.height ?? doc.wallHeight,
     walls,
     openings: (doc.openings ?? []).filter((o) => ids.has(o.wall)),
@@ -138,7 +144,7 @@ function mergeList<T>(list: T[], on: (x: T) => boolean, next: T[]): T[] {
   return [...rest.slice(0, index), ...next, ...rest.slice(index)];
 }
 
-const itemIds = (d: ShellDoc) => [...(d.walls ?? []), ...(d.openings ?? []), ...(d.rooms ?? []), ...(d.stairs ?? [])].map((x) => x.id);
+const itemIds = (d: ShellDoc) => [...(d.walls ?? []), ...(d.openings ?? []), ...(d.rooms ?? []), ...(d.stairs ?? []), ...(d.areas ?? []), ...(d.fences ?? [])].map((x) => x.id);
 
 // Put an edited level view back into the whole shell. New walls and rooms are
 // given the level (except on the first level, where they need none); a
@@ -160,6 +166,9 @@ export function mergeLevelDoc(doc: ShellDoc, levelId: string, edited: ShellDoc):
     taken.add(next);
     renamed.set(id, next);
   }
+  const renamedSite = <T extends { id: string }>(x: T): T => (renamed.has(x.id) ? { ...x, id: renamed.get(x.id)! } : x);
+  // The site is edited only through the first level's view.
+  const site = first ? { plot: edited.plot, areas: edited.areas?.map(renamedSite), fences: edited.fences?.map(renamedSite) } : {};
   const tag = <T extends { id: string; level?: string }>(x: T): T => {
     const id = renamed.get(x.id) ?? x.id;
     return first || x.level ? (id === x.id ? x : { ...x, id }) : { ...x, id, level: level.id };
@@ -167,13 +176,19 @@ export function mergeLevelDoc(doc: ShellDoc, levelId: string, edited: ShellDoc):
   const openings = (edited.openings ?? []).map((o) => (renamed.has(o.id) || renamed.has(o.wall) ? { ...o, id: renamed.get(o.id) ?? o.id, wall: renamed.get(o.wall) ?? o.wall } : o));
   const wallIds = new Set((before.walls ?? []).map((w) => w.id));
   const height = edited.wallHeight !== undefined && edited.wallHeight !== before.wallHeight ? edited.wallHeight : undefined;
-  return {
+  const merged: ShellDoc = {
     ...(height === undefined ? doc : updateLevel(level.id, { height })(doc)),
+    ...site,
     walls: mergeList(doc.walls ?? [], on, (edited.walls ?? []).map(tag)),
     openings: mergeList(doc.openings ?? [], (o) => wallIds.has(o.wall), openings),
     rooms: mergeList(doc.rooms ?? [], on, (edited.rooms ?? []).map(tag)),
     ...(doc.stairs || edited.stairs?.length ? { stairs: mergeList(doc.stairs ?? [], on, (edited.stairs ?? []).map(tag)) } : {}),
   };
+  // Keep files free of empty site keys they never had.
+  for (const key of ["plot", "areas", "fences"] as const) {
+    if (merged[key] === undefined || (Array.isArray(merged[key]) && !(merged[key] as unknown[]).length && !doc[key])) delete merged[key];
+  }
+  return merged;
 }
 
 // Objects added by an edit (ids that weren't there) go on the given level.

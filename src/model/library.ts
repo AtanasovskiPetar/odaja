@@ -18,7 +18,7 @@ export interface ParamSpec {
 export interface Template {
   id: string;
   name: string;
-  category: "Kitchen" | "Living" | "Bedroom" | "Bathroom" | "Basic";
+  category: "Kitchen" | "Living" | "Bedroom" | "Bathroom" | "Garden" | "Basic";
   params: ParamSpec[];
   // Height above the floor when placed (wall cabinets, mirrors…).
   elevation?: number;
@@ -27,6 +27,10 @@ export interface Template {
 
 const size = (key: string, label: string, def: number, min = 1, max = 1000): ParamSpec => ({ key, label, default: def, min, max });
 const W = (def: number) => size("width", "Width", def);
+const BARK = "#6b4f3a";
+const LEAVES = "#5d8a3e";
+const LEAVES_DARK = "#4a7433";
+const NEEDLES = "#3d6638";
 const D = (def: number) => size("depth", "Depth", def);
 const H = (def: number) => size("height", "Height", def);
 
@@ -262,6 +266,61 @@ export const TEMPLATES: Template[] = [
     category: "Basic",
     params: [size("diameter", "Diameter", 50), H(75)],
     build: ({ diameter, height }) => [{ shape: "cylinder", radius: diameter / 2, height, material: "white" }],
+  },
+  // Plants are drawn in plain colours, so they need no project materials.
+  {
+    id: "tree",
+    name: "Tree",
+    category: "Garden",
+    params: [H(500), size("spread", "Crown width", 300)],
+    build: ({ height, spread }) => {
+      const r = Math.min(spread, height) / 2;
+      const crown = height - 2 * r;
+      return [
+        { name: "trunk", shape: "cylinder", radius: Math.max(6, spread / 25), height: crown + r, color: BARK },
+        { name: "crown", shape: "sphere", radius: r, at: [0, 0, crown], color: LEAVES },
+        { name: "crown-2", shape: "sphere", radius: r * 0.7, at: [r * 0.45, -r * 0.2, crown + r * 0.1], color: LEAVES_DARK },
+        { name: "crown-3", shape: "sphere", radius: r * 0.65, at: [-r * 0.4, r * 0.3, crown + r * 0.2], color: LEAVES_DARK },
+      ];
+    },
+  },
+  {
+    id: "conifer",
+    name: "Conifer",
+    category: "Garden",
+    params: [H(400), size("spread", "Width", 160)],
+    build: ({ height, spread }) => {
+      const trunk = Math.min(60, height / 5);
+      const tier = (height - trunk) / 4;
+      return [
+        { name: "trunk", shape: "cylinder", radius: Math.max(5, spread / 20), height: trunk + tier, color: BARK },
+        ...[1, 0.75, 0.5, 0.25].map((k, i) => ({ name: `tier-${i + 1}`, shape: "cylinder" as const, radius: (spread / 2) * k, height: tier, at: [0, 0, trunk + i * tier] as [number, number, number], color: NEEDLES })),
+      ];
+    },
+  },
+  {
+    id: "shrub",
+    name: "Shrub",
+    category: "Garden",
+    params: [W(90)],
+    build: ({ width }) => [
+      { name: "bush", shape: "sphere", radius: width / 2, at: [0, 0, -width * 0.15], color: LEAVES },
+      { name: "bush-2", shape: "sphere", radius: width * 0.35, at: [width * 0.2, -width * 0.1, width * 0.25], color: LEAVES_DARK },
+    ],
+  },
+  {
+    id: "planter",
+    name: "Planter with shrub",
+    category: "Garden",
+    params: [W(60), D(60), H(60)],
+    build: ({ width, depth, height }) => {
+      const r = Math.min(width, depth) * 0.42;
+      return [
+        { name: "pot", shape: "box", size: [width, depth, height], color: "#8f8a84", radius: 2 },
+        { name: "soil", shape: "box", size: [width - 6, depth - 6, 1], at: [0, 0, height - 3], color: "#5a4433" },
+        { name: "plant", shape: "sphere", radius: r, at: [0, 0, height - r * 0.4], color: LEAVES },
+      ];
+    },
   },
 ];
 

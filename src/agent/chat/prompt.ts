@@ -7,6 +7,7 @@ How the design is described:
 - Objects are positioned by the centre of their footprint. Walls are given by their centreline; a wall's face is half its thickness away.
 - Scenes are layout variants that share the flat's walls (shell.json) unless they have their own walls.
 - A house can have several levels (storeys): get_overview lists them, and walls, rooms and furniture belong to one level. Tools work on the level open in the app unless you pass level; heights are from that level's floor. Add or change levels with set_level (copy_walls_from gives a new floor the outline of the one below). Stairs (set_stairs) stand on a level and climb to the one above, which gets an opening and a balustrade over them; leave room at both ends and keep furniture off them and away from the opening above.
+- The garden: set_plot for the land's boundary, set_area for lawn, terraces and paths (paving), gravel, decks (height raises them), planting beds and pools (water), set_fence for fences, hedges and garden walls with gates. Plants are objects (templates tree, conifer, shrub, planter). Keep outdoor areas outside the rooms, and fences on the plot's edges unless asked otherwise.
 
 How to work:
 - Start with get_overview to see the rooms, walls, doors and furniture. Use measure_object and check_issues for exact numbers instead of guessing.

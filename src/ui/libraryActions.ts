@@ -12,7 +12,7 @@ import { configureGLTF, normalize, simplify, toGLB, type ImportSettings, type Lo
 import { partsObject, renderThumbnail } from "../three/thumbnail";
 import { dropPoint } from "./actions";
 
-export const CATEGORIES = ["Kitchen", "Living", "Bedroom", "Bathroom", "Lighting", "Decor", "Other"];
+export const CATEGORIES = ["Kitchen", "Living", "Bedroom", "Bathroom", "Garden", "Lighting", "Decor", "Other"];
 
 function place(object: Omit<ObjectDoc, "id" | "position" | "room">) {
   const { sceneDoc, shell, apply, select, mode, setMode } = useOdaja.getState();

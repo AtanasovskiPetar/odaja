@@ -12,7 +12,7 @@ immediately. To change the design, edit the files directly.
 | Path | Contents |
 |---|---|
 | `project.json` | Project name and the named **materials** (colours) |
-| `shell.json` | The home as it is: its **levels** (storeys), **walls**, **openings** (doors, windows), **rooms** (floors) and **stairs** |
+| `shell.json` | The home as it is: its **levels** (storeys), **walls**, **openings** (doors, windows), **rooms** (floors), **stairs**, and the garden: the **plot**, outdoor **areas** and **fences** |
 | `shells/*.json` | Other versions of the walls, for renovation options that move or remove walls |
 | `assets/models/*.glb` | 3D models used by objects (imported files are converted to GLB) |
 | `assets/textures/*` | Photo textures used by tile materials |
@@ -219,6 +219,42 @@ treads from one level to the other.
   furniture in their way (under open stairs, furniture fits where the treads
   are above it), and furniture standing over the opening above.
 
+### The garden
+
+The land around the house is part of the shell too, on the first level
+(drawn at its floor height):
+
+```json
+"plot": { "polygon": [[-300, -500], [1500, -500], [1500, 1400], [-300, 1400]] },
+"areas": [
+  { "id": "terrace", "name": "Terrace", "kind": "paving", "polygon": [[0, 700], [600, 700], [600, 1000], [0, 1000]] },
+  { "id": "lawn", "name": "Lawn", "kind": "lawn", "polygon": [[600, 700], [1400, 700], [1400, 1300], [600, 1300]] },
+  { "id": "pool", "name": "Pool", "kind": "water", "polygon": [[900, 900], [1300, 900], [1300, 1100], [900, 1100]] }
+],
+"fences": [
+  { "id": "fence-1", "from": [-300, 1400], "to": [1500, 1400], "style": "slats", "gates": [{ "offset": 800, "width": 100 }] }
+]
+```
+
+- **Plot**: the boundary of the land, a polygon. Its ground is grass-coloured
+  unless it has a `material`. The house should stand inside it.
+- **Areas** are outdoor surfaces: `kind` is `lawn`, `paving` (terraces,
+  paths, driveways), `gravel`, `deck`, `bed` (planting beds) or `water` (a
+  pool or pond, drawn as water in a basin). `height` raises an area by that
+  many cm (a deck or terrace). `material` (a material name or `#rrggbb`)
+  overrides the kind's colour. Areas later in the list lie on top of earlier
+  ones, so a path can cross a lawn. Keep them out of the house's rooms.
+- **Fences** run straight from `from` to `to` (a fence around a garden is
+  several fences). `style`: `slats` (180 cm), `panel` (boards, 180), `rail`
+  (post and rail, 110), `hedge` (150 high, 60 thick) or `wall` (a garden
+  wall, 180 × 20); `height`, `thickness` and `material` override the style.
+  `gates` are gaps: `offset` cm from `from`, and `width`. Walking in the app
+  stops at fences, except at gates.
+- **Plants** are objects in the scene, standing on the ground like
+  furniture: the `tree`, `conifer`, `shrub` and `planter` templates, or
+  model files. Objects in the garden (on the plot or an area) don't count
+  as outside every room.
+
 ## scenes/*.json
 
 ```json
@@ -316,6 +352,10 @@ beyond its params, replace `template`/`params` with your own `parts`. The app's
 | `washing-machine` | Washing machine | `width` 60, `depth` 60, `height` 85 |  |
 | `box` | Box | `width` 60, `depth` 60, `height` 60 |  |
 | `cylinder` | Cylinder | `diameter` 50, `height` 75 |  |
+| `tree` | Tree | `height` 500, `spread` 300 |  |
+| `conifer` | Conifer | `height` 400, `spread` 160 |  |
+| `shrub` | Shrub | `width` 90 |  |
+| `planter` | Planter with shrub | `width` 60, `depth` 60, `height` 60 |  |
 <!-- templates:end -->
 
 ### Model objects
@@ -373,6 +413,7 @@ them unless the user wants them:
   another wall or another opening; an opening in a missing wall; a wall shorter
   than 10 cm.
 - **Warnings**: furniture overlapping furniture; a door whose swing is blocked;
+  an outdoor area over a room; a house reaching outside its plot;
   too little space in front of a toilet (60 cm), basin (70), shower (70),
   kitchen units (90), tall cabinet or fridge (90), wardrobe (70) or washing
   machine (70); furniture outside every room; `attachedTo` naming a missing wall.
@@ -406,7 +447,7 @@ Library/ikea-metod-sink-80/
 
 `object` holds the same fields as a scene object without `id`, `name` and
 position: `template`+`params`, `parts` or `model`, plus an optional
-`elevation`. Categories are Kitchen, Living, Bedroom, Bathroom, Lighting, Decor
+`elevation`. Categories are Kitchen, Living, Bedroom, Bathroom, Garden, Lighting, Decor
 and Other. To add something the user asked to keep (for example a piece you
 built from a photo), write a new folder with an `item.json`; it shows up in the
 app under **+ Add → My library**. To use a library item in a scene, copy its

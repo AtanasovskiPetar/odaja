@@ -154,6 +154,40 @@ export const StairSchema = z.object({
   level: levelRef,
 });
 
+// The land around the house, drawn at the first level's floor height. The
+// plot is the boundary (its ground is grass-coloured unless `material`
+// says otherwise); areas are outdoor surfaces such as lawn, paving or a
+// pool, optionally raised (`height`, a deck or terrace); fences run straight
+// between two points with gaps for gates (`offset` along the fence from
+// `from`, and `width`). Unset sizes and colours depend on the kind/style.
+export const AREA_KINDS = ["lawn", "paving", "gravel", "deck", "bed", "water"] as const;
+export const FENCE_STYLES = ["slats", "panel", "rail", "hedge", "wall"] as const;
+
+export const PlotSchema = z.object({
+  polygon: z.array(point2).min(3),
+  material: z.string().optional(),
+});
+
+export const AreaSchema = z.object({
+  id,
+  name: z.string(),
+  kind: z.enum(AREA_KINDS).default("lawn"),
+  polygon: z.array(point2).min(3),
+  material: z.string().optional(),
+  height: z.number().min(0).max(300).optional(),
+});
+
+export const FenceSchema = z.object({
+  id,
+  from: point2,
+  to: point2,
+  style: z.enum(FENCE_STYLES).default("slats"),
+  height: z.number().positive().optional(),
+  thickness: z.number().positive().optional(),
+  material: z.string().optional(),
+  gates: z.array(z.object({ offset: z.number().min(0), width: z.number().positive() })).default([]),
+});
+
 export const ShellSchema = z
   .object({
     version: z.literal(1),
@@ -163,6 +197,9 @@ export const ShellSchema = z
     openings: z.array(OpeningSchema).default([]),
     rooms: z.array(RoomSchema).default([]),
     stairs: z.array(StairSchema).default([]),
+    plot: PlotSchema.optional(),
+    areas: z.array(AreaSchema).default([]),
+    fences: z.array(FenceSchema).default([]),
   })
   .superRefine((s, ctx) => {
     const ids = new Set(s.levels.map((l) => l.id));
@@ -334,6 +371,11 @@ export type Level = z.infer<typeof LevelSchema>;
 export type LevelDoc = z.input<typeof LevelSchema>;
 export type Wall = z.infer<typeof WallSchema>;
 export type Stair = z.infer<typeof StairSchema>;
+export type Plot = z.infer<typeof PlotSchema>;
+export type Area = z.infer<typeof AreaSchema>;
+export type AreaDoc = z.input<typeof AreaSchema>;
+export type Fence = z.infer<typeof FenceSchema>;
+export type FenceDoc = z.input<typeof FenceSchema>;
 export type StairDoc = z.input<typeof StairSchema>;
 export type Opening = z.infer<typeof OpeningSchema>;
 export type Room = z.infer<typeof RoomSchema>;

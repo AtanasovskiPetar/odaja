@@ -9,6 +9,7 @@ import {
   fitOpening,
   pointInPolygon,
   pointOnWall,
+  polygonArea,
   rayToWalls,
   wallEdges,
   wallLength,
@@ -21,9 +22,11 @@ import { partFootprint } from "./parts";
 import type { Part, Scene, SceneDoc, SceneObject, Shell, ShellDoc } from "./schema";
 import { deleteOpening, deleteWall, MIN_WALL, updateOpening } from "./shellOps";
 import type { ShellView } from "./levels";
-import { defaultStairSize, stairOutline, stairTreads, stepSizes, treadBottom, updateStair } from "./stairs";
+import { clipConvex, defaultStairSize, isConvex, stairOutline, stairTreads, stepSizes, treadBottom, updateStair } from "./stairs";
+import { onSite } from "./site";
+import { setObjectProps } from "./operations";
 
-export type IssueTarget = { kind: "object" | "wall" | "opening" | "stair"; id: string };
+export type IssueTarget = { kind: "object" | "wall" | "opening" | "stair" | "garden" | "plot"; id: string };
 
 export interface Issue {
   key: string;
@@ -264,7 +267,7 @@ export function computeIssues(scene: Scene, shell: Shell): Issue[] {
 
   // --- furniture outside rooms, broken attachments -------------------------
   for (const obj of scene.objects) {
-    if (shell.rooms.length > 0 && !shell.rooms.some((r) => pointInPolygon(obj.position, r.polygon))) {
+    if (shell.rooms.length > 0 && !shell.rooms.some((r) => pointInPolygon(obj.position, r.polygon)) && !onSite(shell, obj.position)) {
       issues.push({
         key: `outside-${obj.id}`,
         severity: "warning",
@@ -281,6 +284,37 @@ export function computeIssues(scene: Scene, shell: Shell): Issue[] {
         fix: { label: "Detach", scene: deleteObjectField(obj.id, "attachedTo") },
       });
     }
+  }
+
+  // --- the garden ----------------------------------------------------------
+  for (const area of shell.areas) {
+    // Over a room's floor, by more than a sliver (rooms run to wall centres).
+    const inside = shell.rooms.filter((r) => isConvex(r.polygon) && Math.abs(polygonArea(clipConvex(area.polygon, r.polygon))) > 2000);
+    if (inside.length) {
+      issues.push({
+        key: `area-in-house-${area.id}`,
+        severity: "warning",
+        message: `${area.name} overlaps the house (${inside.map((r) => r.name).join(", ")}).`,
+        targets: [{ kind: "garden", id: area.id }],
+      });
+    }
+  }
+  // Things standing on a raised deck or terrace should stand on top of it.
+  for (const obj of scene.objects) {
+    const under = shell.areas.filter((a) => a.height && a.kind !== "water" && pointInPolygon(obj.position, a.polygon) && obj.elevation < a.height - 0.5 && obj.elevation < 1);
+    const area = under.sort((a, b) => b.height! - a.height!)[0];
+    if (area) {
+      issues.push({
+        key: `sunk-${obj.id}`,
+        severity: "warning",
+        message: `${obj.name} stands inside ${area.name}, which is raised ${r1(area.height!)} cm.`,
+        targets: [{ kind: "object", id: obj.id }],
+        fix: obj.locked ? undefined : { label: `Raise to ${r1(area.height!)} cm`, scene: setObjectProps(obj.id, { elevation: area.height }) },
+      });
+    }
+  }
+  if (shell.plot && shell.walls.some((w) => !pointInPolygon(w.from, shell.plot!.polygon) || !pointInPolygon(w.to, shell.plot!.polygon))) {
+    issues.push({ key: "house-off-plot", severity: "warning", message: "The house reaches outside the plot.", targets: [{ kind: "plot", id: "plot" }] });
   }
 
   // --- stairs ------------------------------------------------------------

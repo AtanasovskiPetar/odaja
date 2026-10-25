@@ -1,6 +1,7 @@
 // Interactive layer over the plan in Structure mode: drawing walls and rooms,
-// placing doors, windows and stairs, selecting and dragging walls, corners,
-// openings and stairs. It also handles pan and zoom while it's active (scroll to zoom,
+// placing doors, windows and stairs, drawing the garden (outdoor areas, the
+// plot, fences), selecting and dragging walls, corners, openings, stairs,
+// areas and fences. It also handles pan and zoom while it's active (scroll to zoom,
 // right-drag, middle-drag or space+drag to pan).
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import {
@@ -19,6 +20,8 @@ import {
 import { riseFrom } from "../model/levels";
 import { enclosedArea } from "../model/rooms";
 import { addStair, defaultStairSize, stairOutline, updateStair } from "../model/stairs";
+import { addArea, addFences, AREA_LOOK, fenceOutlines, fenceThickness, moveArea, moveFence, setPlot } from "../model/site";
+import { useGardenTools } from "./gardenTools";
 import { ShellSchema, type Opening, type Shell, type ShellDoc, type Wall } from "../model/schema";
 import { addOpening, addRectRoom, addWalls, moveCorner, moveWall, OPENING_DEFAULTS, updateOpening } from "../model/shellOps";
 import { snapPoint, type Snap } from "../model/snap";
@@ -36,9 +39,20 @@ type Drag =
   | { kind: "wall"; id: string; start: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "opening"; id: string; grab: number; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "stair"; id: string; start: Vec; origin: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
+  | { kind: "shift"; target: "garden" | "fence"; id: string; start: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "click"; startX: number; startY: number };
 
-type Hit = { kind: "wall" | "opening" | "room" | "stair"; id: string } | { kind: "area"; polygon: Vec[] } | null;
+type Hit = { kind: "wall" | "opening" | "room" | "stair" | "garden" | "fence" | "plot"; id: string } | { kind: "area"; polygon: Vec[] } | null;
+
+// Distance from a point to a segment.
+function toSegment(p: Vec, a: Vec, b: Vec): number {
+  const [dx, dy] = [b[0] - a[0], b[1] - a[1]];
+  const len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / len2)) : 0;
+  return Math.hypot(p[0] - a[0] - dx * t, p[1] - a[1] - dy * t);
+}
+
+const nearOutline = (p: Vec, poly: Vec[], tol: number) => poly.some((a, i) => toSegment(p, a, poly[(i + 1) % poly.length]) <= tol);
 
 function useProjection(view: PlanView | null) {
   return useMemo(() => {
@@ -72,10 +86,16 @@ function hitTest(shell: Shell, p: Vec, tol: number): Hit {
   if (best) return { kind: "wall", id: best.id };
   const stair = [...shell.stairs].reverse().find((s) => pointInPolygon(p, stairOutline(s)));
   if (stair) return { kind: "stair", id: stair.id };
+  const fence = shell.fences.find((f) => toSegment(p, f.from, f.to) <= fenceThickness(f) / 2 + tol);
+  if (fence) return { kind: "fence", id: fence.id };
+  if (shell.plot && nearOutline(p, shell.plot.polygon, tol)) return { kind: "plot", id: "plot" };
   const room = [...shell.rooms].reverse().find((r) => pointInPolygon(p, r.polygon));
   if (room) return { kind: "room", id: room.id };
+  const garden = [...shell.areas].reverse().find((a) => pointInPolygon(p, a.polygon));
+  if (garden) return { kind: "garden", id: garden.id };
   const area = enclosedArea(shell, p);
-  return area ? { kind: "area", polygon: area } : null;
+  if (area) return { kind: "area", polygon: area };
+  return shell.plot && pointInPolygon(p, shell.plot.polygon) ? { kind: "plot", id: "plot" } : null;
 }
 
 const pts = (points: Vec[]) => points.map((p) => p.join(",")).join(" ");
@@ -120,7 +140,7 @@ export function StructureLayer() {
   const radius = proj ? SNAP_PX / proj.pxPerCm : 10;
   const snap: Snap | null = useMemo(() => {
     if (!cursor || !shell) return null;
-    if (tool === "wall") return snapPoint(cursor, shell, radius, chain.at(-1));
+    if (tool === "wall" || tool === "fence" || tool === "garden" || tool === "plot") return snapPoint(cursor, shell, radius, chain.at(-1));
     if (tool === "room") return snapPoint(cursor, shell, radius, undefined);
     return null;
   }, [cursor, shell, tool, chain, radius]);
@@ -141,7 +161,25 @@ export function StructureLayer() {
     return { wall: best.wall, offset, width, span };
   }, [cursor, shell, tool, radius]);
 
-  const commitWall = (from: Vec, to: Vec) => applyShell(addWalls([from, to], thickness));
+  const commitWall = (from: Vec, to: Vec) => applyShell(tool === "fence" ? addFences([from, to], { style: useGardenTools.getState().style }) : addWalls([from, to], thickness));
+  const chainTool = tool === "wall" || tool === "fence";
+  const polygonTool = tool === "garden" || tool === "plot";
+
+  // Close the polygon being drawn into an outdoor area or the plot.
+  const closePolygon = (points: Vec[]) => {
+    setChain([]);
+    setTyped("");
+    if (points.length < 3) return;
+    const before = new Set(shell?.areas.map((a) => a.id));
+    const kind = useGardenTools.getState().kind;
+    const change = tool === "plot" ? setPlot(points) : addArea({ name: AREA_LOOK[kind].label, kind, polygon: points });
+    applyShell(change).then(() => {
+      setTool("select");
+      if (tool === "plot") return selectStructure({ kind: "plot", id: "plot" });
+      const added = useOdaja.getState().shell?.areas.find((a) => !before.has(a.id));
+      if (added) selectStructure({ kind: "garden", id: added.id });
+    });
+  };
 
   // Next point along the current wall direction at a typed length.
   const typedPoint = (from: Vec): Vec | null => {
@@ -169,7 +207,7 @@ export function StructureLayer() {
         return;
       }
       if (e.type !== "keydown") return;
-      const drawing = (tool === "wall" && chain.length > 0) || (tool === "room" && rectStart);
+      const drawing = ((chainTool || polygonTool) && chain.length > 0) || (tool === "room" && rectStart);
       if (drawing && /^[0-9.,x× ]$/i.test(e.key)) {
         setTyped((t) => t + e.key);
         e.preventDefault();
@@ -179,7 +217,13 @@ export function StructureLayer() {
         e.preventDefault();
         e.stopPropagation();
       } else if (e.key === "Enter") {
-        if (tool === "wall" && chain.length > 0) {
+        if (polygonTool && chain.length > 0) {
+          const p = typed ? typedPoint(chain.at(-1)!) : null;
+          if (p) {
+            setChain([...chain, p]);
+            setTyped("");
+          } else closePolygon(chain);
+        } else if (chainTool && chain.length > 0) {
           const p = typed ? typedPoint(chain.at(-1)!) : null;
           if (p) {
             commitWall(chain.at(-1)!, p);
@@ -271,6 +315,11 @@ export function StructureLayer() {
         setDrag({ kind: "wall", id: hit.id, start: p, startX: sx, startY: sy, moved: false, preview: null });
         return;
       }
+      if (hit?.kind === "garden" || hit?.kind === "fence") {
+        selectStructure(hit);
+        setDrag({ kind: "shift", target: hit.kind, id: hit.id, start: p, startX: sx, startY: sy, moved: false, preview: null });
+        return;
+      }
       if (hit?.kind === "stair") {
         selectStructure(hit);
         const stair = shell.stairs.find((x) => x.id === hit.id)!;
@@ -317,6 +366,10 @@ export function StructureLayer() {
       const along = Math.round((p[0] - drag.start[0]) * n[0] + (p[1] - drag.start[1]) * n[1]);
       const preview = moveWall(drag.id, [n[0] * along, n[1] * along])(shellDoc);
       setDrag({ ...drag, moved, preview: preview === shellDoc ? drag.preview : preview });
+    } else if (drag.kind === "shift") {
+      const by: Vec = [Math.round(p[0] - drag.start[0]), Math.round(p[1] - drag.start[1])];
+      const preview = (drag.target === "garden" ? moveArea(drag.id, by) : moveFence(drag.id, by))(shellDoc);
+      setDrag({ ...drag, moved, preview: preview === shellDoc ? drag.preview : preview });
     } else if (drag.kind === "stair") {
       const position: Vec = [Math.round(drag.origin[0] + p[0] - drag.start[0]), Math.round(drag.origin[1] + p[1] - drag.start[1])];
       const preview = updateStair(drag.id, { position })(shellDoc);
@@ -350,7 +403,15 @@ export function StructureLayer() {
     if (tool === "select") {
       const hit = hitTest(shell, p, tol);
       selectStructure(hit);
-    } else if (tool === "wall") {
+    } else if (polygonTool) {
+      const point = snap?.point ?? p;
+      const target = typed && chain.length ? (typedPoint(chain.at(-1)!) ?? point) : point;
+      setTyped("");
+      // Clicking the first point again closes the shape.
+      if (chain.length >= 3 && dist(target, chain[0]) <= radius) return closePolygon(chain);
+      if (chain.length && dist(target, chain.at(-1)!) < 1) return;
+      setChain([...chain, target]);
+    } else if (chainTool) {
       const point = snap?.point ?? p;
       if (chain.length === 0) {
         setChain([point]);
@@ -405,12 +466,21 @@ export function StructureLayer() {
       const stair = shell.stairs.find((x) => x.id === h.id);
       return stair && <polygon points={pts(stairOutline(stair).map(toScreen))} className={`${className} area`} />;
     }
+    if (h.kind === "fence") {
+      const fence = shell.fences.find((x) => x.id === h.id);
+      return fence && <g>{[[fence.from, fence.to]].map(([a, b], i) => <line key={i} x1={toScreen(a)[0]} y1={toScreen(a)[1]} x2={toScreen(b)[0]} y2={toScreen(b)[1]} className={`${className} fence-line`} />)}</g>;
+    }
+    if (h.kind === "garden" || h.kind === "plot") {
+      const polygon = h.kind === "plot" ? shell.plot?.polygon : shell.areas.find((a) => a.id === h.id)?.polygon;
+      return polygon && <polygon points={pts(polygon.map(toScreen))} className={`${className} area`} />;
+    }
     const polygon = h.kind === "area" ? h.polygon : shell.rooms.find((r) => r.id === h.id)?.polygon;
     return polygon && <polygon points={pts(polygon.map(toScreen))} className={`${className} area`} />;
   };
 
   const last = chain.at(-1);
-  const wallEnd = tool === "wall" && last ? (typed ? typedPoint(last) : null) ?? snap?.point : null;
+  const wallEnd = chainTool && last ? (typed ? typedPoint(last) : null) ?? snap?.point : null;
+  const polyEnd = polygonTool && last ? (typed ? typedPoint(last) : null) ?? snap?.point ?? cursor : null;
   const rectEnd = tool === "room" && rectStart ? (typed ? typedRect(rectStart) : null) ?? snap?.point : null;
 
   return (
@@ -424,7 +494,10 @@ export function StructureLayer() {
       onPointerUp={onPointerUp}
       onPointerLeave={() => setCursor(null)}
       // Double-click ends a wall chain (its second click added nothing new).
-      onDoubleClick={() => tool === "wall" && setChain([])}
+      onDoubleClick={() => {
+        if (chainTool) setChain([]);
+        if (polygonTool && chain.length >= 3) closePolygon(chain);
+      }}
       onContextMenu={(e) => e.preventDefault()}
     >
       {tool === "select" && !drag && highlight(hover, "hover")}
@@ -433,6 +506,8 @@ export function StructureLayer() {
       {/* Live preview of a drag. */}
       {previewShell?.walls.map((w) => <polygon key={w.id} points={outline(w)} className="preview" />)}
       {previewShell?.stairs.map((s) => drag?.kind === "stair" && s.id === drag.id && <polygon key={s.id} points={pts(stairOutline(s).map(toScreen))} className="preview" />)}
+      {drag?.kind === "shift" && previewShell?.areas.map((a) => a.id === drag.id && <polygon key={a.id} points={pts(a.polygon.map(toScreen))} className="preview" />)}
+      {drag?.kind === "shift" && previewShell?.fences.map((f) => f.id === drag.id && fenceOutlines(f).map((o, i) => <polygon key={`${f.id}-${i}`} points={pts(o.map(toScreen))} className="preview" />))}
       {previewShell?.openings.map((o) => {
         const wall = previewShell.walls.find((w) => w.id === o.wall);
         return wall && <polygon key={o.id} points={pts(openingRect(wall, o).map(toScreen))} className="preview-opening" />;
@@ -446,9 +521,17 @@ export function StructureLayer() {
           return <circle key={i} cx={x} cy={y} r={5} className="handle" />;
         })}
 
-      {/* Wall tool: placed points and the wall being drawn. */}
-      {tool === "wall" && last && wallEnd && <RubberBand from={last} to={wallEnd} thickness={thickness} toScreen={toScreen} typed={typed} />}
-      {tool === "wall" && chain.map((p, i) => <circle key={i} cx={toScreen(p)[0]} cy={toScreen(p)[1]} r={3.5} className="placed" />)}
+      {/* Wall and fence tools: placed points and the wall or fence being drawn. */}
+      {chainTool && last && wallEnd && <RubberBand from={last} to={wallEnd} thickness={tool === "fence" ? 6 : thickness} toScreen={toScreen} typed={typed} />}
+      {(chainTool || polygonTool) && chain.map((p, i) => <circle key={i} cx={toScreen(p)[0]} cy={toScreen(p)[1]} r={3.5} className="placed" />)}
+
+      {/* Area and plot tools: the outline so far, closing back to the start. */}
+      {polygonTool && chain.length > 0 && (
+        <g className="rubber">
+          <polyline points={pts([...chain, ...(polyEnd ? [polyEnd] : [])].map(toScreen))} className="outline-draft" />
+          {chain.length >= 2 && polyEnd && <line x1={toScreen(polyEnd)[0]} y1={toScreen(polyEnd)[1]} x2={toScreen(chain[0])[0]} y2={toScreen(chain[0])[1]} className="outline-close" />}
+        </g>
+      )}
 
       {/* Room tool: rectangle with its inside size. */}
       {tool === "room" && rectStart && rectEnd && <RectPreview a={rectStart} b={rectEnd} thickness={thickness} toScreen={toScreen} typed={typed} />}
@@ -467,7 +550,7 @@ export function StructureLayer() {
       )}
 
       {/* Snap marker and guides. */}
-      {snap && (tool === "wall" || tool === "room") && (
+      {snap && (chainTool || polygonTool || tool === "room") && (
         <g className={`snap snap-${snap.kind}`}>
           {snap.guides.map(([a, b], i) => {
             const [sa, sb] = [toScreen(a), toScreen(b)];

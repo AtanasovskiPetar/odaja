@@ -6,6 +6,7 @@ import { levelAbove, levelById, levelShell, stairsArriving } from "./levels";
 import { partFootprint } from "./parts";
 import type { Scene, Shell } from "./schema";
 import { isOpen, stairOutline, stairTreads, TREAD, treadHeightAt, type Tread } from "./stairs";
+import { fenceHeight, fenceOutlines } from "./site";
 
 export const BODY_RADIUS = 22; // cm
 // The biggest step up or down you take without noticing (a riser is ~18).
@@ -41,6 +42,11 @@ export function obstacles(shell: Shell, scene: Scene | null): Segment[] {
         ]),
       );
     }
+  }
+  // Fences you can't step over; gates are gaps.
+  for (const f of shell.fences) {
+    if (fenceHeight(f) < 45) continue;
+    for (const outline of fenceOutlines(f)) segments.push(...outlineEdges(outline));
   }
   for (const o of scene?.objects ?? []) {
     for (const part of o.parts) {
@@ -98,12 +104,18 @@ export function walkStep(from: Vec, delta: Vec, segments: Segment[], radius = BO
 export interface LevelStairs {
   up: { treads: Tread[]; rise: number; to?: string; open: boolean }[];
   down: { treads: Tread[]; outline: Vec[]; rise: number; to: string }[];
+  // Raised decks and terraces (their height), and water (well below).
+  raised: { poly: Vec[]; height: number }[];
 }
+
+const WATER_DEPTH = 120;
 
 export function levelStairs(whole: Shell, levelId: string): LevelStairs {
   const here = levelById(whole, levelId);
   const above = levelAbove(whole, here.id);
+  const view = levelShell(whole, here.id);
   return {
+    raised: view.areas.flatMap((a) => (a.kind === "water" ? [{ poly: a.polygon, height: -WATER_DEPTH }] : a.height ? [{ poly: a.polygon, height: a.height }] : [])),
     up: levelShell(whole, here.id).stairs.map((s) => {
       const rise = s.rise!;
       const arrives = above && Math.abs(rise - (above.elevation - here.elevation)) < 5;
@@ -129,14 +141,15 @@ export function floorAt(stairs: LevelStairs, p: Vec, current = 0): { height: num
     const h = (treadHeightAt(s.treads, p) ?? 0) - s.rise;
     return { height: h, ...(h < -s.rise / 2 ? { switchTo: s.to, shift: s.rise } : {}) };
   }
-  return { height: 0 };
+  const raised = stairs.raised.filter((r) => pointInPolygon(p, r.poly)).map((r) => r.height);
+  return { height: raised.length ? Math.max(...raised) : 0 };
 }
 
 // A move that doesn't climb or drop more than a step: the move, else the
 // part of it along x or y that doesn't, else staying put. Stairs are climbed
 // from their ends, not their sides, and openings in a floor are edges.
 export function climbStep(from: Vec, to: Vec, stairs: LevelStairs, current = 0): Vec {
-  if (!stairs.up.length && !stairs.down.length) return to;
+  if (!stairs.up.length && !stairs.down.length && !stairs.raised.length) return to;
   const h = floorAt(stairs, from, current).height;
   const ok = (p: Vec) => Math.abs(floorAt(stairs, p, h).height - h) <= MAX_STEP;
   if (ok(to)) return to;

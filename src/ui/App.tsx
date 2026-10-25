@@ -17,6 +17,9 @@ import { PartInspector, PartsSection } from "./PartsEditor";
 import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
 import { STAIR_NAMES } from "./StructureInspector";
+import { useGardenTools } from "./gardenTools";
+import { AREA_LOOK, FENCE_LOOK } from "../model/site";
+import { AREA_KINDS, FENCE_STYLES } from "../model/schema";
 import { LevelsSection } from "./LevelsSection";
 import { levelsTopDown } from "../model/levels";
 import { Welcome, OpenFolderDialog } from "./Welcome";
@@ -50,6 +53,9 @@ import {
   IconRoom,
   IconSelect,
   IconStairs,
+  IconArea,
+  IconFence,
+  IconPlot,
   IconStructure,
   IconSwatch,
   IconUndo,
@@ -156,7 +162,7 @@ function useShortcuts() {
 
       if (s.mode === "structure") {
         // Escape and Enter belong to the structure layer (drawing).
-        const tools: Record<string, Tool> = { v: "select", w: "wall", r: "room", d: "door", n: "window", s: "stairs" };
+        const tools: Record<string, Tool> = { v: "select", w: "wall", r: "room", d: "door", n: "window", s: "stairs", a: "garden", f: "fence", b: "plot" };
         if (tools[key]) return s.setTool(tools[key]);
         if (key === "h") return s.toggleHideFurniture();
         if ((key === "delete" || key === "backspace") && s.structureSelection) {
@@ -302,6 +308,36 @@ function RoomsSection() {
           </li>
         ))}
       </ul>
+      {(shell.plot || shell.areas.length > 0 || shell.fences.length > 0) && (
+        <>
+          <h2 className="spaced">Garden</h2>
+          <ul className="list">
+            {shell.plot && (
+              <li>
+                <button className={isSelected("plot", "plot") ? "active" : ""} onClick={() => selectStructure({ kind: "plot", id: "plot" })}>
+                  Plot
+                </button>
+              </li>
+            )}
+            {shell.areas.map((a) => (
+              <li key={a.id}>
+                <button className={isSelected("garden", a.id) ? "active" : ""} onClick={() => selectStructure({ kind: "garden", id: a.id })}>
+                  {a.name}
+                  <span className="muted">{AREA_LOOK[a.kind].label}</span>
+                </button>
+              </li>
+            ))}
+            {shell.fences.map((f) => (
+              <li key={f.id}>
+                <button className={isSelected("fence", f.id) ? "active" : ""} onClick={() => selectStructure({ kind: "fence", id: f.id })}>
+                  {f.id}
+                  <span className="muted">{FENCE_LOOK[f.style].label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {shell.stairs.length > 0 && (
         <>
           <h2 className="spaced">Stairs</h2>
@@ -329,6 +365,9 @@ const TOOLS: { tool: Tool; label: string; key: string; Icon: typeof IconSelect }
   { tool: "door", label: "Door", key: "D", Icon: IconDoor },
   { tool: "window", label: "Window", key: "N", Icon: IconWindow },
   { tool: "stairs", label: "Stairs", key: "S", Icon: IconStairs },
+  { tool: "garden", label: "Area", key: "A", Icon: IconArea },
+  { tool: "fence", label: "Fence", key: "F", Icon: IconFence },
+  { tool: "plot", label: "Plot", key: "B", Icon: IconPlot },
 ];
 
 function StructureToolbar() {
@@ -338,6 +377,7 @@ function StructureToolbar() {
   const setThickness = useOdaja((s) => s.setWallThickness);
   const hideFurniture = useOdaja((s) => s.hideFurniture);
   const toggleHideFurniture = useOdaja((s) => s.toggleHideFurniture);
+  const { kind: gardenKind, style: fenceStyle, setKind: setGardenKind, setStyle: setFenceStyle } = useGardenTools();
   return (
     <div className="toolbar secondary">
       <div className="seg">
@@ -349,16 +389,40 @@ function StructureToolbar() {
         ))}
       </div>
       <span className="sep" />
-      <label className="inline-field" title="Thickness of new walls">
-        Thickness
-        <select value={thickness} onChange={(e) => setThickness(Number(e.target.value))}>
-          {[8, 10, 12, 15, 20, 25, 30].map((t) => (
-            <option key={t} value={t}>
-              {t} cm
-            </option>
-          ))}
-        </select>
-      </label>
+      {tool === "garden" ? (
+        <label className="inline-field" title="What new areas are">
+          Kind
+          <select value={gardenKind} onChange={(e) => setGardenKind(e.target.value as typeof gardenKind)}>
+            {AREA_KINDS.map((k) => (
+              <option key={k} value={k}>
+                {AREA_LOOK[k].label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : tool === "fence" ? (
+        <label className="inline-field" title="What new fences are">
+          Style
+          <select value={fenceStyle} onChange={(e) => setFenceStyle(e.target.value as typeof fenceStyle)}>
+            {FENCE_STYLES.map((k) => (
+              <option key={k} value={k}>
+                {FENCE_LOOK[k].label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <label className="inline-field" title="Thickness of new walls">
+          Thickness
+          <select value={thickness} onChange={(e) => setThickness(Number(e.target.value))}>
+            {[8, 10, 12, 15, 20, 25, 30].map((t) => (
+              <option key={t} value={t}>
+                {t} cm
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <button className={`icon-only ${hideFurniture ? "active" : ""}`} onClick={toggleHideFurniture} title="Hide furniture (H)">
         <IconEyeOff size={17} />
       </button>

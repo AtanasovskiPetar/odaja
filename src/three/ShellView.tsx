@@ -9,6 +9,7 @@ import type { Vec } from "../model/geometry";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { JoineryView } from "./JoineryView";
+import { SiteView } from "./SiteView";
 import { useMaterials } from "./materials";
 import { planMaterials } from "./theme";
 
@@ -266,6 +267,8 @@ function LevelView({ shell, active, slab, arriving }: { shell: Shell; active: bo
         <StairView key={stair.id} stair={stair} />
       ))}
       {!plan && guards.map(([a, b], i) => <Guard key={i} from={a} to={b} />)}
+      {/* Only the first level's view has the garden. */}
+      <SiteView shell={shell} />
       {shell.walls.map((wall) => (
         <WallView key={wall.id} wall={wall} shell={shell} openings={shell.openings.filter((o) => o.wall === wall.id)} active={active} slab={slab} />
       ))}

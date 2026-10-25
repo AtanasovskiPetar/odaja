@@ -3,8 +3,9 @@ import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { boundsOf, shellBounds } from "../model/geometry";
+import { boundsOf } from "../model/geometry";
 import { levelById } from "../model/levels";
+import { siteBounds } from "../model/site";
 import type { Underlay } from "../model/schema";
 import { pixelToPlan } from "../model/underlay";
 
@@ -55,8 +56,8 @@ function CameraRig() {
   // Frame the whole flat when the view changes (not on every resize or edit).
   useEffect(() => {
     if (!controls || viewMode === "walk") return;
-    // No walls yet: frame the floor plan background instead.
-    const b = (shell && shellBounds(shell)) || (underlay ? underlayBounds(underlay) : null);
+    // The house and garden; with neither yet, the floor plan background.
+    const b = (shell && siteBounds(shell)) || (underlay ? underlayBounds(underlay) : null);
     const [cx, cz] = b ? [M((b.minX + b.maxX) / 2), M((b.minY + b.maxY) / 2)] : [0, 0];
     const [w, d] = b ? [M(b.maxX - b.minX), M(b.maxY - b.minY)] : [10, 10];
     controls.target.set(cx, 0, cz);
@@ -114,7 +115,9 @@ export function Viewport() {
   const theme = useSceneTheme();
   useEffect(() => applyPlanTheme(theme), [theme]);
   // The grid is the ground: under the viewed level when it's an upper one.
+  // A plot is the ground instead (the grid would show through a pool).
   const ground = useOdaja((s) => (s.wholeShell ? -M(levelById(s.wholeShell, s.level).elevation) : 0));
+  const hasPlot = useOdaja((s) => Boolean(s.wholeShell?.plot));
   return (
     <Canvas shadows onPointerMissed={() => {
         if (performance.now() - gizmo.lastUsed < 300) return;
@@ -125,7 +128,7 @@ export function Viewport() {
       <PerspectiveCamera makeDefault={!plan} fov={45} near={0.05} far={200} />
       <OrthographicCamera makeDefault={plan} near={0.1} far={200} />
       <Lights theme={theme} plan={plan} walk={walk} />
-      {!plan && !walk && (
+      {!plan && !walk && !hasPlot && (
         <Grid args={[60, 60]} cellSize={0.1} sectionSize={1} cellColor={theme.gridCell} sectionColor={theme.gridSection} fadeDistance={40} position={[0, ground - 0.02, 0]} infiniteGrid />
       )}
       <ShellView />

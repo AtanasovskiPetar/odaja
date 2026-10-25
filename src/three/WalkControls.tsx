@@ -15,7 +15,7 @@ const RUN_SPEED = 300;
 const LOOK_SPEED = 0.0025; // radians per pixel
 const KEY_TURN = 1.8; // radians per second with Q / E
 const MAX_PITCH = 1.35;
-const NO_STAIRS: LevelStairs = { up: [], down: [] };
+const NO_STAIRS: LevelStairs = { up: [], down: [], raised: [] };
 
 export function WalkControls() {
   const camera = useThree((s) => s.camera);

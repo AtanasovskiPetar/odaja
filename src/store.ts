@@ -33,11 +33,12 @@ export interface WalkPose {
 // Furnish: move furniture, walls are fixed. Structure: edit walls, doors,
 // windows and rooms, furniture is faded and fixed.
 export type EditMode = "furnish" | "structure";
-export type Tool = "select" | "wall" | "room" | "door" | "window" | "stairs";
-// A wall, opening, room or stair; or an enclosed area with no room yet, which
-// can be turned into one.
+export type Tool = "select" | "wall" | "room" | "door" | "window" | "stairs" | "garden" | "fence" | "plot";
+// A wall, opening, room or stair; in the garden an outdoor area ("garden"), a
+// fence or the plot; or an enclosed area with no room yet, which can be
+// turned into one.
 export type StructureSelection =
-  | { kind: "wall" | "opening" | "room" | "stair"; id: string }
+  | { kind: "wall" | "opening" | "room" | "stair" | "garden" | "fence" | "plot"; id: string }
   | { kind: "area"; polygon: [number, number][] }
   | null;
 
