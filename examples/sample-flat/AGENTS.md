@@ -214,6 +214,8 @@ treads from one level to the other.
   `open: true`: tread plates on stringers with nothing underneath, instead of
   solid steps down to the floor (spiral stairs always are), leaving room for
   storage or a desk under the high end. `material` (default `oak`).
+- Sides of flights and landings that aren't against a wall get handrails,
+  90 cm above the treads.
 - Comfortable stairs have 16–19 cm risers and 25–30 cm treads: a straight
   flight up 280 cm needs about 100 × 420 cm. The app warns about steeper ones,
   furniture in their way (under open stairs, furniture fits where the treads
@@ -244,6 +246,11 @@ wing.
   side it slopes down to (default `south`).
 - The ridge of a gable over a building `d` cm deep rises `d / 2 × tan(pitch)`
   above the walls. The app's 3D view can hide roofs to look inside.
+- `ceiling`: `"sloped"` makes the roof's underside the ceiling of the rooms
+  under it, as in a loft: the level's walls are knee walls (set the level's
+  `height`, e.g. 100) and inside walls rise to meet the roof. By default
+  (`"flat"`) rooms have flat ceilings at the walls' height. Walking in the
+  app keeps you where there's room to stand.
 
 ### The garden
 

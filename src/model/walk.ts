@@ -7,6 +7,8 @@ import { partFootprint } from "./parts";
 import type { Scene, Shell } from "./schema";
 import { isOpen, stairOutline, stairTreads, TREAD, treadHeightAt, type Tread } from "./stairs";
 import { fenceHeight, fenceOutlines } from "./site";
+import { roofHeightAt } from "./roofs";
+import type { Roof } from "./schema";
 
 export const BODY_RADIUS = 22; // cm
 // The biggest step up or down you take without noticing (a riser is ~18).
@@ -106,7 +108,12 @@ export interface LevelStairs {
   down: { treads: Tread[]; outline: Vec[]; rise: number; to: string }[];
   // Raised decks and terraces (their height), and water (well below).
   raised: { poly: Vec[]; height: number }[];
+  // Roofs with sloped ceilings over the level, standing on walls `base` high.
+  sloped?: { roof: Roof; base: number }[];
 }
+
+// Room you need above the floor to stand: eyes plus a bit.
+const STANDING = 185;
 
 const WATER_DEPTH = 120;
 
@@ -115,6 +122,7 @@ export function levelStairs(whole: Shell, levelId: string): LevelStairs {
   const above = levelAbove(whole, here.id);
   const view = levelShell(whole, here.id);
   return {
+    sloped: view.roofs.filter((r) => r.ceiling === "sloped").map((roof) => ({ roof, base: view.wallHeight })),
     raised: view.areas.flatMap((a) => (a.kind === "water" ? [{ poly: a.polygon, height: -WATER_DEPTH }] : a.height ? [{ poly: a.polygon, height: a.height }] : [])),
     up: levelShell(whole, here.id).stairs.map((s) => {
       const rise = s.rise!;
@@ -148,10 +156,27 @@ export function floorAt(stairs: LevelStairs, p: Vec, current = 0): { height: num
 // A move that doesn't climb or drop more than a step: the move, else the
 // part of it along x or y that doesn't, else staying put. Stairs are climbed
 // from their ends, not their sides, and openings in a floor are edges.
+// How high the ceiling is at a point, where a sloped roof is lower than a
+// standing person needs.
+function ceilingAt(stairs: LevelStairs, p: Vec): number {
+  let low = Infinity;
+  for (const { roof, base } of stairs.sloped ?? []) {
+    const h = roofHeightAt(roof, p);
+    if (h !== null) low = Math.min(low, base + h);
+  }
+  return low;
+}
+
 export function climbStep(from: Vec, to: Vec, stairs: LevelStairs, current = 0): Vec {
-  if (!stairs.up.length && !stairs.down.length && !stairs.raised.length) return to;
+  if (!stairs.up.length && !stairs.down.length && !stairs.raised.length && !stairs.sloped?.length) return to;
   const h = floorAt(stairs, from, current).height;
-  const ok = (p: Vec) => Math.abs(floorAt(stairs, p, h).height - h) <= MAX_STEP;
+  // A step is fine if it neither climbs nor drops too much, and there's
+  // headroom (or at least no less than where you are).
+  const room = (p: Vec, floor: number) => ceilingAt(stairs, p) - floor;
+  const ok = (p: Vec) => {
+    const f = floorAt(stairs, p, h).height;
+    return Math.abs(f - h) <= MAX_STEP && (room(p, f) >= STANDING || room(p, f) >= room(from, h));
+  };
   if (ok(to)) return to;
   const alongX: Vec = [to[0], from[1]];
   if (ok(alongX)) return alongX;

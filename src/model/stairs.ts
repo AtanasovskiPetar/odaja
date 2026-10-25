@@ -3,8 +3,8 @@
 //
 // Shapes are built in the stair's own frame (origin at the footprint's
 // centre, going up towards -y), then turned and moved onto the plan.
-import { pointInPolygon, type Vec } from "./geometry";
-import type { ShellDoc, Stair, StairDoc } from "./schema";
+import { pointInPolygon, projectOnWall, wallLength, type Vec } from "./geometry";
+import type { ShellDoc, Stair, StairDoc, Wall } from "./schema";
 
 export const RISER = 18; // cm, a comfortable step up
 const GOING = 26; // cm, a comfortable tread depth
@@ -229,6 +229,92 @@ export function stairGuards(stair: Stair, rise: number): [Vec, Vec][] {
   return out;
 }
 
+// --- handrails ----------------------------------------------------------------------
+
+export const RAIL_HEIGHT = 90; // cm above the treads' front edges
+const BALUSTER_GAP = 12;
+
+// A point on the plan with a height (cm above the stair's floor).
+export type P = [number, number, number];
+
+export interface Rails {
+  rails: [P, P][]; // top rails
+  posts: [P, P][]; // newel posts and balusters, bottom to top
+}
+
+// Whether a line on the plan runs along a wall's face (no rail needed there).
+function againstWall(a: Vec, b: Vec, walls: Wall[]): boolean {
+  const mid: Vec = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  return walls.some((w) => {
+    const pr = projectOnWall(w, mid);
+    return pr.across <= w.thickness / 2 + 12 && pr.along > -5 && pr.along < wallLength(w) + 5;
+  });
+}
+
+// A rail from a to b with balusters under it, ends posted.
+function railAlong(out: Rails, a: P, b: P) {
+  const top = (p: P): P => [p[0], p[1], p[2] + RAIL_HEIGHT];
+  out.rails.push([top(a), top(b)]);
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  const count = Math.max(1, Math.round(len / BALUSTER_GAP));
+  for (let i = 0; i <= count; i++) {
+    const t = i / count;
+    const p: P = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+    out.posts.push([p, top(p)]);
+  }
+}
+
+// Handrails on every side of the flights and landing that isn't against a
+// wall (`walls`: the stair's level's), and round the outside of a spiral.
+export function stairRails(stair: Stair, rise: number, walls: Wall[]): Rails {
+  const out: Rails = { rails: [], posts: [] };
+  if (stair.type === "spiral") {
+    const n = stepCount(stair, rise);
+    const step = Math.min(SPIRAL_STEP, 360 / n);
+    const dir = stair.turn === "right" ? -1 : 1;
+    const place = toPlan(stair);
+    const at = (i: number): P => {
+      const a = (dir * i * step * Math.PI) / 180;
+      const [x, y] = place([Math.sin(a) * (stair.size[0] / 2 - 4), Math.cos(a) * (stair.size[0] / 2 - 4)]);
+      return [x, y, (rise / n) * Math.min(n, i + 1)];
+    };
+    for (let i = 0; i < n; i++) railAlong(out, at(i), at(i + 1));
+    return out;
+  }
+  const flights = stairFlights(stair, rise);
+  for (const f of flights) {
+    const len = Math.hypot(f.b[0] - f.a[0], f.b[1] - f.a[1]) || 1;
+    const n: Vec = [-(f.b[1] - f.a[1]) / len, (f.b[0] - f.a[0]) / len];
+    for (const s of [-1, 1]) {
+      const k = s * (f.width / 2 - 3);
+      const a: Vec = [f.a[0] + n[0] * k, f.a[1] + n[1] * k];
+      const b: Vec = [f.b[0] + n[0] * k, f.b[1] + n[1] * k];
+      if (!againstWall(a, b, walls)) railAlong(out, [a[0], a[1], f.z0], [b[0], b[1], f.z1]);
+    }
+  }
+  if (flights.length === 2) {
+    // The landing: its edges on the stair's outline, level.
+    const n = stepCount(stair, rise);
+    const landing = stairTreads(stair, rise)[Math.round((flights[0].z1 / rise) * n)];
+    const outline = stairOutline(stair);
+    const onOutline = (p: Vec) => outline.some((q, i) => {
+      const r = outline[(i + 1) % outline.length];
+      const l = Math.hypot(r[0] - q[0], r[1] - q[1]) || 1;
+      const t = ((p[0] - q[0]) * (r[0] - q[0]) + (p[1] - q[1]) * (r[1] - q[1])) / (l * l);
+      return t > -0.01 && t < 1.01 && Math.abs((p[0] - q[0]) * (r[1] - q[1]) - (p[1] - q[1]) * (r[0] - q[0])) / l < 1;
+    });
+    if (landing) {
+      landing.poly.forEach((p, i) => {
+        const q = landing.poly[(i + 1) % landing.poly.length];
+        if (onOutline(p) && onOutline(q) && onOutline([(p[0] + q[0]) / 2, (p[1] + q[1]) / 2]) && !againstWall(p, q, walls)) {
+          railAlong(out, [p[0], p[1], landing.top], [q[0], q[1], landing.top]);
+        }
+      });
+    }
+  }
+  return out;
+}
+
 // Riser height and tread depth (the shortest flight's), for checks and labels.
 export function stepSizes(stair: Stair, rise: number): { count: number; riser: number; going: number } {
   const n = stepCount(stair, rise);
@@ -261,67 +347,6 @@ export function treadHeightAt(treads: Tread[], p: Vec): number | null {
   let best: number | null = null;
   for (const t of treads) if (pointInPolygon(p, t.poly) && (best === null || t.top > best)) best = t.top;
   return best;
-}
-
-// --- clipping (floor openings) -------------------------------------------------------
-
-const cross = (a: Vec, b: Vec, p: Vec) => (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
-
-function signedArea(poly: Vec[]): number {
-  let s = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const [a, b] = [poly[i], poly[(i + 1) % poly.length]];
-    s += a[0] * b[1] - b[0] * a[1];
-  }
-  return s / 2;
-}
-
-export function isConvex(poly: Vec[]): boolean {
-  let sign = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const c = cross(poly[i], poly[(i + 1) % poly.length], poly[(i + 2) % poly.length]);
-    if (Math.abs(c) < 1e-9) continue;
-    if (sign === 0) sign = Math.sign(c);
-    else if (Math.sign(c) !== sign) return false;
-  }
-  return true;
-}
-
-// The part of `subject` inside the convex polygon `clip` (Sutherland–Hodgman).
-export function clipConvex(subject: Vec[], clip: Vec[]): Vec[] {
-  const orient = Math.sign(signedArea(clip)) || 1;
-  let out = subject;
-  for (let i = 0; i < clip.length && out.length; i++) {
-    const [a, b] = [clip[i], clip[(i + 1) % clip.length]];
-    const inside = (p: Vec) => cross(a, b, p) * orient >= 0;
-    const hit = (p: Vec, q: Vec): Vec => {
-      const t = cross(a, b, p) / (cross(a, b, p) - cross(a, b, q));
-      return [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
-    };
-    const input = out;
-    out = [];
-    for (let k = 0; k < input.length; k++) {
-      const [p, q] = [input[k], input[(k + 1) % input.length]];
-      if (inside(q)) {
-        if (!inside(p)) out.push(hit(p, q));
-        out.push(q);
-      } else if (inside(p)) out.push(hit(p, q));
-    }
-  }
-  return Math.abs(signedArea(out)) > 1 ? out : [];
-}
-
-// The openings to cut in a room's floor: each stair opening clipped to the
-// room. A room that isn't convex only gets openings that lie wholly inside it.
-export function floorOpenings(room: Vec[], openings: Vec[][]): Vec[][] {
-  const convex = isConvex(room);
-  return openings.flatMap((o) => {
-    if (convex) {
-      const part = clipConvex(o, room);
-      return part.length ? [part] : [];
-    }
-    return o.every((p) => pointInPolygon(p, room)) ? [o] : [];
-  });
 }
 
 // --- edits ------------------------------------------------------------------------

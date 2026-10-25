@@ -268,6 +268,7 @@ const describeRoof = (r: Roof) => ({
   ridge: r.type === "gable" ? roofRidge(r) : undefined,
   downTo: r.type === "shed" ? (r.downTo ?? "south") : undefined,
   ridgeAboveWalls: Math.round(roofRise(r)),
+  ceiling: r.ceiling,
   eaves: roofOutline(r).map(([x, y]) => [r1(x), r1(y)]),
 });
 
@@ -1218,7 +1219,7 @@ export const TOOLS: ToolDef[] = [
   tool({
     name: "set_stairs",
     description:
-      "Add, change or delete a staircase. Stairs stand on a level and climb to the next level up, which gets an opening in its floor over them (with a balustrade); walking in the app follows them. open: true makes them tread plates on stringers with nothing underneath (room for storage or a desk under the high end) instead of solid steps; spiral stairs are always open. position is the centre of the footprint; at rotation 0 you walk up towards north (-y), starting at the south end; rotation turns it clockwise. type: straight (size [width, length]), l (quarter turn with a landing in the far corner: up one side, then across the far end), u (half turn: up one side, across a landing, back down the other side; size [total width, length]) or spiral (size[0] = diameter). turn: which way l, u and spiral stairs turn going up (left = up the right-hand side, then across to the left). Without size it gets a comfortable one for the height (≈18 cm risers, 26 cm treads). Check get_overview's stairs (steps, footprint) and check_issues (steep stairs, furniture in the way or over the opening).",
+      "Add, change or delete a staircase. Stairs stand on a level and climb to the next level up, which gets an opening in its floor over them (with a balustrade); walking in the app follows them. Sides not against a wall get handrails. open: true makes them tread plates on stringers with nothing underneath (room for storage or a desk under the high end) instead of solid steps; spiral stairs are always open. position is the centre of the footprint; at rotation 0 you walk up towards north (-y), starting at the south end; rotation turns it clockwise. type: straight (size [width, length]), l (quarter turn with a landing in the far corner: up one side, then across the far end), u (half turn: up one side, across a landing, back down the other side; size [total width, length]) or spiral (size[0] = diameter). turn: which way l, u and spiral stairs turn going up (left = up the right-hand side, then across to the left). Without size it gets a comfortable one for the height (≈18 cm risers, 26 cm treads). Check get_overview's stairs (steps, footprint) and check_issues (steep stairs, furniture in the way or over the opening).",
     input: z.object({
       scene: sceneArg,
       id: z.string().optional().describe("existing stairs to change or delete; omit to add"),
@@ -1302,12 +1303,14 @@ export const TOOLS: ToolDef[] = [
       ridge: z.enum(["x", "y"]).optional(),
       down_to: z.enum(["north", "east", "south", "west"]).optional(),
       thickness: z.number().min(1).max(100).optional(),
+      sloped_ceiling: z.boolean().optional().describe("the roof's underside is the ceiling of the rooms under it (a loft: knee walls, rooms open to the roof); inside walls rise to meet it"),
       material: z.string().optional(),
       delete: z.boolean().optional(),
     }),
     async run(input, ctx) {
+      const ceiling = input.sloped_ceiling === undefined ? undefined : input.sloped_ceiling ? "sloped" : "flat";
       const fields = Object.fromEntries(
-        Object.entries({ type: input.type, polygon: input.polygon, pitch: input.pitch, overhang: input.overhang, ridge: input.ridge, downTo: input.down_to, thickness: input.thickness, material: input.material }).filter(([, v]) => v !== undefined),
+        Object.entries({ type: input.type, polygon: input.polygon, pitch: input.pitch, overhang: input.overhang, ridge: input.ridge, downTo: input.down_to, thickness: input.thickness, ceiling, material: input.material }).filter(([, v]) => v !== undefined),
       );
       if (input.id) {
         const id = input.id;

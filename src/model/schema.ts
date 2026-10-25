@@ -160,7 +160,10 @@ export const StairSchema = z.object({
 // running along x or y (`ridge`, default along the longer side); hip: slopes
 // on every side; shed: one slope falling to `downTo`; flat. `pitch` in
 // degrees (default 35, shed 15), `overhang` past the outline in cm (default
-// 40, flat 10), `thickness` of the roof in cm (default 20).
+// 40, flat 10), `thickness` of the roof in cm (default 20). `ceiling`:
+// "sloped" makes the roof's underside the ceiling of the rooms under it
+// (interior walls rise to meet it); by default they have flat ceilings at
+// the walls' height.
 export const ROOF_TYPES = ["gable", "hip", "shed", "flat"] as const;
 export const RoofSchema = z.object({
   id,
@@ -171,6 +174,7 @@ export const RoofSchema = z.object({
   ridge: z.enum(["x", "y"]).optional(),
   downTo: z.enum(["north", "east", "south", "west"]).optional(),
   thickness: z.number().min(1).max(100).optional(),
+  ceiling: z.enum(["flat", "sloped"]).optional(),
   material: z.string().optional(),
   level: levelRef,
 });

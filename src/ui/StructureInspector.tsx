@@ -321,7 +321,7 @@ function AreaInspector({ area }: { area: Area }) {
       {area.kind !== "water" && (
         <Field label="Raised by (deck, terrace)" numeric suffix="cm" min={0} max={300} value={area.height ?? 0} onCommit={(v) => set({ height: Number(v) || undefined })} />
       )}
-      <p className="hint">{(polygonArea(area.polygon) / 10000).toFixed(1)} m². Drag it to move it.</p>
+      <p className="hint">{(polygonArea(area.polygon) / 10000).toFixed(1)} m². Drag it to move it, or drag its corners; double-click an edge to add a corner, a corner to remove it.</p>
       <div className="actions">
         <button
           className="danger"
@@ -369,7 +369,7 @@ function FenceInspector({ fence }: { fence: Fence }) {
           <Field label="Width" numeric suffix="cm" min={30} value={g.width} onCommit={(v) => setGate(i, { width: Number(v) })} />
         </div>
       ))}
-      <p className="hint">{formatCm(fenceLength(fence))} cm long.</p>
+      <p className="hint">{formatCm(fenceLength(fence))} cm long. Drag it to move it, or drag its ends.</p>
       <div className="actions">
         <button onClick={() => applyShell(addGate(fence.id))}>Add gate</button>
         {fence.gates.length > 0 && <button onClick={() => set({ gates: fence.gates.slice(0, -1) })}>Remove last gate</button>}
@@ -398,7 +398,7 @@ function PlotInspector() {
     <section className="inspector">
       <div className="group-title">Plot</div>
       <MaterialSelect label="Ground" value={plot.material ?? null} allowNone="Grass colour" onChange={(m) => applyShell(updatePlot({ material: m }))} />
-      <p className="hint">{(polygonArea(plot.polygon) / 10000).toFixed(1)} m². To change its shape, draw it again with the Plot tool.</p>
+      <p className="hint">{(polygonArea(plot.polygon) / 10000).toFixed(1)} m². Drag its corners to reshape it; double-click an edge to add a corner, a corner to remove it.</p>
       <div className="actions">
         <button
           className="danger"
@@ -458,8 +458,14 @@ function RoofInspector({ roof }: { roof: Roof }) {
         </label>
       )}
       <MaterialSelect label="Covering" value={roof.material ?? null} allowNone="Roof colour" onChange={(m) => set({ material: m ?? undefined })} />
+      {roof.type !== "flat" && (
+        <label className="check" title="The roof's underside is the ceiling of the rooms under it, and inside walls rise to meet it (a loft or vaulted room)">
+          <input type="checkbox" checked={roof.ceiling === "sloped"} onChange={(e) => set({ ceiling: e.target.checked ? "sloped" : undefined })} />
+          Sloped ceilings in the rooms under it
+        </label>
+      )}
       <p className="hint">
-        {roof.type === "flat" ? "Flat" : `Rises ${formatCm(roofRise(roof))} cm above the walls`}. Hide roofs with the roof button in the 3D view to look inside. To change its outline, draw it again.
+        {roof.type === "flat" ? "Flat" : `Rises ${formatCm(roofRise(roof))} cm above the walls`}. Hide roofs with the roof button in the 3D view to look inside. Drag the outline's corners to reshape it; double-click an edge to add a corner, a corner to remove it.
       </p>
       <div className="actions">
         <button

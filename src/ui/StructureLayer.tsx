@@ -20,9 +20,9 @@ import {
 import { riseFrom } from "../model/levels";
 import { enclosedArea } from "../model/rooms";
 import { addStair, defaultStairSize, stairOutline, updateStair } from "../model/stairs";
-import { addArea, addFences, AREA_LOOK, fenceOutlines, fenceThickness, moveArea, moveFence, setPlot } from "../model/site";
+import { addArea, addFences, AREA_LOOK, fenceOutlines, fenceThickness, moveArea, moveFence, setPlot, updateArea, updateFence } from "../model/site";
 import { useDrawTools } from "./drawTools";
-import { addRoof, roofOutline } from "../model/roofs";
+import { addRoof, roofOutline, updateRoof } from "../model/roofs";
 import { ShellSchema, type Opening, type Shell, type ShellDoc, type Wall } from "../model/schema";
 import { addOpening, addRectRoom, addWalls, moveCorner, moveWall, OPENING_DEFAULTS, updateOpening } from "../model/shellOps";
 import { snapPoint, type Snap } from "../model/snap";
@@ -41,9 +41,32 @@ type Drag =
   | { kind: "opening"; id: string; grab: number; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "stair"; id: string; start: Vec; origin: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "shift"; target: "garden" | "fence"; id: string; start: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
+  | { kind: "vertex"; target: Shaped; index: number; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "click"; startX: number; startY: number };
 
 type Hit = { kind: "wall" | "opening" | "room" | "stair" | "roof" | "garden" | "fence" | "plot"; id: string } | { kind: "area"; polygon: Vec[] } | null;
+
+// The selected thing whose corners can be dragged: an area, the plot, a
+// roof (its outline), or a fence (its two ends).
+type Shaped = { kind: "garden" | "plot" | "roof" | "fence"; id: string };
+
+function cornersOf(shell: Shell, t: Shaped): Vec[] | null {
+  if (t.kind === "garden") return shell.areas.find((a) => a.id === t.id)?.polygon ?? null;
+  if (t.kind === "roof") return shell.roofs.find((r) => r.id === t.id)?.polygon ?? null;
+  if (t.kind === "plot") return shell.plot?.polygon ?? null;
+  const f = shell.fences.find((x) => x.id === t.id);
+  return f ? [f.from, f.to] : null;
+}
+
+// The same thing with new corners.
+function withCorners(t: Shaped, corners: Vec[]) {
+  if (t.kind === "garden") return updateArea(t.id, { polygon: corners });
+  if (t.kind === "roof") return updateRoof(t.id, { polygon: corners });
+  if (t.kind === "plot") return setPlot(corners);
+  return updateFence(t.id, { from: corners[0], to: corners[1] });
+}
+
+const round1 = (p: Vec): Vec => [Math.round(p[0] * 10) / 10, Math.round(p[1] * 10) / 10];
 
 // Distance from a point to a segment.
 function toSegment(p: Vec, a: Vec, b: Vec): number {
@@ -290,6 +313,9 @@ export function StructureLayer() {
   };
 
   const selectedWall = selection?.kind === "wall" ? shell.walls.find((w) => w.id === selection.id) : undefined;
+  const shaped: Shaped | null = selection && (selection.kind === "garden" || selection.kind === "plot" || selection.kind === "roof" || selection.kind === "fence") ? { kind: selection.kind, id: selection.id } : null;
+  const corners = shaped ? cornersOf(shell, shaped) : null;
+  const cornerAt = (sx: number, sy: number) => (corners ? corners.findIndex((c) => dist(toScreen(c), [sx, sy]) <= 8) : -1);
 
   const onPointerDown = (e: ReactPointerEvent) => {
     const [sx, sy] = local(e);
@@ -313,6 +339,12 @@ export function StructureLayer() {
             return;
           }
         }
+      }
+      // Corner handles of the selected area, plot, roof or fence.
+      const corner = cornerAt(sx, sy);
+      if (shaped && corner >= 0) {
+        setDrag({ kind: "vertex", target: shaped, index: corner, startX: sx, startY: sy, moved: false, preview: null });
+        return;
       }
       const hit = hitTest(shell, p, tol);
       if (hit?.kind === "wall") {
@@ -370,6 +402,12 @@ export function StructureLayer() {
       const n: Vec = [-(wall.to[1] - wall.from[1]) / len, (wall.to[0] - wall.from[0]) / len];
       const along = Math.round((p[0] - drag.start[0]) * n[0] + (p[1] - drag.start[1]) * n[1]);
       const preview = moveWall(drag.id, [n[0] * along, n[1] * along])(shellDoc);
+      setDrag({ ...drag, moved, preview: preview === shellDoc ? drag.preview : preview });
+    } else if (drag.kind === "vertex") {
+      const now = cornersOf(shell, drag.target);
+      if (!now) return;
+      const target = round1(snapPoint(p, shell, SNAP_PX / proj.pxPerCm).point);
+      const preview = withCorners(drag.target, now.map((c, i) => (i === drag.index ? target : c)))(shellDoc);
       setDrag({ ...drag, moved, preview: preview === shellDoc ? drag.preview : preview });
     } else if (drag.kind === "shift") {
       const by: Vec = [Math.round(p[0] - drag.start[0]), Math.round(p[1] - drag.start[1])];
@@ -500,9 +538,26 @@ export function StructureLayer() {
       onPointerUp={onPointerUp}
       onPointerLeave={() => setCursor(null)}
       // Double-click ends a wall chain (its second click added nothing new).
-      onDoubleClick={() => {
+      onDoubleClick={(e) => {
         if (chainTool) setChain([]);
         if (polygonTool && chain.length >= 3) closePolygon(chain);
+        // On a selected shape: a corner goes (keeping three), or an edge gets one.
+        if (tool !== "select" || !shaped || !corners || shaped.kind === "fence") return;
+        const [sx, sy] = local(e as unknown as ReactPointerEvent);
+        const at = cornerAt(sx, sy);
+        if (at >= 0) {
+          if (corners.length > 3) applyShell(withCorners(shaped, corners.filter((_, i) => i !== at)));
+          return;
+        }
+        const p = toPlan(sx, sy);
+        const edge = corners.findIndex((c, i) => {
+          const d = corners[(i + 1) % corners.length];
+          const [ex, ey] = [d[0] - c[0], d[1] - c[1]];
+          const l2 = ex * ex + ey * ey || 1;
+          const t = Math.max(0, Math.min(1, ((p[0] - c[0]) * ex + (p[1] - c[1]) * ey) / l2));
+          return Math.hypot(p[0] - c[0] - ex * t, p[1] - c[1] - ey * t) <= tol * 1.5;
+        });
+        if (edge >= 0) applyShell(withCorners(shaped, [...corners.slice(0, edge + 1), round1(p), ...corners.slice(edge + 1)]));
       }}
       onContextMenu={(e) => e.preventDefault()}
     >
@@ -519,13 +574,27 @@ export function StructureLayer() {
         return wall && <polygon key={o.id} points={pts(openingRect(wall, o).map(toScreen))} className="preview-opening" />;
       })}
 
-      {/* Corner handles on the selected wall. */}
+      {/* Corner handles on the selected wall, area, plot, roof or fence. */}
       {tool === "select" &&
         selectedWall &&
         [selectedWall.from, selectedWall.to].map((p, i) => {
           const [x, y] = toScreen(p);
           return <circle key={i} cx={x} cy={y} r={5} className="handle" />;
         })}
+      {tool === "select" &&
+        (drag?.kind === "vertex" && drag.preview ? cornersOf(ShellSchema.parse(drag.preview), drag.target) : corners)?.map((p, i) => {
+          const [x, y] = toScreen(p);
+          return <circle key={`c${i}`} cx={x} cy={y} r={5} className="handle" />;
+        })}
+      {drag?.kind === "vertex" && previewShell && (() => {
+        const moved = cornersOf(previewShell, drag.target);
+        if (!moved) return null;
+        return drag.target.kind === "fence" ? (
+          <line x1={toScreen(moved[0])[0]} y1={toScreen(moved[0])[1]} x2={toScreen(moved[1])[0]} y2={toScreen(moved[1])[1]} className="preview fence-line" />
+        ) : (
+          <polygon points={pts(moved.map(toScreen))} className="preview" />
+        );
+      })()}
 
       {/* Wall and fence tools: placed points and the wall or fence being drawn. */}
       {chainTool && last && wallEnd && <RubberBand from={last} to={wallEnd} thickness={tool === "fence" ? 6 : thickness} toScreen={toScreen} typed={typed} />}

@@ -7,7 +7,7 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Vec } from "../model/geometry";
 import type { Area, Fence, Shell } from "../model/schema";
 import { areaMaterial, fenceHeight, fenceLength, fenceMaterial, fenceSpans, fenceThickness, PLOT_COLOR } from "../model/site";
-import { floorOpenings } from "../model/stairs";
+import { flatShapes } from "./ShellView";
 import { M } from "../model/units";
 import { useMaterials } from "./materials";
 
@@ -28,10 +28,8 @@ function PlotGround({ shell }: { shell: Shell }) {
   const material = useMaterials();
   const plot = shell.plot!;
   const geometry = useMemo(() => {
-    const shape = new THREE.Shape(flat(plot.polygon));
     const water = shell.areas.filter((a) => a.kind === "water").map((a) => a.polygon);
-    shape.holes = floorOpenings(plot.polygon, water).map((h) => new THREE.Path(flat(h)));
-    return new THREE.ShapeGeometry(shape);
+    return new THREE.ShapeGeometry(flatShapes(plot.polygon, water));
   }, [plot.polygon, shell.areas]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return <mesh geometry={geometry} rotation={LAY_FLAT} position={[0, -0.012, 0]} receiveShadow material={material(plot.material ?? PLOT_COLOR)} />;
@@ -45,12 +43,11 @@ function AreaView({ area, layer, pools }: { area: Area; layer: number; pools: Ve
   const height = area.height ?? 0;
   const water = area.kind === "water";
   const { surface, solid } = useMemo(() => {
-    const shape = new THREE.Shape(flat(area.polygon));
-    if (!water) shape.holes = floorOpenings(area.polygon, pools).map((h) => new THREE.Path(flat(h)));
+    const shapes = water ? [new THREE.Shape(flat(area.polygon))] : flatShapes(area.polygon, pools);
     return {
-      surface: new THREE.ShapeGeometry(shape),
+      surface: new THREE.ShapeGeometry(shapes),
       // A raised deck or terrace, or a pool's basin.
-      solid: water || height > 0 ? new THREE.ExtrudeGeometry(shape, { depth: M(water ? POOL_DEPTH : height), bevelEnabled: false }) : null,
+      solid: water || height > 0 ? new THREE.ExtrudeGeometry(shapes, { depth: M(water ? POOL_DEPTH : height), bevelEnabled: false }) : null,
     };
   }, [area.polygon, height, water, pools]);
   useEffect(() => () => [surface, solid].forEach((g) => g?.dispose()), [surface, solid]);

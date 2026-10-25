@@ -22,7 +22,8 @@ import { partFootprint } from "./parts";
 import type { Part, Scene, SceneDoc, SceneObject, Shell, ShellDoc } from "./schema";
 import { deleteOpening, deleteWall, MIN_WALL, updateOpening } from "./shellOps";
 import type { ShellView } from "./levels";
-import { clipConvex, defaultStairSize, isConvex, stairOutline, stairTreads, stepSizes, treadBottom, updateStair } from "./stairs";
+import { overlapArea } from "./polygonClip";
+import { defaultStairSize, stairOutline, stairTreads, stepSizes, treadBottom, updateStair } from "./stairs";
 import { onSite } from "./site";
 import { setObjectProps } from "./operations";
 import { convexHull, updateRoof } from "./roofs";
@@ -290,7 +291,7 @@ export function computeIssues(scene: Scene, shell: Shell): Issue[] {
   // --- the garden ----------------------------------------------------------
   for (const area of shell.areas) {
     // Over a room's floor, by more than a sliver (rooms run to wall centres).
-    const inside = shell.rooms.filter((r) => isConvex(r.polygon) && Math.abs(polygonArea(clipConvex(area.polygon, r.polygon))) > 2000);
+    const inside = shell.rooms.filter((r) => overlapArea(area.polygon, r.polygon) > 2000);
     if (inside.length) {
       issues.push({
         key: `area-in-house-${area.id}`,

@@ -4,13 +4,16 @@ import { finishRects, floorMaterial, sideVector } from "../model/finishes";
 import { pointOnWall, wallLength, wallPieces, type WallPiece } from "../model/geometry";
 import { isLowest, levelById, levelShell, levelsOf, stairsArriving } from "../model/levels";
 import type { Finish, Opening, Room, Shell, Stair, Wall } from "../model/schema";
-import { floorOpenings, isOpen, stairFlights, stairGuards, stairOutline, stairTreads, TREAD, treadBottom, type Flight } from "../model/stairs";
+import { cutOut } from "../model/polygonClip";
+import { isOpen, stairFlights, stairGuards, stairOutline, stairRails, stairTreads, TREAD, treadBottom, type Flight, type P } from "../model/stairs";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Vec } from "../model/geometry";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { JoineryView } from "./JoineryView";
 import { SiteView } from "./SiteView";
 import { RoofView } from "./RoofView";
+import { roofHeightAt } from "../model/roofs";
 import { useMaterials } from "./materials";
 import { planMaterials } from "./theme";
 
@@ -78,17 +81,20 @@ function WallView({ wall, openings, shell, active, slab }: { wall: Wall; opening
 
 const CEILING = new THREE.MeshStandardMaterial({ color: "#f6f4f0", roughness: 0.95, side: THREE.DoubleSide });
 
-// A room's outline as a shape to lay flat, with holes (stair openings).
+// An outline as shapes to lay flat, cut open where stairs (or pools) are.
 // Shape coordinates are (x, -y) so that after laying the shape flat (rotating
 // -90° about X) plan y ends up on world +z.
-function useRoomShape(room: Room, openings: Vec[][]) {
-  const holes = useMemo(() => floorOpenings(room.polygon, openings), [room.polygon, openings]);
-  return useMemo(() => {
-    const flat = (poly: Vec[]) => poly.map(([x, y]) => new THREE.Vector2(M(x), -M(y)));
-    const shape = new THREE.Shape(flat(room.polygon));
-    shape.holes = holes.map((h) => new THREE.Path(flat(h)));
+export function flatShapes(outline: Vec[], openings: Vec[][]): THREE.Shape[] {
+  const flat = (poly: Vec[]) => poly.map(([x, y]) => new THREE.Vector2(M(x), -M(y)));
+  return cutOut(outline, openings).map((piece) => {
+    const shape = new THREE.Shape(flat(piece.outer));
+    shape.holes = piece.holes.map((h) => new THREE.Path(flat(h)));
     return shape;
-  }, [room.polygon, holes]);
+  });
+}
+
+function useRoomShape(room: Room, openings: Vec[][]) {
+  return useMemo(() => flatShapes(room.polygon, openings), [room.polygon, openings]);
 }
 
 // Ceilings are only drawn when walking (they'd hide everything from above),
@@ -99,6 +105,12 @@ function RoomCeiling({ room, height, openings }: { room: Room; height: number; o
   const geometry = useMemo(() => new THREE.ShapeGeometry(shape), [shape]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, M(height) - 0.003, 0]} material={CEILING} receiveShadow />;
+}
+
+// A room under a roof with sloped ceilings has the roof as its ceiling.
+function underSlopedRoof(shell: Shell, room: Room): boolean {
+  const c = room.polygon.reduce<Vec>((s, p) => [s[0] + p[0] / room.polygon.length, s[1] + p[1] / room.polygon.length], [0, 0]);
+  return shell.roofs.some((r) => r.ceiling === "sloped" && roofHeightAt(r, c) !== null);
 }
 
 // A stringer of open stairs: a beam under one side of a flight, following
@@ -130,9 +142,42 @@ const stringerLines = (f: Flight): [Vec, Vec][] => {
   });
 };
 
+// A box from a to b (plan cm with heights), `w` × `h` cm across.
+function beam(a: P, b: P, w: number, h: number): THREE.BufferGeometry {
+  const [dx, dy, dz] = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const run = Math.hypot(dx, dy);
+  const g = new THREE.BoxGeometry(M(Math.hypot(run, dz)) || 0.001, M(h), M(w));
+  g.rotateZ(Math.atan2(dz, run));
+  g.rotateY(-Math.atan2(dy, dx));
+  g.translate(M((a[0] + b[0]) / 2), M((a[2] + b[2]) / 2), M((a[1] + b[1]) / 2));
+  return g;
+}
+
+// Handrails: top rails, newel posts at the ends and balusters, in one mesh.
+function StairRails({ stair, walls }: { stair: Stair; walls: Wall[] }) {
+  const geometry = useMemo(() => {
+    const { rails, posts } = stairRails(stair, stair.rise ?? 280, walls);
+    if (!rails.length) return null;
+    const pieces = [
+      ...rails.map(([a, b]) => beam(a, b, 5, 4)),
+      ...posts.map(([a, b]) => {
+        // Upright: a thin box standing on the tread.
+        const g = new THREE.BoxGeometry(0.02, M(b[2] - a[2]), 0.02);
+        g.translate(M(a[0]), M((a[2] + b[2]) / 2), M(a[1]));
+        return g;
+      }),
+    ];
+    const merged = mergeGeometries(pieces);
+    pieces.forEach((p) => p.dispose());
+    return merged;
+  }, [stair, walls]);
+  useEffect(() => () => geometry?.dispose(), [geometry]);
+  return geometry ? <mesh geometry={geometry} castShadow material={RAIL} /> : null;
+}
+
 // Solid steps down to the floor, or for open stairs tread plates on
 // stringers (spiral: round a pole). `rise` is filled in by the level view.
-function StairView({ stair }: { stair: Stair }) {
+function StairView({ stair, walls }: { stair: Stair; walls: Wall[] }) {
   const material = useMaterials();
   const rise = stair.rise ?? 280;
   const spiral = stair.type === "spiral";
@@ -159,6 +204,7 @@ function StairView({ stair }: { stair: Stair }) {
         </mesh>
       )}
       {flights.flatMap((f, i) => stringerLines(f).map(([a, b], j) => <Stringer key={`${i}-${j}`} from={a} to={b} z0={f.z0} z1={f.z1} material={mat} />))}
+      <StairRails stair={stair} walls={walls} />
     </group>
   );
 }
@@ -267,14 +313,14 @@ function LevelView({ shell, active, slab, arriving }: { shell: Shell; active: bo
       {shell.rooms.map((room) => (
         <RoomFloor key={room.id} room={room} slab={slab} openings={openings} />
       ))}
-      {walk && active && shell.rooms.map((room) => <RoomCeiling key={`c-${room.id}`} room={room} height={shell.wallHeight} openings={stairsUp} />)}
+      {walk && active && shell.rooms.filter((room) => !underSlopedRoof(shell, room)).map((room) => <RoomCeiling key={`c-${room.id}`} room={room} height={shell.wallHeight} openings={stairsUp} />)}
       {shell.stairs.map((stair) => (
-        <StairView key={stair.id} stair={stair} />
+        <StairView key={stair.id} stair={stair} walls={shell.walls} />
       ))}
       {!plan && guards.map(([a, b], i) => <Guard key={i} from={a} to={b} />)}
       {/* Only the first level's view has the garden. */}
       <SiteView shell={shell} />
-      {showRoofs && shell.roofs.map((roof) => <RoofView key={roof.id} roof={roof} base={shell.wallHeight} />)}
+      {showRoofs && shell.roofs.map((roof) => <RoofView key={roof.id} roof={roof} base={shell.wallHeight} walls={shell.walls} />)}
       {shell.walls.map((wall) => (
         <WallView key={wall.id} wall={wall} shell={shell} openings={shell.openings.filter((o) => o.wall === wall.id)} active={active} slab={slab} />
       ))}

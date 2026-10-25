@@ -170,6 +170,42 @@ export function roofGables(roof: Roof): { a: Vec; b: Vec; ha: number; hb: number
   });
 }
 
+// Where a line on the plan (a wall's centreline) runs under the roof's
+// faces, within its footprint: stretches [s0, s1] cm from `a`, and the
+// underside's height above the walls' top at each end.
+export function roofOver(roof: Roof, a: Vec, b: Vec): { s0: number; s1: number; h0: number; h1: number }[] {
+  const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+  if (len < 1) return [];
+  const at = (t: number): Vec => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+  const footprint = eaves(roofFootprint(roof));
+  return roofFaces(roof).flatMap((face) => {
+    // Clip the segment to the face and the footprint (both convex).
+    let [t0, t1] = [0, 1];
+    for (const e of [...eaves(face.poly), ...footprint]) {
+      const [f0, f1] = [e.inward(a), e.inward(b)];
+      if (f0 < 0 && f1 < 0) return [];
+      if (f0 < 0) t0 = Math.max(t0, f0 / (f0 - f1));
+      else if (f1 < 0) t1 = Math.min(t1, f0 / (f0 - f1));
+    }
+    if (t1 - t0 < 1e-6) return [];
+    return [{ s0: t0 * len, s1: t1 * len, h0: face.height(at(t0)), h1: face.height(at(t1)) }];
+  });
+}
+
+// Whether a wall stands on the edge of the roof's footprint (an outside
+// wall, whose gable end the roof already draws).
+export function onRoofEdge(roof: Roof, a: Vec, b: Vec, thickness: number): boolean {
+  return eaves(roofFootprint(roof)).some((e) => Math.abs(e.inward(a)) <= thickness / 2 + 2 && Math.abs(e.inward(b)) <= thickness / 2 + 2);
+}
+
+// The roof's underside above a plan point (above the walls' top), if the
+// point is under it.
+export function roofHeightAt(roof: Roof, p: Vec): number | null {
+  if (!eaves(roofFootprint(roof)).every((e) => e.inward(p) >= -0.5)) return null;
+  for (const face of roofFaces(roof)) if (eaves(face.poly).every((e) => e.inward(p) >= -0.5)) return face.height(p);
+  return null;
+}
+
 // The highest point above the walls' top.
 export function roofRise(roof: Roof): number {
   return Math.max(0, ...roofFaces(roof).flatMap((f) => f.poly.map((p) => f.height(p))));

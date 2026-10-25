@@ -4,8 +4,9 @@
 import { useEffect, useMemo } from "react";
 import * as THREE from "three";
 import type { Vec } from "../model/geometry";
-import { roofFaces, roofGables, roofMaterial, roofThickness } from "../model/roofs";
-import type { Roof } from "../model/schema";
+import { onRoofEdge, roofFaces, roofFootprint, roofGables, roofMaterial, roofOver, roofThickness } from "../model/roofs";
+import { intersect } from "../model/polygonClip";
+import type { Roof, Wall } from "../model/schema";
 import { M } from "../model/units";
 import { useMaterials } from "./materials";
 
@@ -63,11 +64,53 @@ function roofGeometry(roof: Roof, base: number) {
   return { cover: build(cover), gables: gables.length ? build(gables) : null };
 }
 
+const LINING = new THREE.MeshStandardMaterial({ color: "#f6f4f0", roughness: 0.95 });
+
+// The plastered underside of a roof with sloped ceilings, a hair under the
+// roof, over the rooms (the footprint), facing down.
+function liningGeometry(roof: Roof, base: number): THREE.BufferGeometry | null {
+  const footprint = roofFootprint(roof);
+  const polys = roofFaces(roof).flatMap((face) =>
+    intersect(face.poly, footprint).map((poly) => facing(poly.map(([x, y]) => [M(x), M(base + face.height([x, y]) - 0.5), M(y)] as P3), [0, -1, 0])),
+  );
+  return polys.length ? build(polys) : null;
+}
+
+// Under a roof with sloped ceilings, inside walls rise from their top to the
+// roof's underside: solid pieces of the wall's thickness.
+function infillGeometry(roof: Roof, walls: Wall[], base: number): THREE.BufferGeometry | null {
+  const polys: P3[][] = [];
+  for (const w of walls) {
+    if (w.height !== undefined && w.height < base - 1) continue; // low walls stay low
+    if (onRoofEdge(roof, w.from, w.to, w.thickness)) continue;
+    const len = Math.hypot(w.to[0] - w.from[0], w.to[1] - w.from[1]);
+    const [dx, dy] = [(w.to[0] - w.from[0]) / len, (w.to[1] - w.from[1]) / len];
+    const half = w.thickness / 2;
+    const at = (s: number, side: number, h: number): P3 => [M(w.from[0] + dx * s - dy * side), M(base + h), M(w.from[1] + dy * s + dx * side)];
+    for (const { s0, s1, h0, h1 } of roofOver(roof, w.from, w.to)) {
+      if (Math.max(h0, h1) < 0.5) continue;
+      const mid = (s0 + s1) / 2;
+      const c: P3 = at(mid, 0, 0);
+      for (const side of [-half, half]) {
+        polys.push(facing([at(s0, side, 0), at(s1, side, 0), at(s1, side, h1), at(s0, side, h0)], [at(mid, side * 2, 0)[0] - c[0], 0, at(mid, side * 2, 0)[2] - c[2]]));
+      }
+      polys.push(facing([at(s0, -half, h0), at(s1, -half, h1), at(s1, half, h1), at(s0, half, h0)], [0, 1, 0]));
+      polys.push(facing([at(s0, -half, 0), at(s0, half, 0), at(s0, half, h0), at(s0, -half, h0)], [-dx, 0, -dy]));
+      polys.push(facing([at(s1, -half, 0), at(s1, half, 0), at(s1, half, h1), at(s1, -half, h1)], [dx, 0, dy]));
+    }
+  }
+  return polys.length ? build(polys) : null;
+}
+
 // `base`: the top of the walls it stands on, cm above the level's floor.
-export function RoofView({ roof, base }: { roof: Roof; base: number }) {
+// `walls`: the level's, for sloped ceilings.
+export function RoofView({ roof, base, walls }: { roof: Roof; base: number; walls: Wall[] }) {
   const material = useMaterials();
   const { cover, gables } = useMemo(() => roofGeometry(roof, base), [roof, base]);
-  useEffect(() => () => [cover, gables].forEach((g) => g?.dispose()), [cover, gables]);
+  const sloped = roof.ceiling === "sloped";
+  const infill = useMemo(() => (sloped ? infillGeometry(roof, walls, base) : null), [sloped, roof, walls, base]);
+  const lining = useMemo(() => (sloped ? liningGeometry(roof, base) : null), [sloped, roof, base]);
+  useEffect(() => () => [cover, gables, infill, lining].forEach((g) => g?.dispose()), [cover, gables, infill, lining]);
   const roofMat = useMemo(() => {
     const m = material(roofMaterial(roof)).clone();
     m.side = THREE.FrontSide;
@@ -84,6 +127,8 @@ export function RoofView({ roof, base }: { roof: Roof; base: number }) {
     <group userData={{ kind: "roof", id: roof.id }}>
       <mesh geometry={cover} castShadow receiveShadow material={roofMat} />
       {gables && <mesh geometry={gables} castShadow receiveShadow material={wallMat} />}
+      {infill && <mesh geometry={infill} castShadow receiveShadow material={wallMat} />}
+      {lining && <mesh geometry={lining} receiveShadow material={LINING} />}
     </group>
   );
 }
