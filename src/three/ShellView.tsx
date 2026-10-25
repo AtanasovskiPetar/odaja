@@ -10,6 +10,7 @@ import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { JoineryView } from "./JoineryView";
 import { SiteView } from "./SiteView";
+import { RoofView } from "./RoofView";
 import { useMaterials } from "./materials";
 import { planMaterials } from "./theme";
 
@@ -257,6 +258,10 @@ function LevelView({ shell, active, slab, arriving }: { shell: Shell; active: bo
   const finishes = useOdaja((s) => s.scene?.finishes);
   const clip = active && (plan || (wallsCut && !walk)) ? CUT_HEIGHT : Infinity;
   const stairsUp = useMemo(() => shell.stairs.map(stairOutline), [shell.stairs]);
+  // Roofs: not on the plan, nor over the viewed level when its walls are cut
+  // or roofs are switched off; always when walking.
+  const roofsOn = useOdaja((s) => s.showRoofs);
+  const showRoofs = !plan && (walk || ((roofsOn || !active) && !(active && wallsCut)));
   return (
     <>
       {shell.rooms.map((room) => (
@@ -269,6 +274,7 @@ function LevelView({ shell, active, slab, arriving }: { shell: Shell; active: bo
       {!plan && guards.map(([a, b], i) => <Guard key={i} from={a} to={b} />)}
       {/* Only the first level's view has the garden. */}
       <SiteView shell={shell} />
+      {showRoofs && shell.roofs.map((roof) => <RoofView key={roof.id} roof={roof} base={shell.wallHeight} />)}
       {shell.walls.map((wall) => (
         <WallView key={wall.id} wall={wall} shell={shell} openings={shell.openings.filter((o) => o.wall === wall.id)} active={active} slab={slab} />
       ))}

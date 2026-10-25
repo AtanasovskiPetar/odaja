@@ -5,6 +5,7 @@ import { addObject, deleteObject, duplicateObject, uniqueId } from "../model/ope
 import { deleteOpening, deleteRoom, deleteWall } from "../model/shellOps";
 import { deleteStair } from "../model/stairs";
 import { deleteArea, deleteFence, setPlot } from "../model/site";
+import { deleteRoof } from "../model/roofs";
 import { round } from "../model/units";
 import { useOdaja } from "../store";
 
@@ -56,7 +57,7 @@ export function deleteSelected() {
 export function deleteStructureSelection() {
   const { structureSelection: sel, applyShell, selectStructure } = useOdaja.getState();
   if (!sel || sel.kind === "area") return;
-  const remove = { wall: deleteWall, opening: deleteOpening, room: deleteRoom, stair: deleteStair, garden: deleteArea, fence: deleteFence, plot: () => setPlot(null) }[sel.kind];
+  const remove = { wall: deleteWall, opening: deleteOpening, room: deleteRoom, stair: deleteStair, roof: deleteRoof, garden: deleteArea, fence: deleteFence, plot: () => setPlot(null) }[sel.kind];
   applyShell(remove(sel.id));
   selectStructure(null);
 }

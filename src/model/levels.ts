@@ -107,6 +107,7 @@ export function levelShell(shell: Shell, levelId: string): ShellView {
     openings: shell.openings.filter((o) => ids.has(o.wall)),
     rooms: shell.rooms.filter((r) => levelOf(r, shell) === level.id),
     stairs,
+    roofs: shell.roofs.filter((r) => levelOf(r, shell) === level.id),
     ...(arriving.length ? { arriving } : {}),
   };
 }
@@ -132,6 +133,7 @@ export function levelDoc(doc: ShellDoc, levelId: string): ShellDoc {
     openings: (doc.openings ?? []).filter((o) => ids.has(o.wall)),
     rooms: (doc.rooms ?? []).filter(on),
     stairs: (doc.stairs ?? []).filter(on),
+    roofs: (doc.roofs ?? []).filter(on),
   };
 }
 
@@ -144,7 +146,7 @@ function mergeList<T>(list: T[], on: (x: T) => boolean, next: T[]): T[] {
   return [...rest.slice(0, index), ...next, ...rest.slice(index)];
 }
 
-const itemIds = (d: ShellDoc) => [...(d.walls ?? []), ...(d.openings ?? []), ...(d.rooms ?? []), ...(d.stairs ?? []), ...(d.areas ?? []), ...(d.fences ?? [])].map((x) => x.id);
+const itemIds = (d: ShellDoc) => [...(d.walls ?? []), ...(d.openings ?? []), ...(d.rooms ?? []), ...(d.stairs ?? []), ...(d.roofs ?? []), ...(d.areas ?? []), ...(d.fences ?? [])].map((x) => x.id);
 
 // Put an edited level view back into the whole shell. New walls and rooms are
 // given the level (except on the first level, where they need none); a
@@ -183,6 +185,7 @@ export function mergeLevelDoc(doc: ShellDoc, levelId: string, edited: ShellDoc):
     openings: mergeList(doc.openings ?? [], (o) => wallIds.has(o.wall), openings),
     rooms: mergeList(doc.rooms ?? [], on, (edited.rooms ?? []).map(tag)),
     ...(doc.stairs || edited.stairs?.length ? { stairs: mergeList(doc.stairs ?? [], on, (edited.stairs ?? []).map(tag)) } : {}),
+    ...(doc.roofs || edited.roofs?.length ? { roofs: mergeList(doc.roofs ?? [], on, (edited.roofs ?? []).map(tag)) } : {}),
   };
   // Keep files free of empty site keys they never had.
   for (const key of ["plot", "areas", "fences"] as const) {
@@ -207,7 +210,7 @@ export function levelOfItem(doc: ShellDoc, itemId: string): string | null {
   const opening = (doc.openings ?? []).find((o) => o.id === itemId);
   const host = opening && (doc.walls ?? []).find((w) => w.id === opening.wall);
   if (host) return levelOf(host, doc);
-  const room = (doc.rooms ?? []).find((r) => r.id === itemId) ?? (doc.stairs ?? []).find((s) => s.id === itemId);
+  const room = (doc.rooms ?? []).find((r) => r.id === itemId) ?? (doc.stairs ?? []).find((s) => s.id === itemId) ?? (doc.roofs ?? []).find((r) => r.id === itemId);
   return room ? levelOf(room, doc) : null;
 }
 
@@ -283,6 +286,7 @@ export function deleteLevel(levelId: string) {
       openings: (doc.openings ?? []).filter((o) => !gone.has(o.wall)),
       rooms: (doc.rooms ?? []).filter((r) => !on(r)),
       ...(doc.stairs ? { stairs: doc.stairs.filter((s) => !on(s)) } : {}),
+      ...(doc.roofs ? { roofs: doc.roofs.filter((r) => !on(r)) } : {}),
     };
   };
 }

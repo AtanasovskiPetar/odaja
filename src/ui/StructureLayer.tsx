@@ -21,7 +21,8 @@ import { riseFrom } from "../model/levels";
 import { enclosedArea } from "../model/rooms";
 import { addStair, defaultStairSize, stairOutline, updateStair } from "../model/stairs";
 import { addArea, addFences, AREA_LOOK, fenceOutlines, fenceThickness, moveArea, moveFence, setPlot } from "../model/site";
-import { useGardenTools } from "./gardenTools";
+import { useDrawTools } from "./drawTools";
+import { addRoof, roofOutline } from "../model/roofs";
 import { ShellSchema, type Opening, type Shell, type ShellDoc, type Wall } from "../model/schema";
 import { addOpening, addRectRoom, addWalls, moveCorner, moveWall, OPENING_DEFAULTS, updateOpening } from "../model/shellOps";
 import { snapPoint, type Snap } from "../model/snap";
@@ -42,7 +43,7 @@ type Drag =
   | { kind: "shift"; target: "garden" | "fence"; id: string; start: Vec; startX: number; startY: number; moved: boolean; preview: ShellDoc | null }
   | { kind: "click"; startX: number; startY: number };
 
-type Hit = { kind: "wall" | "opening" | "room" | "stair" | "garden" | "fence" | "plot"; id: string } | { kind: "area"; polygon: Vec[] } | null;
+type Hit = { kind: "wall" | "opening" | "room" | "stair" | "roof" | "garden" | "fence" | "plot"; id: string } | { kind: "area"; polygon: Vec[] } | null;
 
 // Distance from a point to a segment.
 function toSegment(p: Vec, a: Vec, b: Vec): number {
@@ -88,6 +89,9 @@ function hitTest(shell: Shell, p: Vec, tol: number): Hit {
   if (stair) return { kind: "stair", id: stair.id };
   const fence = shell.fences.find((f) => toSegment(p, f.from, f.to) <= fenceThickness(f) / 2 + tol);
   if (fence) return { kind: "fence", id: fence.id };
+  // A roof by its eaves (dashed on the plan).
+  const roof = shell.roofs.find((r) => nearOutline(p, roofOutline(r), tol));
+  if (roof) return { kind: "roof", id: roof.id };
   if (shell.plot && nearOutline(p, shell.plot.polygon, tol)) return { kind: "plot", id: "plot" };
   const room = [...shell.rooms].reverse().find((r) => pointInPolygon(p, r.polygon));
   if (room) return { kind: "room", id: room.id };
@@ -140,7 +144,7 @@ export function StructureLayer() {
   const radius = proj ? SNAP_PX / proj.pxPerCm : 10;
   const snap: Snap | null = useMemo(() => {
     if (!cursor || !shell) return null;
-    if (tool === "wall" || tool === "fence" || tool === "garden" || tool === "plot") return snapPoint(cursor, shell, radius, chain.at(-1));
+    if (tool === "wall" || tool === "fence" || tool === "garden" || tool === "plot" || tool === "roof") return snapPoint(cursor, shell, radius, chain.at(-1));
     if (tool === "room") return snapPoint(cursor, shell, radius, undefined);
     return null;
   }, [cursor, shell, tool, chain, radius]);
@@ -161,23 +165,24 @@ export function StructureLayer() {
     return { wall: best.wall, offset, width, span };
   }, [cursor, shell, tool, radius]);
 
-  const commitWall = (from: Vec, to: Vec) => applyShell(tool === "fence" ? addFences([from, to], { style: useGardenTools.getState().style }) : addWalls([from, to], thickness));
+  const commitWall = (from: Vec, to: Vec) => applyShell(tool === "fence" ? addFences([from, to], { style: useDrawTools.getState().style }) : addWalls([from, to], thickness));
   const chainTool = tool === "wall" || tool === "fence";
-  const polygonTool = tool === "garden" || tool === "plot";
+  const polygonTool = tool === "garden" || tool === "plot" || tool === "roof";
 
-  // Close the polygon being drawn into an outdoor area or the plot.
+  // Close the polygon being drawn into an outdoor area, the plot or a roof.
   const closePolygon = (points: Vec[]) => {
     setChain([]);
     setTyped("");
     if (points.length < 3) return;
-    const before = new Set(shell?.areas.map((a) => a.id));
-    const kind = useGardenTools.getState().kind;
-    const change = tool === "plot" ? setPlot(points) : addArea({ name: AREA_LOOK[kind].label, kind, polygon: points });
+    const before = new Set([...(shell?.areas ?? []), ...(shell?.roofs ?? [])].map((a) => a.id));
+    const { kind, roof } = useDrawTools.getState();
+    const change = tool === "plot" ? setPlot(points) : tool === "roof" ? addRoof({ type: roof, polygon: points }) : addArea({ name: AREA_LOOK[kind].label, kind, polygon: points });
     applyShell(change).then(() => {
       setTool("select");
       if (tool === "plot") return selectStructure({ kind: "plot", id: "plot" });
-      const added = useOdaja.getState().shell?.areas.find((a) => !before.has(a.id));
-      if (added) selectStructure({ kind: "garden", id: added.id });
+      const s = useOdaja.getState().shell;
+      const added = tool === "roof" ? s?.roofs.find((r) => !before.has(r.id)) : s?.areas.find((a) => !before.has(a.id));
+      if (added) selectStructure({ kind: tool === "roof" ? "roof" : "garden", id: added.id });
     });
   };
 
@@ -470,8 +475,9 @@ export function StructureLayer() {
       const fence = shell.fences.find((x) => x.id === h.id);
       return fence && <g>{[[fence.from, fence.to]].map(([a, b], i) => <line key={i} x1={toScreen(a)[0]} y1={toScreen(a)[1]} x2={toScreen(b)[0]} y2={toScreen(b)[1]} className={`${className} fence-line`} />)}</g>;
     }
-    if (h.kind === "garden" || h.kind === "plot") {
-      const polygon = h.kind === "plot" ? shell.plot?.polygon : shell.areas.find((a) => a.id === h.id)?.polygon;
+    if (h.kind === "garden" || h.kind === "plot" || h.kind === "roof") {
+      const roof = h.kind === "roof" ? shell.roofs.find((r) => r.id === h.id) : undefined;
+      const polygon = h.kind === "plot" ? shell.plot?.polygon : roof ? roofOutline(roof) : shell.areas.find((a) => a.id === h.id)?.polygon;
       return polygon && <polygon points={pts(polygon.map(toScreen))} className={`${className} area`} />;
     }
     const polygon = h.kind === "area" ? h.polygon : shell.rooms.find((r) => r.id === h.id)?.polygon;

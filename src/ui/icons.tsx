@@ -177,6 +177,14 @@ export const IconPlot = icon(
   </>,
 );
 
+// A house's roof: two slopes over the eaves.
+export const IconRoof = icon(
+  <>
+    <path d="M2 10.5 10 4l8 6.5" />
+    <path d="M4.5 9v7.5h11V9" opacity={0.55} strokeWidth={1.1} />
+  </>,
+);
+
 export const IconWindow = icon(
   <>
     <path d="M2 10h2.5M15.5 10H18" strokeWidth={3.2} strokeLinecap="square" />

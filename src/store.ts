@@ -33,12 +33,12 @@ export interface WalkPose {
 // Furnish: move furniture, walls are fixed. Structure: edit walls, doors,
 // windows and rooms, furniture is faded and fixed.
 export type EditMode = "furnish" | "structure";
-export type Tool = "select" | "wall" | "room" | "door" | "window" | "stairs" | "garden" | "fence" | "plot";
+export type Tool = "select" | "wall" | "room" | "door" | "window" | "stairs" | "roof" | "garden" | "fence" | "plot";
 // A wall, opening, room or stair; in the garden an outdoor area ("garden"), a
 // fence or the plot; or an enclosed area with no room yet, which can be
 // turned into one.
 export type StructureSelection =
-  | { kind: "wall" | "opening" | "room" | "stair" | "garden" | "fence" | "plot"; id: string }
+  | { kind: "wall" | "opening" | "room" | "stair" | "roof" | "garden" | "fence" | "plot"; id: string }
   | { kind: "area"; polygon: [number, number][] }
   | null;
 
@@ -126,6 +126,8 @@ interface OdajaState {
   tool: Tool;
   hideFurniture: boolean;
   showChanges: boolean;
+  // Roofs in the 3D view (they hide the rooms under them).
+  showRoofs: boolean;
   // The issue being looked at (highlighted on the plan).
   focusedIssue: string | null;
   dialog: Dialog;
@@ -179,6 +181,7 @@ interface OdajaState {
   setWallThickness(cm: number): void;
   toggleHideFurniture(): void;
   toggleShowChanges(): void;
+  toggleRoofs(): void;
   focusIssue(key: string | null): void;
   openDialog(dialog: Dialog): void;
   libraryChanged(): void;
@@ -451,6 +454,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     tool: "select",
     hideFurniture: false,
     showChanges: true,
+    showRoofs: true,
     focusedIssue: null,
     dialog: null,
     libraryVersion: 0,
@@ -602,6 +606,10 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
     toggleShowChanges() {
       set((s) => ({ showChanges: !s.showChanges }));
+    },
+
+    toggleRoofs() {
+      set((s) => ({ showRoofs: !s.showRoofs }));
     },
 
     focusIssue(focusedIssue) {

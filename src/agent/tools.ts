@@ -6,7 +6,7 @@
 import { z } from "zod";
 import { followWalls } from "../model/attach";
 import { formatJson } from "../model/format";
-import { clearances, objectFootprint, polygonArea, rectEdges, roomAt, roomClearSize, shellBounds, wallEdges, type Vec } from "../model/geometry";
+import { clearances, objectFootprint, polygonArea, rectEdges, roomAt, roomClearSize, shellBounds, wallEdges, wallOutline, type Vec } from "../model/geometry";
 import { issuesFor } from "../model/issues";
 import { TEMPLATES, TEMPLATES_BY_ID, templateParams } from "../model/library";
 import { addObject, deleteObject, setObjectProps, setTemplateParams, uniqueId, type ObjectDoc } from "../model/operations";
@@ -44,7 +44,8 @@ import {
 } from "../model/shellOps";
 import { slugify } from "../model/defaults";
 import { addStair, defaultStairSize, deleteStair, stairOutline, stepSizes, updateStair } from "../model/stairs";
-import { AREA_KINDS, FENCE_STYLES, STAIR_TYPES, type Stair } from "../model/schema";
+import { AREA_KINDS, FENCE_STYLES, ROOF_TYPES, STAIR_TYPES, type Roof, type Stair } from "../model/schema";
+import { addRoof, deleteRoof, hullOf, ROOF_LOOK, roofOutline, roofOverhang, roofPitch, roofRidge, roofRise, updateRoof } from "../model/roofs";
 import { addArea, addFences, AREA_LOOK, deleteArea, deleteFence, FENCE_LOOK, fenceHeight, fenceLength, setPlot, updateArea, updateFence, updatePlot } from "../model/site";
 import { quantities } from "../model/finishes";
 import { addFinish, clearRoomWalls, finishRoomWalls, removeFinishes, setRoomFloor } from "../model/finishOps";
@@ -258,6 +259,18 @@ function describeStair(stair: Stair, whole: Shell) {
   };
 }
 
+const describeRoof = (r: Roof) => ({
+  id: r.id,
+  type: r.type,
+  polygon: r.polygon,
+  pitch: r.type === "flat" ? undefined : roofPitch(r),
+  overhang: roofOverhang(r),
+  ridge: r.type === "gable" ? roofRidge(r) : undefined,
+  downTo: r.type === "shed" ? (r.downTo ?? "south") : undefined,
+  ridgeAboveWalls: Math.round(roofRise(r)),
+  eaves: roofOutline(r).map(([x, y]) => [r1(x), r1(y)]),
+});
+
 // The garden is on the first level.
 const siteLevel = (shell: Shell) => levelsOf(shell)[0].id;
 
@@ -400,6 +413,7 @@ export const TOOLS: ToolDef[] = [
         }),
         walls: shell.walls.map((w) => ({ id: w.id, from: w.from, to: w.to, thickness: w.thickness })),
         stairs: shell.stairs.length ? shell.stairs.map((st) => describeStair(st, loaded.shell)) : undefined,
+        roofs: shell.roofs.length ? shell.roofs.map(describeRoof) : undefined,
         garden:
           shell.plot || shell.areas.length || shell.fences.length
             ? {
@@ -1270,6 +1284,59 @@ export const TOOLS: ToolDef[] = [
       const added = shell.stairs.find((s) => !before.has(s.id))!;
       const view = onLevel(whole, loaded.scene, level);
       return { added: describeStair(added, whole), issues: issuesFor(view.scene, view.shell).filter((i) => i.targets.some((t) => t.id === added.id)).map((i) => i.message) };
+    },
+  }),
+
+  tool({
+    name: "set_roof",
+    description:
+      "Add, change or delete a roof. A roof stands on a level's walls (the top level, usually: pass level) and covers an outline: polygon, or by default the outer faces of that level's walls. It covers the outline's convex hull, so an L-shaped house takes two roofs (one per wing). type: gable (ridge along x or y, default along the longer side; the ends are gable walls), hip (slopes on every side), shed (one slope down to down_to: north, east, south or west), flat. pitch in degrees (gable 35, hip 30, shed 15), overhang in cm past the outline (40; flat 10), thickness (20), material (a name or #rrggbb). The roof hides the rooms under it in the 3D view, so screenshots of the inside need the level below or the plan.",
+    input: z.object({
+      scene: sceneArg,
+      id: z.string().optional().describe("existing roof to change or delete; omit to add"),
+      level: z.string().optional().describe("level for a new roof (default: the one open in the app)"),
+      type: z.enum(ROOF_TYPES).optional(),
+      polygon: z.array(vec2).min(3).optional(),
+      pitch: z.number().min(0).max(75).optional(),
+      overhang: z.number().min(0).max(200).optional(),
+      ridge: z.enum(["x", "y"]).optional(),
+      down_to: z.enum(["north", "east", "south", "west"]).optional(),
+      thickness: z.number().min(1).max(100).optional(),
+      material: z.string().optional(),
+      delete: z.boolean().optional(),
+    }),
+    async run(input, ctx) {
+      const fields = Object.fromEntries(
+        Object.entries({ type: input.type, polygon: input.polygon, pitch: input.pitch, overhang: input.overhang, ridge: input.ridge, downTo: input.down_to, thickness: input.thickness, material: input.material }).filter(([, v]) => v !== undefined),
+      );
+      if (input.id) {
+        const id = input.id;
+        if (input.delete) {
+          await changeShell(ctx, input.scene, deleteRoof(id), { item: id });
+          return `deleted ${id}`;
+        }
+        const { levelShell: shell } = await changeShell(
+          ctx,
+          input.scene,
+          (doc) => {
+            if (!doc.roofs?.some((r) => r.id === id)) throw new ToolError(`no roof "${id}"`);
+            // A new type without its own pitch and overhang takes that type's.
+            const retype = input.type ? { pitch: input.pitch, overhang: input.overhang } : {};
+            return updateRoof(id, { ...retype, ...fields })(doc);
+          },
+          { item: id },
+        );
+        return { roof: describeRoof(shell.roofs.find((r) => r.id === id)!) };
+      }
+      const loaded = await loadScene(ctx, input.scene);
+      const level = pickLevel(ctx, loaded.shell, input.level);
+      const walls = levelShell(loaded.shell, level).walls;
+      const polygon = (input.polygon as Vec[] | undefined) ?? (walls.length ? hullOf(walls.flatMap(wallOutline)) : undefined);
+      if (!polygon) throw new ToolError("that level has no walls; give polygon");
+      const before = new Set(loaded.shell.roofs.map((r) => r.id));
+      const { levelShell: shell } = await changeShell(ctx, input.scene, addRoof({ type: input.type ?? "gable", ...fields, polygon }), { level });
+      const added = shell.roofs.find((r) => !before.has(r.id))!;
+      return { added: describeRoof(added), label: ROOF_LOOK[added.type].label };
     },
   }),
 

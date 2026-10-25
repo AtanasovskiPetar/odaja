@@ -3573,3 +3573,19 @@ button.link.danger {
   stroke: color-mix(in srgb, var(--paper) 55%, transparent);
   stroke-width: 2.5px;
 }
+
+/* Roofs on the plan: the eaves dashed, ridges and hips thin. */
+.plan-overlay .roofs .eaves {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+}
+
+.plan-overlay .roofs .face {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 0.6;
+  stroke-dasharray: 2 3;
+  opacity: 0.8;
+}

@@ -25,6 +25,7 @@ import {
 import { issuesFor, objectOutlines } from "../model/issues";
 import { levelById, levelShell, levelsTopDown, stairsArriving } from "../model/levels";
 import { stairOutline, stairPath, stairTreads } from "../model/stairs";
+import { roofFaces, roofOutline } from "../model/roofs";
 import type { Stair } from "../model/schema";
 import type { Shell } from "../model/schema";
 import { M } from "../model/units";
@@ -362,8 +363,9 @@ function IssueHighlights({ shell, toScreen }: { shell: Shell; toScreen: ToScreen
             const r = [pointOnWall(wall, o.offset, -h), pointOnWall(wall, o.offset + o.width, -h), pointOnWall(wall, o.offset + o.width, h), pointOnWall(wall, o.offset, h)];
             return <polygon key={`${issue.key}-${i}`} points={poly(r)} className={cls} />;
           }
-          if (t.kind === "garden" || t.kind === "plot") {
-            const polygon = t.kind === "plot" ? shell.plot?.polygon : shell.areas.find((a) => a.id === t.id)?.polygon;
+          if (t.kind === "garden" || t.kind === "plot" || t.kind === "roof") {
+            const roof = t.kind === "roof" ? shell.roofs.find((r) => r.id === t.id) : undefined;
+            const polygon = t.kind === "plot" ? shell.plot?.polygon : roof ? roofOutline(roof) : shell.areas.find((a) => a.id === t.id)?.polygon;
             return polygon ? <polygon key={`${issue.key}-${i}`} points={poly(polygon)} className={cls} /> : null;
           }
           if (t.kind === "stair") {
@@ -413,6 +415,22 @@ function Stairs({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
       ))}
       {shell.stairs.map((s) => (
         <StairDrawing key={s.id} stair={s} rise={s.rise ?? 280} toScreen={toScreen} />
+      ))}
+    </g>
+  );
+}
+
+// The level's roofs as a roof plan draws them: the eaves (with the
+// overhang) dashed, ridges and hips thin.
+function RoofLines({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  const poly = (points: Vec[]) => points.map((p) => toScreen(p).join(",")).join(" ");
+  return (
+    <g className="roofs">
+      {shell.roofs.map((roof) => (
+        <g key={roof.id}>
+          <polygon points={poly(roofOutline(roof))} className="eaves" />
+          {roofFaces(roof).length > 1 && roofFaces(roof).map((f, i) => <polygon key={i} points={poly(f.poly)} className="face" />)}
+        </g>
       ))}
     </g>
   );
@@ -482,6 +500,7 @@ export function PlanOverlay() {
       <LevelBelow toScreen={toScreen} />
       <WallChanges shell={shell} toScreen={toScreen} />
       <Stairs shell={shell} toScreen={toScreen} />
+      <RoofLines shell={shell} toScreen={toScreen} />
       <DoorSwings shell={shell} toScreen={toScreen} />
       <RoomLabels shell={shell} toScreen={toScreen} />
       <WallDims shell={shell} toScreen={toScreen} />

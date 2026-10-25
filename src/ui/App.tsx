@@ -17,9 +17,10 @@ import { PartInspector, PartsSection } from "./PartsEditor";
 import { PlanOverlay } from "./PlanOverlay";
 import { ScenesSection } from "./ScenesSection";
 import { STAIR_NAMES } from "./StructureInspector";
-import { useGardenTools } from "./gardenTools";
+import { useDrawTools } from "./drawTools";
 import { AREA_LOOK, FENCE_LOOK } from "../model/site";
-import { AREA_KINDS, FENCE_STYLES } from "../model/schema";
+import { AREA_KINDS, FENCE_STYLES, ROOF_TYPES } from "../model/schema";
+import { ROOF_LOOK } from "../model/roofs";
 import { LevelsSection } from "./LevelsSection";
 import { levelsTopDown } from "../model/levels";
 import { Welcome, OpenFolderDialog } from "./Welcome";
@@ -56,6 +57,7 @@ import {
   IconArea,
   IconFence,
   IconPlot,
+  IconRoof,
   IconStructure,
   IconSwatch,
   IconUndo,
@@ -162,7 +164,7 @@ function useShortcuts() {
 
       if (s.mode === "structure") {
         // Escape and Enter belong to the structure layer (drawing).
-        const tools: Record<string, Tool> = { v: "select", w: "wall", r: "room", d: "door", n: "window", s: "stairs", a: "garden", f: "fence", b: "plot" };
+        const tools: Record<string, Tool> = { v: "select", w: "wall", r: "room", d: "door", n: "window", s: "stairs", o: "roof", a: "garden", f: "fence", b: "plot" };
         if (tools[key]) return s.setTool(tools[key]);
         if (key === "h") return s.toggleHideFurniture();
         if ((key === "delete" || key === "backspace") && s.structureSelection) {
@@ -338,6 +340,21 @@ function RoomsSection() {
           </ul>
         </>
       )}
+      {shell.roofs.length > 0 && (
+        <>
+          <h2 className="spaced">Roofs</h2>
+          <ul className="list">
+            {shell.roofs.map((r) => (
+              <li key={r.id}>
+                <button className={isSelected("roof", r.id) ? "active" : ""} onClick={() => selectStructure({ kind: "roof", id: r.id })}>
+                  {r.id}
+                  <span className="muted">{ROOF_LOOK[r.type].label}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
       {shell.stairs.length > 0 && (
         <>
           <h2 className="spaced">Stairs</h2>
@@ -365,6 +382,7 @@ const TOOLS: { tool: Tool; label: string; key: string; Icon: typeof IconSelect }
   { tool: "door", label: "Door", key: "D", Icon: IconDoor },
   { tool: "window", label: "Window", key: "N", Icon: IconWindow },
   { tool: "stairs", label: "Stairs", key: "S", Icon: IconStairs },
+  { tool: "roof", label: "Roof", key: "O", Icon: IconRoof },
   { tool: "garden", label: "Area", key: "A", Icon: IconArea },
   { tool: "fence", label: "Fence", key: "F", Icon: IconFence },
   { tool: "plot", label: "Plot", key: "B", Icon: IconPlot },
@@ -377,19 +395,31 @@ function StructureToolbar() {
   const setThickness = useOdaja((s) => s.setWallThickness);
   const hideFurniture = useOdaja((s) => s.hideFurniture);
   const toggleHideFurniture = useOdaja((s) => s.toggleHideFurniture);
-  const { kind: gardenKind, style: fenceStyle, setKind: setGardenKind, setStyle: setFenceStyle } = useGardenTools();
+  const { kind: gardenKind, style: fenceStyle, roof: roofType, setKind: setGardenKind, setStyle: setFenceStyle, setRoof: setRoofType } = useDrawTools();
   return (
     <div className="toolbar secondary">
       <div className="seg">
+        {/* Only the active tool is labelled, so all of them fit. */}
         {TOOLS.map(({ tool: id, label, key, Icon }) => (
-          <button key={id} className={tool === id ? "active" : ""} onClick={() => setTool(id)} title={`${label} (${key})`}>
+          <button key={id} className={tool === id ? "active" : ""} onClick={() => setTool(id)} title={`${label} (${key})`} aria-label={label}>
             <Icon size={16} />
-            {label}
+            {tool === id && label}
           </button>
         ))}
       </div>
       <span className="sep" />
-      {tool === "garden" ? (
+      {tool === "roof" ? (
+        <label className="inline-field" title="What new roofs are">
+          Type
+          <select value={roofType} onChange={(e) => setRoofType(e.target.value as typeof roofType)}>
+            {ROOF_TYPES.map((k) => (
+              <option key={k} value={k}>
+                {ROOF_LOOK[k].label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : tool === "garden" ? (
         <label className="inline-field" title="What new areas are">
           Kind
           <select value={gardenKind} onChange={(e) => setGardenKind(e.target.value as typeof gardenKind)}>
@@ -465,6 +495,9 @@ function Toolbar() {
   const sunOn = useSun((s) => s.on);
   const setSunOn = useSun((s) => s.setOn);
   const toggleShowChanges = useOdaja((s) => s.toggleShowChanges);
+  const hasRoofs = useOdaja((s) => (s.wholeShell?.roofs.length ?? 0) > 0);
+  const showRoofs = useOdaja((s) => s.showRoofs);
+  const toggleRoofs = useOdaja((s) => s.toggleRoofs);
 
   return (
     <div className="toolbar">
@@ -500,6 +533,11 @@ function Toolbar() {
       {viewMode === "3d" && (
         <button className={`icon-only ${wallsCut ? "active" : ""}`} onClick={toggleWallsCut} title="Cut walls at 110 cm (C)">
           <IconCut size={17} />
+        </button>
+      )}
+      {viewMode === "3d" && hasRoofs && (
+        <button className={`icon-only ${showRoofs ? "active" : ""}`} onClick={toggleRoofs} title="Show the roof (hide it to look inside)">
+          <IconRoof size={17} />
         </button>
       )}
       {viewMode === "plan" && (

@@ -1,9 +1,11 @@
 // Inspector for Structure mode: edit the selected wall, door/window, room or
 // stair, or turn an enclosed area into a room.
-import { formatCm, polygonArea, wallLength } from "../model/geometry";
+import { formatCm, polygonArea, wallLength, wallOutline } from "../model/geometry";
+import { addRoof, deleteRoof, hullOf, ROOF_LOOK, roofOverhang, roofPitch, roofRidge, roofRise, roofThickness, updateRoof } from "../model/roofs";
+import { useDrawTools } from "./drawTools";
 import { levelAbove } from "../model/levels";
 import { addRoom, deleteOpening, deleteRoom, deleteWall, setWallLength, updateOpening, updateRoom, updateWall } from "../model/shellOps";
-import { AREA_KINDS, DEFAULT_SHELL, FENCE_STYLES, STAIR_TYPES, type Area, type Fence, type Stair } from "../model/schema";
+import { AREA_KINDS, DEFAULT_SHELL, FENCE_STYLES, ROOF_TYPES, STAIR_TYPES, type Area, type Fence, type Roof, type Stair } from "../model/schema";
 import { addGate, AREA_LOOK, deleteArea, deleteFence, FENCE_LOOK, fenceHeight, fenceLength, fenceThickness, setPlot, updateArea, updateFence, updatePlot } from "../model/site";
 import { defaultStairSize, deleteStair, flightWidth, stepSizes, updateStair } from "../model/stairs";
 import { useOdaja } from "../store";
@@ -40,6 +42,7 @@ export function StructureInspector() {
       door: "Click on a wall to add a door. It's kept clear of corners and other openings.",
       window: "Click on a wall to add a window.",
       stairs: "Click where the stairs go: a straight flight up to the level above. Then drag it into place and set its type, size and direction here.",
+      roof: "Click the corners of the outline the roof covers (usually the outer wall faces), then the first corner again or Enter. An L-shaped house takes two roofs.",
       garden: "Click the corners of a lawn, terrace, path or pool (pick the kind in the toolbar). Click the first corner again, double-click or press Enter to finish.",
       fence: "Click to start a fence, click again for each corner. Double-click or Esc to finish. Add gates in its inspector.",
       plot: "Click the corners of the plot's boundary, then the first corner again (or Enter) to finish. Drawing a new plot replaces the old one.",
@@ -47,6 +50,21 @@ export function StructureInspector() {
     return (
       <section className="inspector muted">
         {hints[tool]}
+        {tool === "roof" && shell.walls.length > 0 && (
+          <div className="actions">
+            <button
+              onClick={async () => {
+                const before = new Set(shell.roofs.map((r) => r.id));
+                await applyShell(addRoof({ type: useDrawTools.getState().roof, polygon: hullOf(shell.walls.flatMap(wallOutline)) }));
+                const added = useOdaja.getState().shell?.roofs.find((r) => !before.has(r.id));
+                useOdaja.getState().setTool("select");
+                if (added) selectStructure({ kind: "roof", id: added.id });
+              }}
+            >
+              Roof over this level's walls
+            </button>
+          </div>
+        )}
         <SharedNote />
       </section>
     );
@@ -164,6 +182,10 @@ export function StructureInspector() {
   if (selection.kind === "stair") {
     const stair = shell.stairs.find((s) => s.id === selection.id);
     return stair ? <StairInspector stair={stair} /> : null;
+  }
+  if (selection.kind === "roof") {
+    const roof = shell.roofs.find((r) => r.id === selection.id);
+    return roof ? <RoofInspector roof={roof} /> : null;
   }
   if (selection.kind === "garden") {
     const area = shell.areas.find((a) => a.id === selection.id);
@@ -386,6 +408,69 @@ function PlotInspector() {
           }}
         >
           Delete plot
+        </button>
+      </div>
+      <SharedNote />
+    </section>
+  );
+}
+
+function RoofInspector({ roof }: { roof: Roof }) {
+  const applyShell = useOdaja((s) => s.applyShell);
+  const selectStructure = useOdaja((s) => s.selectStructure);
+  const set = (patch: Parameters<typeof updateRoof>[1]) => applyShell(updateRoof(roof.id, patch));
+  const look = ROOF_LOOK[roof.type];
+  return (
+    <section className="inspector">
+      <div className="group-title">{look.label} · {roof.id}</div>
+      <label className="field">
+        <span>Type</span>
+        <select value={roof.type} onChange={(e) => set({ type: e.target.value as Roof["type"], pitch: undefined, overhang: undefined })}>
+          {ROOF_TYPES.map((k) => (
+            <option key={k} value={k}>
+              {ROOF_LOOK[k].label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="grid-2">
+        {roof.type !== "flat" && (
+          <Field label="Pitch" numeric suffix="°" min={0} max={75} value={roofPitch(roof)} onCommit={(v) => set({ pitch: Number(v) === look.pitch ? undefined : Number(v) })} />
+        )}
+        <Field label="Overhang" numeric suffix="cm" min={0} max={200} value={roofOverhang(roof)} onCommit={(v) => set({ overhang: Number(v) === look.overhang ? undefined : Number(v) })} />
+        <Field label="Thickness" numeric suffix="cm" min={1} max={100} value={roofThickness(roof)} onCommit={(v) => set({ thickness: Number(v) })} />
+      </div>
+      {roof.type === "gable" && (
+        <div className="actions">
+          <button onClick={() => set({ ridge: roofRidge(roof) === "x" ? "y" : "x" })}>Turn the ridge</button>
+        </div>
+      )}
+      {roof.type === "shed" && (
+        <label className="field">
+          <span>Slopes down to</span>
+          <select value={roof.downTo ?? "south"} onChange={(e) => set({ downTo: e.target.value as NonNullable<Roof["downTo"]> })}>
+            {(["north", "east", "south", "west"] as const).map((d) => (
+              <option key={d} value={d}>
+                {d[0].toUpperCase() + d.slice(1)}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <MaterialSelect label="Covering" value={roof.material ?? null} allowNone="Roof colour" onChange={(m) => set({ material: m ?? undefined })} />
+      <p className="hint">
+        {roof.type === "flat" ? "Flat" : `Rises ${formatCm(roofRise(roof))} cm above the walls`}. Hide roofs with the roof button in the 3D view to look inside. To change its outline, draw it again.
+      </p>
+      <div className="actions">
+        <button
+          className="danger"
+          onClick={() => {
+            applyShell(deleteRoof(roof.id));
+            selectStructure(null);
+          }}
+          title="Delete (⌫)"
+        >
+          Delete roof
         </button>
       </div>
       <SharedNote />

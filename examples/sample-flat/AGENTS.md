@@ -12,7 +12,7 @@ immediately. To change the design, edit the files directly.
 | Path | Contents |
 |---|---|
 | `project.json` | Project name and the named **materials** (colours) |
-| `shell.json` | The home as it is: its **levels** (storeys), **walls**, **openings** (doors, windows), **rooms** (floors), **stairs**, and the garden: the **plot**, outdoor **areas** and **fences** |
+| `shell.json` | The home as it is: its **levels** (storeys), **walls**, **openings** (doors, windows), **rooms** (floors), **stairs**, **roofs**, and the garden: the **plot**, outdoor **areas** and **fences** |
 | `shells/*.json` | Other versions of the walls, for renovation options that move or remove walls |
 | `assets/models/*.glb` | 3D models used by objects (imported files are converted to GLB) |
 | `assets/textures/*` | Photo textures used by tile materials |
@@ -218,6 +218,32 @@ treads from one level to the other.
   flight up 280 cm needs about 100 × 420 cm. The app warns about steeper ones,
   furniture in their way (under open stairs, furniture fits where the treads
   are above it), and furniture standing over the opening above.
+
+### Roofs
+
+```json
+"roofs": [
+  { "id": "roof-1", "level": "first-floor", "type": "gable", "polygon": [[-12.5, -12.5], [937.5, -12.5], [937.5, 737.5], [-12.5, 737.5]], "pitch": 35 }
+]
+```
+
+A roof stands on its `level`'s walls (on top of the level's wall height)
+and covers `polygon`, usually the outer faces of the walls. It covers the
+polygon's **convex hull**, so an L-shaped house takes two roofs, one per
+wing.
+
+- `type`: `gable` (two slopes meeting at a ridge; the ends are gable walls
+  in the walls' material), `hip` (slopes on every side), `shed` (one slope)
+  or `flat`.
+- `pitch`: the slope in degrees (default gable 35, hip 30, shed 15).
+  `overhang`: how far the roof reaches past the outline, cm (default 40,
+  flat 10). `thickness` (default 20, flat 30). `material` (default a tile
+  red; flat and shed roofs grey).
+- `ridge` (gable): `x` or `y`, the direction the ridge runs (default: along
+  the longer side). `downTo` (shed): `north`, `east`, `south` or `west`, the
+  side it slopes down to (default `south`).
+- The ridge of a gable over a building `d` cm deep rises `d / 2 × tan(pitch)`
+  above the walls. The app's 3D view can hide roofs to look inside.
 
 ### The garden
 

@@ -154,6 +154,27 @@ export const StairSchema = z.object({
   level: levelRef,
 });
 
+// A roof over a level, sitting on its walls. `polygon` is the outline it
+// covers (usually the walls' outer faces; a roof covers its convex hull, so
+// an L-shaped house takes two roofs). gable: two slopes meeting at a ridge
+// running along x or y (`ridge`, default along the longer side); hip: slopes
+// on every side; shed: one slope falling to `downTo`; flat. `pitch` in
+// degrees (default 35, shed 15), `overhang` past the outline in cm (default
+// 40, flat 10), `thickness` of the roof in cm (default 20).
+export const ROOF_TYPES = ["gable", "hip", "shed", "flat"] as const;
+export const RoofSchema = z.object({
+  id,
+  type: z.enum(ROOF_TYPES).default("gable"),
+  polygon: z.array(point2).min(3),
+  pitch: z.number().min(0).max(75).optional(),
+  overhang: z.number().min(0).max(200).optional(),
+  ridge: z.enum(["x", "y"]).optional(),
+  downTo: z.enum(["north", "east", "south", "west"]).optional(),
+  thickness: z.number().min(1).max(100).optional(),
+  material: z.string().optional(),
+  level: levelRef,
+});
+
 // The land around the house, drawn at the first level's floor height. The
 // plot is the boundary (its ground is grass-coloured unless `material`
 // says otherwise); areas are outdoor surfaces such as lawn, paving or a
@@ -197,6 +218,7 @@ export const ShellSchema = z
     openings: z.array(OpeningSchema).default([]),
     rooms: z.array(RoomSchema).default([]),
     stairs: z.array(StairSchema).default([]),
+    roofs: z.array(RoofSchema).default([]),
     plot: PlotSchema.optional(),
     areas: z.array(AreaSchema).default([]),
     fences: z.array(FenceSchema).default([]),
@@ -204,7 +226,7 @@ export const ShellSchema = z
   .superRefine((s, ctx) => {
     const ids = new Set(s.levels.map((l) => l.id));
     if (ids.size < s.levels.length) ctx.addIssue({ code: "custom", path: ["levels"], message: "level ids must be unique" });
-    for (const key of ["walls", "rooms", "stairs"] as const) {
+    for (const key of ["walls", "rooms", "stairs", "roofs"] as const) {
       s[key].forEach((item, i) => {
         if (item.level !== undefined && !ids.has(item.level)) {
           ctx.addIssue({ code: "custom", path: [key, i, "level"], message: s.levels.length ? `unknown level "${item.level}"` : "list the level in `levels` first" });
@@ -371,6 +393,8 @@ export type Level = z.infer<typeof LevelSchema>;
 export type LevelDoc = z.input<typeof LevelSchema>;
 export type Wall = z.infer<typeof WallSchema>;
 export type Stair = z.infer<typeof StairSchema>;
+export type Roof = z.infer<typeof RoofSchema>;
+export type RoofDoc = z.input<typeof RoofSchema>;
 export type Plot = z.infer<typeof PlotSchema>;
 export type Area = z.infer<typeof AreaSchema>;
 export type AreaDoc = z.input<typeof AreaSchema>;

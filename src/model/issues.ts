@@ -25,8 +25,9 @@ import type { ShellView } from "./levels";
 import { clipConvex, defaultStairSize, isConvex, stairOutline, stairTreads, stepSizes, treadBottom, updateStair } from "./stairs";
 import { onSite } from "./site";
 import { setObjectProps } from "./operations";
+import { convexHull, updateRoof } from "./roofs";
 
-export type IssueTarget = { kind: "object" | "wall" | "opening" | "stair" | "garden" | "plot"; id: string };
+export type IssueTarget = { kind: "object" | "wall" | "opening" | "stair" | "roof" | "garden" | "plot"; id: string };
 
 export interface Issue {
   key: string;
@@ -315,6 +316,20 @@ export function computeIssues(scene: Scene, shell: Shell): Issue[] {
   }
   if (shell.plot && shell.walls.some((w) => !pointInPolygon(w.from, shell.plot!.polygon) || !pointInPolygon(w.to, shell.plot!.polygon))) {
     issues.push({ key: "house-off-plot", severity: "warning", message: "The house reaches outside the plot.", targets: [{ kind: "plot", id: "plot" }] });
+  }
+
+  // --- roofs ---------------------------------------------------------------
+  for (const roof of shell.roofs) {
+    const hull = convexHull(roof.polygon);
+    if (Math.abs(polygonArea(hull)) - Math.abs(polygonArea(roof.polygon)) > 1000) {
+      issues.push({
+        key: `roof-shape-${roof.id}`,
+        severity: "warning",
+        message: `${roof.id} isn't convex, so it covers its outline's convex hull. An L-shaped house takes a roof per wing.`,
+        targets: [{ kind: "roof", id: roof.id }],
+        fix: { label: "Use the hull", shell: updateRoof(roof.id, { polygon: hull }) },
+      });
+    }
   }
 
   // --- stairs ------------------------------------------------------------

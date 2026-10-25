@@ -114,7 +114,8 @@ export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean
     <>
       <color attach="background" args={[plan ? theme.paper : walk ? theme.walk : theme.room]} />
       <hemisphereLight args={["#ffffff", theme.ground, plan ? 2.2 : walk ? 2.0 : 1.4]} />
-      <directionalLight position={[6, 12, 4]} intensity={plan ? 0.8 : 1.6} castShadow={!plan} shadow-mapSize={[2048, 2048]}>
+      {/* Bias keeps sloped surfaces (roofs) from shadowing themselves in rings. */}
+      <directionalLight position={[6, 12, 4]} intensity={plan ? 0.8 : 1.6} castShadow={!plan} shadow-mapSize={[2048, 2048]} shadow-bias={-0.0005} shadow-normalBias={0.02}>
         <orthographicCamera attach="shadow-camera" args={[-10, 10, 10, -10, 0.5, 40]} />
       </directionalLight>
     </>
