@@ -216,7 +216,8 @@ export const TEMPLATES: Template[] = [
     params: [W(60), D(45)],
     build: ({ width, depth }) => [
       { name: "cabinet", shape: "box", size: [width, depth, 50], at: [0, 0, 35], material: "oak", radius: 1 },
-      { name: "basin", shape: "box", size: [width + 2, depth + 1, 6], at: [0, 0, 85], material: "porcelain", radius: 2 },
+      // Overhangs at the front and sides, flush at the back against the wall.
+      { name: "basin", shape: "box", size: [width + 2, depth + 1, 6], at: [0, -0.5, 85], material: "porcelain", radius: 2 },
       { name: "mirror", shape: "box", size: [width, 2, 80], at: [0, depth / 2 - 1, 110], material: "glass" },
     ],
   },
