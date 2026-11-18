@@ -13,7 +13,7 @@ import { useOdaja } from "../store";
 import { useLamps } from "../ui/lampState";
 import { SUN_YEAR, useSun } from "../ui/sunState";
 import { isDark } from "../ui/themePref";
-import { LampShadows } from "./LampLight";
+import { LampBudget, RoomBounce } from "./LampLight";
 import type { SceneTheme } from "./theme";
 
 const NIGHT_SKY = "#8a9ab8";
@@ -117,7 +117,12 @@ export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean
   const sunOn = useSun((s) => s.on);
   const lampsOn = useLamps((s) => s.on);
   const hasSite = useOdaja((s) => Boolean(s.project?.site));
-  const lamps = lampsOn && !plan && <LampShadows />;
+  const lamps = lampsOn && !plan && (
+    <>
+      <LampBudget />
+      <RoomBounce />
+    </>
+  );
   if (sunOn && hasSite && !plan) {
     return (
       <>

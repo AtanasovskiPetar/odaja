@@ -99,7 +99,7 @@ export function shellBounds(shell: Shell): Rect | null {
   return boundsOf(shell.walls.flatMap(wallOutline));
 }
 
-const rotate = ([x, y]: Vec, degrees: number): Vec => {
+export const rotate = ([x, y]: Vec, degrees: number): Vec => {
   // Clockwise on a y-down plan is the usual rotation matrix.
   const r = (degrees * Math.PI) / 180;
   return [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r)];

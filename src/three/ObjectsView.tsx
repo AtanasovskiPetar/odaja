@@ -140,7 +140,7 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
         ) : (
           object.parts.map((part, i) => <PartMesh key={i} part={part} ghost={ghost} glow={glow} castShadow={castShadow} />)
         )}
-        {light && <LampLight light={light} />}
+        {light && <LampLight light={light} object={object} />}
       </group>
       {selected && !ghost && !inert && group && <SelectionBox target={group} />}
       {selected && !ghost && !inert && group && !object.locked && (
