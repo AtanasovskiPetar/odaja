@@ -245,7 +245,6 @@ export const IconSun = icon(
     <path d="M10 2.5v1.6M10 15.9v1.6M2.5 10h1.6M15.9 10h1.6M4.7 4.7l1.1 1.1M14.2 14.2l1.1 1.1M4.7 15.3l1.1-1.1M14.2 5.8l1.1-1.1" />
   </>,
 );
-// A pendant lamp giving light: the evening view.
 export const IconLamp = icon(
   <>
     <path d="M10 2.5v3.5" />

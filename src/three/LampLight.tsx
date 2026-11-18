@@ -1,20 +1,12 @@
-// Lamps giving off light in the evening view. Each lit lamp is a real light
-// with physical falloff, brightness from its lumens and colour from its
-// colour temperature. Only the lamps nearest the camera cast shadows (so
-// their light stops at walls): each shadow costs six extra renders.
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import type { Light } from "../model/schema";
 import { M } from "../model/units";
 
-// Lamp light is computed in physical units (candela, metres); this scales it
-// to the rest of the scene's lighting, which isn't.
 const EXPOSURE = 0.1;
 const SHADOW_LAMPS = 4;
 
-// Colour of a light of the given colour temperature (Tanner Helland's fit of
-// the black-body curve).
 export function kelvinColor(kelvin: number): THREE.Color {
   const t = kelvin / 100;
   const r = t <= 66 ? 255 : 329.698727446 * Math.pow(t - 60, -0.1332047592);
@@ -26,7 +18,6 @@ export function kelvinColor(kelvin: number): THREE.Color {
 
 const lamps = new Set<THREE.PointLight | THREE.SpotLight>();
 
-// `light.at` is relative to the object, so this goes inside the object's group.
 export function LampLight({ light }: { light: Light }) {
   const [lamp, setLamp] = useState<THREE.PointLight | THREE.SpotLight | null>(null);
   const [target] = useState(() => new THREE.Object3D());
@@ -48,7 +39,6 @@ export function LampLight({ light }: { light: Light }) {
 
   if (light.type === "spot") {
     const half = ((light.angle / 2) * Math.PI) / 180;
-    // The lumens spread over the beam's cone.
     const candela = light.lumens / (2 * Math.PI * (1 - Math.cos(half)));
     return (
       <>
@@ -60,7 +50,6 @@ export function LampLight({ light }: { light: Light }) {
   return <pointLight ref={setLamp} position={position} color={color} intensity={(light.lumens / (4 * Math.PI)) * EXPOSURE} decay={2} />;
 }
 
-// Gives the shadows to the lamps nearest the camera, a few times a second.
 export function LampShadows() {
   const since = useRef(0);
   const at = useMemo(() => new THREE.Vector3(), []);

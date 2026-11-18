@@ -23,8 +23,6 @@ export const gizmo = { lastUsed: 0 };
 // Furniture is shown faded while editing walls.
 const GHOST = new THREE.MeshBasicMaterial({ color: "#b9b2a6", transparent: true, opacity: 0.35, depthWrite: false });
 
-// `glow`: the colour of the object's light while it's lit, for glowing parts.
-// Lamps don't cast shadows: their shades would block their own light.
 export function PartMesh({
   part,
   ghost,

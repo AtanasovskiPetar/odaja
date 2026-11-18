@@ -258,7 +258,6 @@ const partBase = {
   // Copies of the part: `count` in total, each moved by `step` [x, y, z] cm
   // from the previous one (e.g. five shelves 40 cm apart).
   repeat: z.object({ count: z.number().int().min(1).max(50), step: point3 }).optional(),
-  // Shines in the light's colour while the object's light is on (a shade, a bulb).
   glow: z.boolean().optional(),
 };
 
@@ -294,11 +293,6 @@ export const ModelSchema = z.object({
   size: point3,
 });
 
-// The light a lamp gives off. Every field is optional: a template lamp's
-// light comes from its template and these change it. `at` is where the light
-// sits, relative to the object's origin like a part's (default: the middle,
-// 80% of the way up); `lumens` as on the bulb's box; `kelvin` its colour; a
-// spot shines straight down in a cone `angle` degrees wide.
 export const LightSchema = z.object({
   type: z.enum(["point", "spot"]).optional(),
   at: point3.optional(),
@@ -332,7 +326,6 @@ function resolveLight(input: LightInput | undefined, parts: Part[]): Light | und
   };
 }
 
-// The light as written for an object: its template's, changed by its own.
 export function lightInput(o: { template?: string; params?: Record<string, number>; light?: LightInput }): LightInput | undefined {
   const fromTemplate = o.template ? templateLight(o.template, o.params) : undefined;
   return fromTemplate || o.light ? { ...fromTemplate, ...o.light } : undefined;

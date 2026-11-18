@@ -48,7 +48,6 @@ export function setTemplateParams(id: string, params: Record<string, number>) {
       if (!template) return o;
       const next = { ...o.params, ...params };
       if (!template.fromCeiling) return { ...o, params: next };
-      // A ceiling light keeps its top at the ceiling as it gets taller or shorter.
       const before = template.fromCeiling(templateParams(template, o.params));
       const after = template.fromCeiling(templateParams(template, next));
       return { ...o, params: next, elevation: round((o.elevation ?? 0) + before - after) };
@@ -56,7 +55,7 @@ export function setTemplateParams(id: string, params: Record<string, number>) {
 }
 
 // Turn a template object into a hand-built one with the given parts, so its
-// parts can be edited individually. A lamp keeps its template's light.
+// parts can be edited individually.
 export function detachTemplate(id: string, parts: NonNullable<ObjectDoc["parts"]>) {
   return (doc: SceneDoc) => updateObject(doc, id, (o) => clean({ ...o, light: lightInput(o), template: undefined, params: undefined, parts }));
 }

@@ -22,7 +22,6 @@ export interface Template {
   params: ParamSpec[];
   // Height above the floor when placed (wall cabinets, mirrors…).
   elevation?: number;
-  // Fixed to the ceiling: how tall it is, so its top stays at the ceiling.
   fromCeiling?(p: Record<string, number>): number;
   build(p: Record<string, number>): PartInput[];
   light?(p: Record<string, number>): LightInput;
@@ -423,8 +422,6 @@ export function templateLight(id: string, given?: Record<string, number>): Light
   return template?.light?.(templateParams(template, given));
 }
 
-// Where a newly placed template object goes: ceiling lights at the ceiling of
-// a level `wallHeight` high.
 export function templateElevation(template: Template, given: Record<string, number> | undefined, wallHeight: number): number | undefined {
   return template.fromCeiling ? wallHeight - template.fromCeiling(templateParams(template, given)) : template.elevation;
 }

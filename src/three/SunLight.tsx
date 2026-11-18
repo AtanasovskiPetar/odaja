@@ -1,9 +1,7 @@
 // The 3D lighting. Normally a fixed soft light; with the sunlight view on
 // (and a site set) the real sun for the chosen day and time: its direction,
 // strength and colour, sharp shadows through the windows, a dimmer room so the
-// patches of sun stand out, and a sky that follows the time. In the evening
-// view the lamps light the room (LampLight.tsx), under the sun for the chosen
-// time or a dim night fill.
+// patches of sun stand out, and a sky that follows the time.
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
@@ -106,7 +104,6 @@ function SunPlayer() {
   return null;
 }
 
-// The evening view without the sun: a dim night fill, so the lamps light the room.
 function Night({ theme }: { theme: SceneTheme }) {
   return (
     <>

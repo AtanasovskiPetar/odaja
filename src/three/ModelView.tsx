@@ -50,7 +50,6 @@ class ModelErrorBoundary extends Component<{ fallback: ReactNode; children: Reac
   }
 }
 
-// A lamp's model casts no shadow: its shade would block its own light.
 export function ModelView(props: { src: string; size: [number, number, number]; material?: THREE.Material; castShadow?: boolean; fallback: ReactNode }) {
   return (
     <ModelErrorBoundary key={props.src} fallback={props.fallback}>

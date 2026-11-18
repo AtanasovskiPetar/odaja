@@ -91,8 +91,6 @@ function TemplateFields({ object }: { object: SceneObject }) {
   );
 }
 
-// A lamp's light. Only the changed fields are written: the rest stay the
-// template's (or the defaults).
 function LightFields({ object }: { object: SceneObject }) {
   const apply = useOdaja((s) => s.apply);
   const written = useOdaja((s) => s.sceneDoc?.objects?.find((o) => o.id === object.id)?.light);
