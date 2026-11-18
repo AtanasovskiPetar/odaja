@@ -11,7 +11,7 @@ const EXPOSURE = 0.04;
 const TINT = 0.45;
 const LIT_LAMPS = 8;
 const DRAG_MARGIN = 1;
-const REFLECTANCE = 0.5;
+const REFLECTANCE = 0.35;
 
 export function kelvinColor(kelvin: number): THREE.Color {
   const t = kelvin / 100;
@@ -37,6 +37,7 @@ function reach(room: Room, p: Vec, height: number): number {
 
 type Lamp = THREE.PointLight | THREE.SpotLight;
 const lamps = new Set<Lamp>();
+const roomFills = new Set<THREE.PointLight>();
 let lampsChanged = false;
 
 export function LampLight({ light, object }: { light: Light; object: SceneObject }) {
@@ -73,17 +74,24 @@ export function LampLight({ light, object }: { light: Light; object: SceneObject
     };
   }, [lamp]);
 
+  const half = ((light.angle / 2) * Math.PI) / 180;
+  const candela = light.type === "spot" ? light.lumens / (2 * Math.PI * (1 - Math.cos(half))) : light.lumens / (4 * Math.PI);
+  const intensity = candela * exposure;
+  useEffect(() => {
+    if (!lamp) return;
+    lamp.userData.intensity = intensity;
+    lampsChanged = true;
+  }, [lamp, intensity]);
+
   if (light.type === "spot") {
-    const half = ((light.angle / 2) * Math.PI) / 180;
-    const candela = light.lumens / (2 * Math.PI * (1 - Math.cos(half)));
     return (
       <>
         <primitive object={target} position={[position[0], position[1] - 1, position[2]]} />
-        <spotLight ref={setLamp} position={position} target={target} color={color} intensity={candela * exposure} angle={half} penumbra={0.3} decay={2} distance={distance} />
+        <spotLight ref={setLamp} position={position} target={target} color={color} intensity={0} angle={half} penumbra={0.3} decay={2} distance={distance} />
       </>
     );
   }
-  return <pointLight ref={setLamp} position={position} color={color} intensity={(light.lumens / (4 * Math.PI)) * exposure} decay={2} distance={distance} />;
+  return <pointLight ref={setLamp} position={position} color={color} intensity={0} decay={2} distance={distance} />;
 }
 
 export function LampBudget() {
@@ -95,6 +103,7 @@ export function LampBudget() {
   const scene = useOdaja((s) => s.scene);
   const shell = useOdaja((s) => s.shell);
   const drag = useOdaja((s) => s.dragPreview);
+  const walking = useOdaja((s) => s.viewMode === "walk");
   useEffect(() => {
     stale.current = true;
   }, [scene, shell]);
@@ -115,14 +124,29 @@ export function LampBudget() {
       meshes.current = count;
       stale.current = true;
     }
-    const nearest = (kind: Lamp[]) =>
-      kind
-        .map((lamp) => ({ lamp, d: lamp.getWorldPosition(at).distanceToSquared(camera.position) }))
-        .sort((a, b) => a.d - b.d)
-        .map(({ lamp }) => lamp);
-    const points = nearest([...lamps].filter((l) => l instanceof THREE.PointLight));
-    const spots = nearest([...lamps].filter((l) => l instanceof THREE.SpotLight));
-    const pointSlots = Math.min(points.length, LIT_LAMPS - Math.min(spots.length, LIT_LAMPS / 2));
+    const planOf = (v: THREE.Vector3): Vec => [v.x * 100, v.z * 100];
+    const here = walking && shell ? roomAround(shell, planOf(camera.position)) : undefined;
+    const placed = [...lamps].map((lamp) => {
+      lamp.getWorldPosition(at);
+      const room = shell ? roomAround(shell, planOf(at)) : undefined;
+      return { lamp, room, here: here !== undefined && room === here, d: at.distanceToSquared(camera.position) };
+    });
+    const ordered = (spot: boolean) => placed.filter((p) => p.lamp instanceof THREE.SpotLight === spot).sort((a, b) => Number(b.here) - Number(a.here) || a.d - b.d);
+    const points = ordered(false);
+    const spots = ordered(true);
+    const perRoom = new Map<Room, { points: number; spots: number }>();
+    for (const p of placed) {
+      if (!p.room) continue;
+      const count = perRoom.get(p.room) ?? { points: 0, spots: 0 };
+      if (p.lamp instanceof THREE.SpotLight) count.spots++;
+      else count.points++;
+      perRoom.set(p.room, count);
+    }
+    const rooms = [...perRoom.values()];
+    const mostSpots = Math.max(0, ...rooms.map((c) => c.spots));
+    const everyRoomFits = Math.max(0, ...rooms.map((c) => c.points)) + mostSpots <= LIT_LAMPS;
+    const spotsNeeded = everyRoomFits ? mostSpots : (here && perRoom.get(here)?.spots) || 0;
+    const pointSlots = Math.min(points.length, LIT_LAMPS - Math.min(spotsNeeded, LIT_LAMPS));
     const spotSlots = Math.min(spots.length, LIT_LAMPS - pointSlots);
     const moved = dragged.current;
     const nearMove = (lamp: Lamp) => {
@@ -131,13 +155,20 @@ export function LampBudget() {
       lamp.getWorldPosition(at);
       return moved.some(([x, y]) => Math.hypot(at.x - M(x), at.z - M(y)) < lamp.distance + DRAG_MARGIN);
     };
-    const assign = (lamp: Lamp, lit: boolean) => {
-      if (lit && (stale.current || !lamp.castShadow || nearMove(lamp))) lamp.shadow.needsUpdate = true;
-      lamp.visible = lit;
-      lamp.castShadow = lit;
+    const litRooms = new Set<string>();
+    const assign = ({ lamp, room, here: inRoom }: (typeof placed)[number], slot: boolean) => {
+      const shines = slot && (!here || inRoom);
+      if (shines && room) litRooms.add(room.id);
+      if (slot && lamp.shadow.map === null) lamp.shadow.needsUpdate = true;
+      if (shines && (stale.current || !lamp.userData.shining || nearMove(lamp))) lamp.shadow.needsUpdate = true;
+      lamp.visible = slot;
+      lamp.castShadow = slot;
+      lamp.intensity = shines ? (lamp.userData.intensity ?? 0) : 0;
+      lamp.userData.shining = shines;
     };
-    points.forEach((lamp, i) => assign(lamp, i < pointSlots));
-    spots.forEach((lamp, i) => assign(lamp, i < spotSlots));
+    points.forEach((p, i) => assign(p, i < pointSlots));
+    spots.forEach((p, i) => assign(p, i < spotSlots));
+    for (const fill of roomFills) fill.intensity = litRooms.has(fill.userData.room) ? (fill.userData.intensity ?? 0) : 0;
     stale.current = false;
     dragged.current = null;
     lampsChanged = false;
@@ -180,5 +211,25 @@ export function RoomBounce() {
       };
     });
   }, [objects, shell, off]);
-  return fills.map((f) => <pointLight key={f.id} position={f.position} color={f.color} intensity={f.intensity * brightness} decay={0} distance={f.distance} />);
+  return fills.map((f) => <RoomFill key={f.id} room={f.id} position={f.position} color={f.color} intensity={f.intensity * brightness} distance={f.distance} />);
+}
+
+function RoomFill({ room, position, color, intensity, distance }: { room: string; position: [number, number, number]; color: THREE.Color; intensity: number; distance: number }) {
+  const [fill, setFill] = useState<THREE.PointLight | null>(null);
+  useEffect(() => {
+    if (!fill) return;
+    roomFills.add(fill);
+    lampsChanged = true;
+    return () => {
+      roomFills.delete(fill);
+      lampsChanged = true;
+    };
+  }, [fill]);
+  useEffect(() => {
+    if (!fill) return;
+    fill.userData.room = room;
+    fill.userData.intensity = intensity;
+    lampsChanged = true;
+  }, [fill, room, intensity]);
+  return <pointLight ref={setFill} position={position} color={color} intensity={0} decay={0} distance={distance} />;
 }
