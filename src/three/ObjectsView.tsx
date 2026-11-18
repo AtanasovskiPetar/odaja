@@ -13,6 +13,8 @@ import { sceneTheme } from "./theme";
 import { useMaterials } from "./materials";
 import { partGeometry, partTransform } from "./partGeometry";
 import { ModelView } from "./ModelView";
+import { kelvinColor, LampLight } from "./LampLight";
+import { useLamps } from "../ui/lampState";
 
 // Clicking the move gizmo doesn't hit a scene mesh, which three-fiber reports as
 // a "pointer missed" click. The viewport checks this to avoid deselecting.
@@ -21,15 +23,38 @@ export const gizmo = { lastUsed: 0 };
 // Furniture is shown faded while editing walls.
 const GHOST = new THREE.MeshBasicMaterial({ color: "#b9b2a6", transparent: true, opacity: 0.35, depthWrite: false });
 
-export function PartMesh({ part, ghost, material: override, onClick, userData }: { part: Part; ghost: boolean; material?: THREE.Material; onClick?: (e: ThreeEvent<MouseEvent>) => void; userData?: Record<string, unknown> }) {
+export function PartMesh({
+  part,
+  ghost,
+  material: override,
+  onClick,
+  userData,
+  glow,
+  castShadow = true,
+}: {
+  part: Part;
+  ghost: boolean;
+  material?: THREE.Material;
+  onClick?: (e: ThreeEvent<MouseEvent>) => void;
+  userData?: Record<string, unknown>;
+  glow?: THREE.Color | null;
+  castShadow?: boolean;
+}) {
   const material = useMaterials();
-  const mat = override ?? (ghost ? GHOST : material(part.material, part.color));
+  const base = override ?? (ghost ? GHOST : material(part.material, part.color));
+  const glowing = useMemo(() => {
+    if (!glow || !part.glow || !(base instanceof THREE.MeshStandardMaterial)) return null;
+    const m = base.clone();
+    m.emissive = glow;
+    return m;
+  }, [base, glow, part.glow]);
+  useEffect(() => () => glowing?.dispose(), [glowing]);
   // Rebuild the geometry only when the part's shape changes.
-  const key = JSON.stringify({ ...part, at: undefined, rotation: undefined, material: undefined, color: undefined, name: undefined });
+  const key = JSON.stringify({ ...part, at: undefined, rotation: undefined, material: undefined, color: undefined, name: undefined, glow: undefined });
   const geometry = useMemo(() => partGeometry(part), [key]);
   useEffect(() => () => geometry.dispose(), [geometry]);
   const { position, rotationY } = partTransform(part);
-  return <mesh geometry={geometry} position={position} rotation={[0, rotationY, 0]} material={mat} castShadow receiveShadow onClick={onClick} userData={userData} />;
+  return <mesh geometry={geometry} position={position} rotation={[0, rotationY, 0]} material={glowing ?? base} castShadow={castShadow} receiveShadow onClick={onClick} userData={userData} />;
 }
 
 function SelectionBox({ target }: { target: THREE.Object3D }) {
@@ -48,6 +73,11 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
   const setDragPreview = useOdaja((s) => s.setDragPreview);
   const [group, setGroup] = useState<THREE.Group | null>(null);
   const [x, y] = object.position;
+  const lampsOn = useLamps((s) => s.on);
+  const plan = useOdaja((s) => s.viewMode === "plan");
+  const light = lampsOn && !plan && !ghost && !inert && object.light?.on ? object.light : null;
+  const glow = useMemo(() => (light ? kelvinColor(light.kelvin) : null), [light?.kelvin]);
+  const castShadow = !object.light;
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
     // While walking, clicks are for looking around.
@@ -104,11 +134,13 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
             src={object.model.src}
             size={object.model.size}
             material={ghost ? GHOST : undefined}
+            castShadow={castShadow}
             fallback={object.parts.map((part, i) => <PartMesh key={i} part={part} ghost />)}
           />
         ) : (
-          object.parts.map((part, i) => <PartMesh key={i} part={part} ghost={ghost} />)
+          object.parts.map((part, i) => <PartMesh key={i} part={part} ghost={ghost} glow={glow} castShadow={castShadow} />)
         )}
+        {light && <LampLight light={light} />}
       </group>
       {selected && !ghost && !inert && group && <SelectionBox target={group} />}
       {selected && !ghost && !inert && group && !object.locked && (

@@ -1,7 +1,8 @@
 // The Odaja project format. Keep docs/project-format.md in sync with this file:
 // that document is what agents read before editing a project.
 import { z } from "zod";
-import { buildTemplate, TEMPLATES_BY_ID } from "./library";
+import { buildTemplate, templateLight, TEMPLATES_BY_ID } from "./library";
+import { partExtent } from "./parts";
 
 const id = z.string().regex(/^[a-z0-9][a-z0-9-]*$/, "ids are lowercase kebab-case");
 const point2 = z.tuple([z.number(), z.number()]);
@@ -257,6 +258,7 @@ const partBase = {
   // Copies of the part: `count` in total, each moved by `step` [x, y, z] cm
   // from the previous one (e.g. five shelves 40 cm apart).
   repeat: z.object({ count: z.number().int().min(1).max(50), step: point3 }).optional(),
+  glow: z.boolean().optional(),
 };
 
 const axis = z.enum(["z", "x", "y"]);
@@ -291,6 +293,44 @@ export const ModelSchema = z.object({
   size: point3,
 });
 
+export const LightSchema = z.object({
+  type: z.enum(["point", "spot"]).optional(),
+  at: point3.optional(),
+  lumens: z.number().min(0).max(20000).optional(),
+  kelvin: z.number().min(1500).max(10000).optional(),
+  angle: z.number().min(10).max(160).optional(),
+  on: z.boolean().optional(),
+});
+
+export type LightInput = z.input<typeof LightSchema>;
+
+export interface Light {
+  type: "point" | "spot";
+  at: [number, number, number];
+  lumens: number;
+  kelvin: number;
+  angle: number;
+  on: boolean;
+}
+
+function resolveLight(input: LightInput | undefined, parts: Part[]): Light | undefined {
+  if (!input) return undefined;
+  const top = Math.max(0, ...parts.map((p) => p.at[2] + partExtent(p)[5]));
+  return {
+    type: input.type ?? "point",
+    at: input.at ?? [0, 0, Math.round(top * 0.8)],
+    lumens: input.lumens ?? 800,
+    kelvin: input.kelvin ?? 2700,
+    angle: input.angle ?? 60,
+    on: input.on ?? true,
+  };
+}
+
+export function lightInput(o: { template?: string; params?: Record<string, number>; light?: LightInput }): LightInput | undefined {
+  const fromTemplate = o.template ? templateLight(o.template, o.params) : undefined;
+  return fromTemplate || o.light ? { ...fromTemplate, ...o.light } : undefined;
+}
+
 // An object is built by hand from `parts`, from a built-in `template` (see
 // library.ts) whose `params` set its sizes, or from a 3D `model`. Parsing fills
 // in `parts` for template and model objects (a model gets one box the size of
@@ -312,6 +352,7 @@ export const ObjectSchema = z
     params: z.record(z.string(), z.number()).optional(),
     parts: z.array(PartSchema).min(1).optional(),
     model: ModelSchema.optional(),
+    light: LightSchema.optional(),
     libraryItem: LibraryRefSchema.optional(),
   })
   .superRefine((o, ctx) => {
@@ -322,17 +363,17 @@ export const ObjectSchema = z
     if (kinds > 1) ctx.addIssue({ code: "custom", path: ["parts"], message: "use only one of template, parts or model" });
     if (kinds === 0) ctx.addIssue({ code: "custom", path: ["parts"], message: "an object needs parts, a template or a model" });
   })
-  .transform((o) => ({
-    ...o,
+  .transform((o) => {
     // Repeated parts are expanded into copies, so drawing, measuring and
     // checks see every shelf and leg.
-    parts: expandRepeats(
+    const parts = expandRepeats(
       o.parts ??
         (o.model
           ? [PartSchema.parse({ name: "model-bounds", shape: "box", size: o.model.size })]
           : z.array(PartSchema).parse(buildTemplate(o.template!, o.params) ?? [])),
-    ),
-  }));
+    );
+    return { ...o, parts, light: resolveLight(lightInput(o), parts) };
+  });
 
 export function expandRepeats(parts: Part[]): Part[] {
   return parts.flatMap((p) => {
@@ -435,6 +476,7 @@ export const LibraryItemSchema = z.object({
     params: z.record(z.string(), z.number()).optional(),
     parts: z.array(PartSchema).min(1).optional(),
     model: z.object({ src: z.literal("model.glb"), size: point3 }).optional(),
+    light: LightSchema.optional(),
   }).optional(),
 }).refine((i) => !!i.object !== !!i.material, "a library item has either object or material");
 

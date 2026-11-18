@@ -245,6 +245,13 @@ export const IconSun = icon(
     <path d="M10 2.5v1.6M10 15.9v1.6M2.5 10h1.6M15.9 10h1.6M4.7 4.7l1.1 1.1M14.2 14.2l1.1 1.1M4.7 15.3l1.1-1.1M14.2 5.8l1.1-1.1" />
   </>,
 );
+export const IconLamp = icon(
+  <>
+    <path d="M10 2.5v3.5" />
+    <path d="M5.5 11 7 6h6l1.5 5Z" />
+    <path d="M10 13.5v1.2M6.6 13l-.8 1M13.4 13l.8 1" strokeWidth={1.1} opacity={0.7} />
+  </>,
+);
 export const IconMoon = icon(<path d="M15.8 12.4A6.5 6.5 0 0 1 7.6 4.2a6.5 6.5 0 1 0 8.2 8.2Z" />);
 export const IconAuto = icon(
   <>

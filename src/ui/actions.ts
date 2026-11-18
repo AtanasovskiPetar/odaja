@@ -1,6 +1,6 @@
 // UI-level actions that combine store state with scene operations.
 import { roomAt, shellBounds, type Vec } from "../model/geometry";
-import { TEMPLATES_BY_ID, templateParams } from "../model/library";
+import { TEMPLATES_BY_ID, templateElevation, templateParams } from "../model/library";
 import { addObject, deleteObject, duplicateObject, uniqueId } from "../model/operations";
 import { deleteOpening, deleteRoom, deleteWall } from "../model/shellOps";
 import { deleteStair } from "../model/stairs";
@@ -31,7 +31,7 @@ export function addTemplateObject(templateId: string) {
       template: template.id,
       params: templateParams(template),
       position,
-      elevation: template.elevation,
+      elevation: shell ? templateElevation(template, undefined, shell.wallHeight) : template.elevation,
       room: shell ? roomAt(shell, position) : undefined,
     }),
   );

@@ -37,6 +37,7 @@ export async function placeLibraryEntry(entry: LibraryEntry) {
     params: o.params,
     parts: o.parts,
     model,
+    light: o.light,
     libraryItem: { id: entry.id, category: item.category },
   });
 }
@@ -79,6 +80,7 @@ export async function buildObjectItem(doc: ObjectDoc, name: string, category: st
     ...(doc.template ? { template: doc.template, params: doc.params } : {}),
     ...(doc.parts ? { parts: doc.parts } : {}),
     ...(doc.model ? { model: { src: "model.glb" as const, size: doc.model.size } } : {}),
+    ...(doc.light ? { light: doc.light } : {}),
   };
   let model: Blob | undefined;
   let view: THREE.Object3D;

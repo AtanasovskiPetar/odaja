@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { TEMPLATES_BY_ID } from "../model/library";
 import { setObjectProps, setTemplateParams } from "../model/operations";
-import type { SceneObject } from "../model/schema";
+import type { Light, LightInput, SceneObject } from "../model/schema";
 import { round } from "../model/units";
 import { useOdaja } from "../store";
+import { useLamps } from "./lampState";
 import { saveObjectAsItemFile } from "./libraryFiles";
 import { deleteSelected, duplicateSelected } from "./actions";
 
@@ -90,6 +91,43 @@ function TemplateFields({ object }: { object: SceneObject }) {
   );
 }
 
+function LightFields({ object }: { object: SceneObject }) {
+  const apply = useOdaja((s) => s.apply);
+  const written = useOdaja((s) => s.sceneDoc?.objects?.find((o) => o.id === object.id)?.light);
+  const evening = useLamps((s) => s.on);
+  const light = object.light;
+  if (!light) return null;
+  const set = (patch: LightInput) => apply(setObjectProps(object.id, { light: { ...written, ...patch } }));
+  return (
+    <div className="field-group">
+      <div className="group-title">Light</div>
+      <label className="check">
+        <input type="checkbox" checked={light.on} onChange={(e) => set({ on: e.target.checked })} />
+        On
+        {!evening && light.on && <span className="muted"> (shows in the evening view)</span>}
+      </label>
+      <label className="field">
+        <span>Shines</span>
+        <select value={light.type} onChange={(e) => set({ type: e.target.value as Light["type"] })}>
+          <option value="point">All round</option>
+          <option value="spot">Down, as a spot</option>
+        </select>
+      </label>
+      <div className="grid-2">
+        <Field label="Brightness" numeric suffix="lm" min={0} max={20000} value={light.lumens} onCommit={(v) => set({ lumens: Number(v) })} />
+        <Field label="Colour" numeric suffix="K" min={1500} max={10000} value={light.kelvin} onCommit={(v) => set({ kelvin: Number(v) })} />
+        <Field label="Bulb height" numeric suffix="cm" value={light.at[2]} onCommit={(v) => set({ at: [light.at[0], light.at[1], round(Number(v))] })} />
+        {light.type === "spot" && <Field label="Beam" numeric suffix="°" min={10} max={160} value={light.angle} onCommit={(v) => set({ angle: Number(v) })} />}
+      </div>
+      {!object.template && (
+        <button onClick={() => apply(setObjectProps(object.id, { light: undefined }))} title="It stops being a lamp">
+          Remove light
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function Inspector() {
   const object = useOdaja((s) => s.scene?.objects.find((o) => o.id === s.selectedId));
   const rooms = useOdaja((s) => s.shell?.rooms) ?? [];
@@ -112,6 +150,7 @@ export function Inspector() {
       <div className="muted id-line">{object.id}</div>
 
       <TemplateFields object={object} />
+      <LightFields object={object} />
 
       <div className="field-group">
         <div className="group-title">Placement</div>
@@ -173,6 +212,11 @@ export function Inspector() {
         >
           Save as file
         </button>
+        {!object.light && (
+          <button onClick={() => set({ light: {} })} title="Make it a lamp that lights the room in the evening view">
+            Add light
+          </button>
+        )}
         {!object.model && (
           <button onClick={() => useOdaja.getState().editShape(object.id)} title="Change the shape part by part (or double-click the object)">
             Edit shape

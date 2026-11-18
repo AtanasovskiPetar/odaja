@@ -10,9 +10,14 @@ import { siteBounds } from "../model/site";
 import { momentOf, skyColor, sunDirection, sunlight, sunPosition } from "../model/sun";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
+import { useLamps } from "../ui/lampState";
 import { SUN_YEAR, useSun } from "../ui/sunState";
 import { isDark } from "../ui/themePref";
+import { LampShadows } from "./LampLight";
 import type { SceneTheme } from "./theme";
+
+const NIGHT_SKY = "#8a9ab8";
+const NIGHT_FILL = 0.15;
 
 // Blocks sun from above (the 3D view has no ceiling), invisible otherwise:
 // it only casts shadows.
@@ -99,14 +104,34 @@ function SunPlayer() {
   return null;
 }
 
+function Night({ theme }: { theme: SceneTheme }) {
+  return (
+    <>
+      <color attach="background" args={[skyColor(-18, isDark())]} />
+      <hemisphereLight args={[NIGHT_SKY, theme.ground, NIGHT_FILL]} />
+    </>
+  );
+}
+
 export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean; walk: boolean }) {
   const sunOn = useSun((s) => s.on);
+  const lampsOn = useLamps((s) => s.on);
   const hasSite = useOdaja((s) => Boolean(s.project?.site));
+  const lamps = lampsOn && !plan && <LampShadows />;
   if (sunOn && hasSite && !plan) {
     return (
       <>
         <Sun theme={theme} walk={walk} />
         <SunPlayer />
+        {lamps}
+      </>
+    );
+  }
+  if (lamps) {
+    return (
+      <>
+        <Night theme={theme} />
+        {lamps}
       </>
     );
   }
