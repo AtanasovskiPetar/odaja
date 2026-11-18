@@ -8,13 +8,14 @@ import { followWalls } from "../model/attach";
 import { formatJson } from "../model/format";
 import { clearances, objectFootprint, polygonArea, rectEdges, roomAt, roomClearSize, shellBounds, wallEdges, wallOutline, type Vec } from "../model/geometry";
 import { issuesFor } from "../model/issues";
-import { TEMPLATES, TEMPLATES_BY_ID, templateParams } from "../model/library";
+import { TEMPLATES, TEMPLATES_BY_ID, templateElevation, templateParams } from "../model/library";
 import { addObject, deleteObject, setObjectProps, setTemplateParams, uniqueId, type ObjectDoc } from "../model/operations";
 import { enclosedArea } from "../model/rooms";
 import { calibrate, defaultUnderlay, pixelToPlan } from "../model/underlay";
 import { fitOpening as fitOpeningIn, projectOnWall } from "../model/geometry";
 import {
   DEFAULT_SHELL,
+  lightInput,
   LibraryItemSchema,
   UnderlaySchema,
   MaterialSchema,
@@ -127,8 +128,19 @@ const toolPart = z
     material: z.string().optional(),
     color: z.string().optional().describe("#rrggbb"),
     name: z.string().optional(),
+    glow: z.boolean().optional().describe("shines while the object's light is on (a lamp's shade or bulb)"),
   })
   .describe("A part: box, cylinder, sphere, wedge or extrusion (custom outline)");
+const toolLight = z
+  .object({
+    type: z.enum(["point", "spot"]).optional().describe("point: shines all round (default); spot: a cone straight down"),
+    at: vec3.optional().describe("[x, y, z] cm where the light sits, relative to the object origin like a part's `at`; default the middle, 80% of the way up"),
+    lumens: z.number().min(0).max(20000).optional().describe("brightness as on the bulb's box (default 800)"),
+    kelvin: z.number().min(1500).max(10000).optional().describe("colour: 2700 warm white (default), 3000, 4000 neutral, 6500 daylight"),
+    angle: z.number().min(10).max(160).optional().describe("spot: beam width in degrees (default 60)"),
+    on: z.boolean().optional(),
+  })
+  .describe("Light the object gives off (lamps). Lighting templates have one already; these fields change it.");
 const toParts = (parts: z.infer<typeof toolPart>[]) =>
   parts.map((p, i) => {
     const r = PartSchema.safeParse(p);
@@ -329,6 +341,7 @@ function describeObject(o: ReturnType<typeof SceneSchema.parse>["objects"][numbe
     attachedTo: o.attachedTo,
     locked: o.locked || undefined,
     notes: o.notes,
+    light: o.light,
   };
 }
 
@@ -454,7 +467,15 @@ export const TOOLS: ToolDef[] = [
     description: "Built-in furniture templates (kitchen units, tables, beds, toilets…) with their size parameters and defaults. Prefer these over hand-built parts when one fits.",
     input: z.object({}),
     async run() {
-      return TEMPLATES.map((t) => ({ id: t.id, name: t.name, category: t.category, params: Object.fromEntries(t.params.map((p) => [p.key, p.default])), elevation: t.elevation }));
+      return TEMPLATES.map((t) => ({
+        id: t.id,
+        name: t.name,
+        category: t.category,
+        params: Object.fromEntries(t.params.map((p) => [p.key, p.default])),
+        elevation: t.elevation,
+        placedAtCeiling: t.fromCeiling ? true : undefined,
+        light: t.light?.(templateParams(t)),
+      }));
     },
   }),
 
@@ -495,6 +516,7 @@ export const TOOLS: ToolDef[] = [
       params: z.record(z.string(), z.number()).optional(),
       library_item: z.string().optional().describe("id from list_library"),
       parts: z.array(toolPart).optional(),
+      light: toolLight.optional(),
       attached_to: z.string().optional(),
       notes: z.string().optional(),
       level: levelArg,
@@ -508,7 +530,7 @@ export const TOOLS: ToolDef[] = [
       if (input.template) {
         const t = TEMPLATES_BY_ID.get(input.template);
         if (!t) throw new ToolError(`unknown template "${input.template}"; see list_templates`);
-        fields = { template: t.id, params: templateParams(t, input.params), elevation: input.elevation ?? t.elevation };
+        fields = { template: t.id, params: templateParams(t, input.params), elevation: input.elevation ?? templateElevation(t, input.params, levelShell(loaded.shell, levelId).wallHeight) };
       } else if (input.library_item) {
         const id = safe(input.library_item);
         const item = await readLibraryItem(ctx, id);
@@ -527,6 +549,7 @@ export const TOOLS: ToolDef[] = [
           params: o.params,
           parts: o.parts,
           model,
+          light: o.light,
           elevation: input.elevation ?? o.elevation,
           notes: input.notes ?? item.notes,
           libraryItem: { id, category: item.category },
@@ -540,6 +563,7 @@ export const TOOLS: ToolDef[] = [
           id,
           name: input.name,
           ...fields,
+          ...(input.light ? { light: { ...fields.light, ...(input.light as ObjectDoc["light"]) } } : {}),
           position: input.position as [number, number],
           rotation: input.rotation || undefined,
           level: levelId === levelsOf(loaded.shell)[0].id ? undefined : levelId,
@@ -558,7 +582,7 @@ export const TOOLS: ToolDef[] = [
 
   tool({
     name: "update_object",
-    description: "Change an object: move (position), turn (rotation), raise (elevation), rename, resize a template object (params), replace its parts, attach to / detach from a wall (attached_to: wall id or null), notes, locked, or move it to another level (level; it keeps its plan position).",
+    description: "Change an object: move (position), turn (rotation), raise (elevation), rename, resize a template object (params), replace its parts, its light (light: fields to change, null to remove), attach to / detach from a wall (attached_to: wall id or null), notes, locked, or move it to another level (level; it keeps its plan position).",
     input: z.object({
       scene: sceneArg,
       id: z.string(),
@@ -568,6 +592,7 @@ export const TOOLS: ToolDef[] = [
       elevation: z.number().optional(),
       params: z.record(z.string(), z.number()).optional(),
       parts: z.array(toolPart).optional(),
+      light: toolLight.nullable().optional(),
       attached_to: z.string().nullable().optional(),
       notes: z.string().optional(),
       locked: z.boolean().optional(),
@@ -584,7 +609,8 @@ export const TOOLS: ToolDef[] = [
           ...(input.position ? { position: [r1(input.position[0]), r1(input.position[1])] as [number, number] } : {}),
           ...(input.rotation !== undefined ? { rotation: ((input.rotation % 360) + 360) % 360 || undefined } : {}),
           ...(input.elevation !== undefined ? { elevation: input.elevation || undefined } : {}),
-          ...(input.parts ? { parts: toParts(input.parts), template: undefined, params: undefined } : {}),
+          ...(input.parts ? { parts: toParts(input.parts), template: undefined, params: undefined, light: lightInput(current) } : {}),
+          ...(input.light !== undefined ? { light: input.light === null ? undefined : { ...(input.parts ? lightInput(current) : current.light), ...(input.light as ObjectDoc["light"]) } } : {}),
           ...(input.attached_to !== undefined ? { attachedTo: input.attached_to ?? undefined } : {}),
           ...(input.notes !== undefined ? { notes: input.notes || undefined } : {}),
           ...(input.locked !== undefined ? { locked: input.locked || undefined } : {}),
@@ -642,7 +668,7 @@ export const TOOLS: ToolDef[] = [
             parts = parts.map((p, i) => (i === index ? toParts([merged as z.infer<typeof toolPart>])[0] : p));
           }
         }
-        return { ...doc, objects: (doc.objects ?? []).map((x) => (x.id === id ? Object.fromEntries(Object.entries({ ...x, template: undefined, params: undefined, parts }).filter(([, v]) => v !== undefined)) as unknown as typeof x : x)) };
+        return { ...doc, objects: (doc.objects ?? []).map((x) => (x.id === id ? Object.fromEntries(Object.entries({ ...x, light: lightInput(x), template: undefined, params: undefined, parts }).filter(([, v]) => v !== undefined)) as unknown as typeof x : x)) };
       });
       const o = result.doc.objects?.find((x) => x.id === id);
       return { parts: o?.parts?.map((p, i) => ({ index: i, ...p })) };
@@ -1558,6 +1584,7 @@ export const TOOLS: ToolDef[] = [
           ...(o.template ? { template: o.template, params: o.params } : {}),
           ...(o.parts ? { parts: o.parts } : {}),
           ...(o.model ? { model: { src: "model.glb", size: o.model.size } } : {}),
+          ...(o.light ? { light: o.light } : {}),
         },
       };
       await libraryFiles(ctx).write(`${id}/item.json`, JSON.stringify(item, null, 2) + "\n");

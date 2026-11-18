@@ -5,7 +5,7 @@
 // footprint, front facing north (-y), sizes in cm.
 //
 // Keep docs/project-format.md's template table in sync with this file.
-import type { PartInput } from "./schema";
+import type { LightInput, PartInput } from "./schema";
 
 export interface ParamSpec {
   key: string;
@@ -18,11 +18,14 @@ export interface ParamSpec {
 export interface Template {
   id: string;
   name: string;
-  category: "Kitchen" | "Living" | "Bedroom" | "Bathroom" | "Garden" | "Basic";
+  category: "Kitchen" | "Living" | "Bedroom" | "Bathroom" | "Lighting" | "Garden" | "Basic";
   params: ParamSpec[];
   // Height above the floor when placed (wall cabinets, mirrors…).
   elevation?: number;
+  // Fixed to the ceiling: how tall it is, so its top stays at the ceiling.
+  fromCeiling?(p: Record<string, number>): number;
   build(p: Record<string, number>): PartInput[];
+  light?(p: Record<string, number>): LightInput;
 }
 
 const size = (key: string, label: string, def: number, min = 1, max = 1000): ParamSpec => ({ key, label, default: def, min, max });
@@ -33,6 +36,11 @@ const LEAVES_DARK = "#4a7433";
 const NEEDLES = "#3d6638";
 const D = (def: number) => size("depth", "Depth", def);
 const H = (def: number) => size("height", "Height", def);
+const SHADE = "#ece4d6";
+const DIFFUSER = "#f6f3ec";
+const FITTING = "#f2f0ec";
+const DARK_METAL = "#2b2b2b";
+const pendantShade = (diameter: number) => Math.round(diameter * 0.5);
 
 // Door fronts across a cabinet face: one door up to 60 cm, then two or more.
 function fronts(width: number, depth: number, bottom: number, height: number, material = "white"): PartInput[] {
@@ -254,6 +262,81 @@ export const TEMPLATES: Template[] = [
     ],
   },
   {
+    id: "ceiling-light",
+    name: "Ceiling light",
+    category: "Lighting",
+    params: [size("diameter", "Diameter", 35, 10, 120), H(10)],
+    fromCeiling: ({ height }) => height,
+    build: ({ diameter, height }) => [
+      { name: "base", shape: "cylinder", radius: diameter / 2, height: Math.min(2, height / 2), at: [0, 0, height - Math.min(2, height / 2)], color: FITTING },
+      { name: "diffuser", shape: "cylinder", radius: Math.max(1, diameter / 2 - 1), height: height - Math.min(2, height / 2), color: DIFFUSER, glow: true },
+    ],
+    light: () => ({ at: [0, 0, 0], lumens: 1500, kelvin: 3000 }),
+  },
+  {
+    id: "pendant",
+    name: "Pendant light",
+    category: "Lighting",
+    params: [size("diameter", "Shade diameter", 35, 10, 150), size("drop", "Cord length", 80, 5, 300)],
+    fromCeiling: ({ diameter, drop }) => pendantShade(diameter) + drop,
+    build: ({ diameter, drop }) => {
+      const shade = pendantShade(diameter);
+      return [
+        { name: "shade", shape: "cylinder", radius: diameter / 2, height: shade, color: SHADE, glow: true },
+        { name: "cord", shape: "cylinder", radius: 0.4, height: Math.max(1, drop - 1.5), at: [0, 0, shade], color: DARK_METAL },
+        { name: "canopy", shape: "cylinder", radius: 6, height: 1.5, at: [0, 0, shade + drop - 1.5], color: FITTING },
+      ];
+    },
+    light: ({ diameter }) => ({ at: [0, 0, Math.round(pendantShade(diameter) * 0.3)], lumens: 800, kelvin: 2700 }),
+  },
+  {
+    id: "downlight",
+    name: "Recessed spot",
+    category: "Lighting",
+    params: [size("diameter", "Diameter", 9, 4, 30)],
+    fromCeiling: () => 1,
+    build: ({ diameter }) => [{ name: "trim", shape: "cylinder", radius: diameter / 2, height: 1, color: DIFFUSER, glow: true }],
+    light: () => ({ type: "spot", at: [0, 0, 0], lumens: 500, kelvin: 3000, angle: 60 }),
+  },
+  {
+    id: "floor-lamp",
+    name: "Floor lamp",
+    category: "Lighting",
+    params: [size("height", "Height", 160, 60, 250), size("diameter", "Shade diameter", 40, 15, 80)],
+    build: ({ height, diameter }) => [
+      { name: "base", shape: "cylinder", radius: 14, height: 3, color: DARK_METAL },
+      { name: "pole", shape: "cylinder", radius: 1.2, height: height - 33, at: [0, 0, 3], color: DARK_METAL },
+      { name: "shade", shape: "cylinder", radius: diameter / 2, height: 30, at: [0, 0, height - 30], color: SHADE, glow: true },
+    ],
+    light: ({ height }) => ({ at: [0, 0, height - 15], lumens: 1000, kelvin: 2700 }),
+  },
+  {
+    id: "table-lamp",
+    name: "Table lamp",
+    category: "Lighting",
+    params: [size("height", "Height", 50, 20, 120), size("diameter", "Shade diameter", 30, 10, 70)],
+    build: ({ height, diameter }) => {
+      const shade = Math.round(height * 0.45);
+      return [
+        { name: "body", shape: "cylinder", radius: Math.min(8, diameter / 3), height: height - shade, color: "#d8d2c8" },
+        { name: "shade", shape: "cylinder", radius: diameter / 2, height: shade, at: [0, 0, height - shade], color: SHADE, glow: true },
+      ];
+    },
+    light: ({ height }) => ({ at: [0, 0, Math.round(height * 0.75)], lumens: 450, kelvin: 2700 }),
+  },
+  {
+    id: "wall-light",
+    name: "Wall light",
+    category: "Lighting",
+    params: [W(15)],
+    elevation: 180,
+    build: ({ width }) => [
+      { name: "plate", shape: "box", size: [width, 2, width], at: [0, 5, 0], color: FITTING },
+      { name: "shade", shape: "box", size: [width, 10, width], at: [0, -1, 0], color: SHADE, radius: 2, glow: true },
+    ],
+    light: ({ width }) => ({ at: [0, -10, width / 2], lumens: 400, kelvin: 2700 }),
+  },
+  {
     id: "box",
     name: "Box",
     category: "Basic",
@@ -333,4 +416,15 @@ export function templateParams(template: Template, given: Record<string, number>
 export function buildTemplate(id: string, given?: Record<string, number>): PartInput[] | null {
   const template = TEMPLATES_BY_ID.get(id);
   return template ? template.build(templateParams(template, given)) : null;
+}
+
+export function templateLight(id: string, given?: Record<string, number>): LightInput | undefined {
+  const template = TEMPLATES_BY_ID.get(id);
+  return template?.light?.(templateParams(template, given));
+}
+
+// Where a newly placed template object goes: ceiling lights at the ceiling of
+// a level `wallHeight` high.
+export function templateElevation(template: Template, given: Record<string, number> | undefined, wallHeight: number): number | undefined {
+  return template.fromCeiling ? wallHeight - template.fromCeiling(templateParams(template, given)) : template.elevation;
 }

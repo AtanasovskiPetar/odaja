@@ -347,6 +347,7 @@ automatically. A floor finish replaces the room's own `floor` in this scene.
 | `parts` | The shapes that make up the object (at least one), unless it uses a `template` or `model`. |
 | `template`, `params` | Build the object from a built-in template instead of `parts` (see below). |
 | `model` | Use a 3D model instead of `parts`: `{ "src": "assets/models/chair-3a2f.glb", "size": [w, d, h] }`. The model is stretched to exactly `size` (cm), centred on the object's origin and standing on its elevation, with its front towards -y like every object. |
+| `light` | Makes the object a lamp that lights the room in the app's evening view (see [Lights](#lights)). |
 | `libraryItem` | Set by the app when the object was placed from the furniture library: `{ "id": "oak-table", "category": "Living" }`. When someone opens a saved home, Odaja offers to add the items it uses to their library. Keep it when editing; leave it out for objects you create. |
 
 ### Template objects
@@ -383,6 +384,12 @@ beyond its params, replace `template`/`params` with your own `parts`. The app's
 | `shower` | Shower tray with glass | `width` 90, `depth` 90 |  |
 | `bathtub` | Bathtub | `width` 170, `depth` 75 |  |
 | `washing-machine` | Washing machine | `width` 60, `depth` 60, `height` 85 |  |
+| `ceiling-light` | Ceiling light | `diameter` 35, `height` 10 | At the ceiling: `elevation` = wall height − 10 (with the default params). Gives light |
+| `pendant` | Pendant light | `diameter` 35, `drop` 80 | At the ceiling: `elevation` = wall height − 98 (with the default params). Gives light |
+| `downlight` | Recessed spot | `diameter` 9 | At the ceiling: `elevation` = wall height − 1 (with the default params). Gives light |
+| `floor-lamp` | Floor lamp | `height` 160, `diameter` 40 | Gives light |
+| `table-lamp` | Table lamp | `height` 50, `diameter` 30 | Gives light |
+| `wall-light` | Wall light | `width` 15 | Set `elevation` (usually 180). Gives light |
 | `box` | Box | `width` 60, `depth` 60, `height` 60 |  |
 | `cylinder` | Cylinder | `diameter` 50, `height` 75 |  |
 | `tree` | Tree | `height` 500, `spread` 300 |  |
@@ -421,6 +428,31 @@ faces south (+y).** Then `rotation` behaves predictably.
 | `material` | A name from `project.json` materials |
 | `color` | `#rrggbb`, overrides the material's colour |
 | `name` | Optional label such as `top` or `leg-1` |
+| `glow` | `true`: the part shines in the light's colour while the object's light is on (a lamp's shade or bulb) |
+
+### Lights
+
+Any object can give off light: a lamp. The lighting templates (`ceiling-light`,
+`pendant`, `downlight`, `floor-lamp`, `table-lamp`, `wall-light`) already have
+one; a `light` on them changes only the fields it gives, e.g.
+`"light": { "on": false }` or `"light": { "lumens": 1200 }`. A model or parts
+object becomes a lamp with its own `light` (`{}` uses every default).
+
+```json
+{ "id": "reading-lamp", "name": "Reading lamp", "model": { "src": "assets/models/arc-lamp-91c2.glb", "size": [40, 120, 180] }, "position": [310, 420], "light": { "at": [0, -80, 170], "lumens": 900 } }
+```
+
+| Field | Meaning |
+|---|---|
+| `type` | `point` shines all round (default); `spot` shines straight down in a cone |
+| `at` | `[x, y, z]` where the light sits, relative to the object's origin like a part's `at` (default: the middle, 80% of the way up) |
+| `lumens` | Brightness as on the bulb's box (default 800; a 60 W bulb is about 800) |
+| `kelvin` | Colour temperature (default 2700): 2700 warm white, 3000 soft white, 4000 neutral, 6500 daylight |
+| `angle` | `spot` only: the beam's width in degrees (default 60) |
+| `on` | `false` turns the lamp off (default true) |
+
+Ceiling lights stand on their `elevation` like everything else: put a ceiling
+light's top at the ceiling with `elevation` = wall height − its height.
 
 ## Checking measurements
 

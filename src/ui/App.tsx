@@ -28,6 +28,7 @@ import { NewHomeDialog } from "./NewHome";
 import { TraceGuide } from "./TraceGuide";
 import { PlanNorthArrow, SunPanel } from "./SunPanel";
 import { useSun } from "./sunState";
+import { useLamps } from "./lampState";
 import { ManageHomesDialog } from "./ManageHomes";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
@@ -48,6 +49,7 @@ import {
   IconFurnish,
   IconLayers,
   IconSun,
+  IconLamp,
   IconPlan,
   IconPlus,
   IconRedo,
@@ -494,6 +496,8 @@ function Toolbar() {
   const showChanges = useOdaja((s) => s.showChanges);
   const sunOn = useSun((s) => s.on);
   const setSunOn = useSun((s) => s.setOn);
+  const lampsOn = useLamps((s) => s.on);
+  const setLampsOn = useLamps((s) => s.setOn);
   const toggleShowChanges = useOdaja((s) => s.toggleShowChanges);
   const hasRoofs = useOdaja((s) => (s.wholeShell?.roofs.length ?? 0) > 0);
   const showRoofs = useOdaja((s) => s.showRoofs);
@@ -555,6 +559,18 @@ function Toolbar() {
       >
         <IconSun size={17} />
       </button>
+      {viewMode !== "plan" && (
+        <button
+          className={`icon-only ${lampsOn ? "active" : ""}`}
+          onClick={() => {
+            setLampsOn(!lampsOn);
+            if (!lampsOn) useOdaja.getState().setNotice("Lamps light the room now. With many lamps the view can get slow; turn this off if it lags.");
+          }}
+          title="Evening: the lamps light the room"
+        >
+          <IconLamp size={17} />
+        </button>
+      )}
       {hasBase && viewMode === "plan" && (
         <button className={`icon-only ${showChanges ? "active" : ""}`} onClick={toggleShowChanges} title="Show walls removed (red) and added (green) compared with shell.json">
           <IconCompare size={17} />

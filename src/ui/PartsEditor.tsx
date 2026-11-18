@@ -220,6 +220,7 @@ export function PartInspector() {
   const selection = useOdaja((s) => s.partSelection);
   const part = useOdaja((s) => (s.partSelection.length === 1 ? s.sceneDoc?.objects?.find((o) => o.id === s.editingObjectId)?.parts?.[s.partSelection[0]] : undefined));
   const apply = useOdaja((s) => s.apply);
+  const isLamp = useOdaja((s) => Boolean(s.scene?.objects.find((o) => o.id === s.editingObjectId)?.light));
   if (!id) return null;
   if (!part) {
     return <section className="inspector muted">{selection.length > 1 ? `${selection.length} parts selected.` : "Select a part to edit it, or add one above."}</section>;
@@ -274,6 +275,12 @@ export function PartInspector() {
         </div>
       </div>
       <MaterialSelect label="Material" value={part.material ?? null} allowNone="Default grey" onChange={(m) => set({ material: m ?? undefined, color: undefined })} />
+      {isLamp && (
+        <label className="check">
+          <input type="checkbox" checked={part.glow ?? false} onChange={(e) => set({ glow: e.target.checked || undefined })} />
+          Glows when the light is on (a shade or bulb)
+        </label>
+      )}
       <div className="field-group">
         <div className="group-title">Repeat</div>
         <div className="grid-2">

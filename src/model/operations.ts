@@ -1,6 +1,7 @@
 // Named scene edits. Every change the UI makes goes through one of these, and
 // the future MCP server will expose the same set to LLMs.
-import type { SceneDoc } from "./schema";
+import { TEMPLATES_BY_ID, templateParams } from "./library";
+import { lightInput, type SceneDoc } from "./schema";
 import { round } from "./units";
 
 export type ObjectDoc = NonNullable<SceneDoc["objects"]>[number];
@@ -41,13 +42,23 @@ export function setObjectProps(id: string, patch: ObjectPatch) {
 }
 
 export function setTemplateParams(id: string, params: Record<string, number>) {
-  return (doc: SceneDoc) => updateObject(doc, id, (o) => (o.template ? { ...o, params: { ...o.params, ...params } } : o));
+  return (doc: SceneDoc) =>
+    updateObject(doc, id, (o) => {
+      const template = o.template ? TEMPLATES_BY_ID.get(o.template) : undefined;
+      if (!template) return o;
+      const next = { ...o.params, ...params };
+      if (!template.fromCeiling) return { ...o, params: next };
+      // A ceiling light keeps its top at the ceiling as it gets taller or shorter.
+      const before = template.fromCeiling(templateParams(template, o.params));
+      const after = template.fromCeiling(templateParams(template, next));
+      return { ...o, params: next, elevation: round((o.elevation ?? 0) + before - after) };
+    });
 }
 
 // Turn a template object into a hand-built one with the given parts, so its
-// parts can be edited individually.
+// parts can be edited individually. A lamp keeps its template's light.
 export function detachTemplate(id: string, parts: NonNullable<ObjectDoc["parts"]>) {
-  return (doc: SceneDoc) => updateObject(doc, id, (o) => clean({ ...o, template: undefined, params: undefined, parts }));
+  return (doc: SceneDoc) => updateObject(doc, id, (o) => clean({ ...o, light: lightInput(o), template: undefined, params: undefined, parts }));
 }
 
 export function addObject(object: ObjectDoc) {
