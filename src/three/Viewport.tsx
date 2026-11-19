@@ -38,6 +38,8 @@ function CameraRig() {
   const presenting = useOdaja((s) => s.presenting);
   const frameRequest = useOdaja((s) => s.frameRequest);
   const shell = useOdaja((s) => s.shell);
+  // Scenes with their own walls can be anywhere on the plan.
+  const shellPath = useOdaja((s) => s.shellPath);
   const camera = useThree((s) => s.camera);
   const size = useThree((s) => s.size);
   const gl = useThree((s) => s.gl);
@@ -64,7 +66,8 @@ function CameraRig() {
     planCamera.controls = controls;
   }, [camera, controls]);
 
-  // Frame the whole flat when the view changes (not on every resize or edit).
+  // Frame the whole flat when the view or the walls' file changes (not on
+  // every resize or edit).
   useEffect(() => {
     if (!controls || viewMode === "walk") return;
     // Plan frames the whole site; 3D frames the house so it does not shrink
@@ -123,7 +126,7 @@ function CameraRig() {
     }
     controls.update();
     invalidate();
-  }, [viewMode, frameRequest, controls, camera, hasShell, hasUnderlay, presenting, invalidate]);
+  }, [viewMode, frameRequest, shellPath, controls, camera, hasShell, hasUnderlay, presenting, invalidate]);
 
   return null;
 }
