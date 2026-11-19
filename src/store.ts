@@ -138,6 +138,8 @@ interface OdajaState {
   wallThickness: number;
   wallsCut: boolean;
   viewMode: ViewMode;
+  // Session-only UI; never written to a project.
+  presenting: boolean;
   frameRequest: number;
   planView: PlanView | null;
   // Shape editor: the object whose parts are being edited, the selected
@@ -189,6 +191,8 @@ interface OdajaState {
   applyProject(change: (doc: ProjectDoc) => ProjectDoc): void;
   toggleWallsCut(): void;
   setViewMode(mode: ViewMode): void;
+  setPresenting(presenting: boolean): void;
+  togglePresenting(): void;
   setPlanView(view: PlanView): void;
   setDragPreview(preview: OdajaState["dragPreview"]): void;
   startWalk(start: OdajaState["walkStart"]): void;
@@ -462,6 +466,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     wallThickness: 12,
     wallsCut: false,
     viewMode: "3d",
+    presenting: false,
     frameRequest: 0,
     planView: null,
     editingObjectId: null,
@@ -639,6 +644,20 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
     toggleWallsCut() {
       set((s) => ({ wallsCut: !s.wallsCut }));
+    },
+
+    setPresenting(presenting) {
+      if (presenting === get().presenting) return;
+      if (presenting) get().setViewMode("3d");
+      set({
+        presenting,
+        pickingWalkStart: false,
+        ...(presenting ? { selectedId: null, editingObjectId: null, partSelection: [], focus: null } : {}),
+      });
+    },
+
+    togglePresenting() {
+      get().setPresenting(!get().presenting);
     },
 
     // Choosing a view again re-frames the camera on the whole flat. Leaving

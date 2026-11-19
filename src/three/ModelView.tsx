@@ -8,11 +8,13 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { M } from "../model/units";
 import { platform } from "../platform";
 import { configureGLTF } from "./modelImport";
+import { upgradeModelMaterials } from "./render/modelMaterials";
 
-function Model({ src, size, material, castShadow }: { src: string; size: [number, number, number]; material?: THREE.Material; castShadow: boolean }) {
+function Model({ src, size, material, castShadow, prepareMaterials }: { src: string; size: [number, number, number]; material?: THREE.Material; castShadow: boolean; prepareMaterials: typeof upgradeModelMaterials }) {
   const gltf = useLoader(GLTFLoader, platform.fileUrl(src), configureGLTF);
   const { object, offset, scale } = useMemo(() => {
     const object = gltf.scene.clone(true);
+    prepareMaterials(object);
     object.traverse((o) => {
       const mesh = o as THREE.Mesh;
       if (!mesh.isMesh) return;
@@ -29,7 +31,7 @@ function Model({ src, size, material, castShadow }: { src: string; size: [number
     const s = (want: number, have: number) => (have > 1e-9 ? M(want) / have : 1);
     const scale: [number, number, number] = [s(size[0], native.x), s(size[2], native.y), s(size[1], native.z)];
     return { object, offset, scale };
-  }, [gltf, material, castShadow, size[0], size[1], size[2]]);
+  }, [gltf, material, castShadow, prepareMaterials, size[0], size[1], size[2]]);
   return (
     <group scale={scale}>
       <primitive object={object} position={offset} />
@@ -50,11 +52,11 @@ class ModelErrorBoundary extends Component<{ fallback: ReactNode; children: Reac
   }
 }
 
-export function ModelView(props: { src: string; size: [number, number, number]; material?: THREE.Material; castShadow?: boolean; fallback: ReactNode }) {
+export function ModelView(props: { src: string; size: [number, number, number]; material?: THREE.Material; castShadow?: boolean; fallback: ReactNode; prepareMaterials?: typeof upgradeModelMaterials }) {
   return (
     <ModelErrorBoundary key={props.src} fallback={props.fallback}>
       <Suspense fallback={props.fallback}>
-        <Model src={props.src} size={props.size} material={props.material} castShadow={props.castShadow ?? true} />
+        <Model src={props.src} size={props.size} material={props.material} castShadow={props.castShadow ?? true} prepareMaterials={props.prepareMaterials ?? upgradeModelMaterials} />
       </Suspense>
     </ModelErrorBoundary>
   );

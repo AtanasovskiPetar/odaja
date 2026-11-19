@@ -1,0 +1,114 @@
+{
+  "version": 1,
+  "wallHeight": 280,
+  "walls": [
+    { "id": "wall-north", "from": [0, 0], "to": [665, 0], "thickness": 25, "material": "wall" },
+    { "id": "wall-east", "from": [665, 0], "to": [665, 545], "thickness": 25, "material": "wall" },
+    { "id": "wall-south", "from": [665, 545], "to": [0, 545], "thickness": 25, "material": "wall" },
+    { "id": "wall-west", "from": [0, 545], "to": [0, 0], "thickness": 25, "material": "wall" }
+  ],
+  "openings": [
+    {
+      "id": "window-south",
+      "wall": "wall-south",
+      "type": "window",
+      "offset": 155,
+      "width": 340,
+      "height": 215,
+      "sill": 45,
+      "style": "fixed",
+      "frame": 5,
+      "frameMaterial": "black",
+      "panes": [3, 1]
+    },
+    {
+      "id": "door-entry",
+      "wall": "wall-east",
+      "type": "door",
+      "offset": 410,
+      "width": 90,
+      "height": 215,
+      "style": "single",
+      "frame": 4,
+      "frameMaterial": "walnut",
+      "hinge": "end",
+      "swing": "left",
+      "open": 80
+    }
+  ],
+  "roofs": [
+    {
+      "id": "roof-flat",
+      "type": "flat",
+      "polygon": [[-12.5, -12.5], [677.5, -12.5], [677.5, 557.5], [-12.5, 557.5]],
+      "overhang": 40,
+      "thickness": 30,
+      "material": "paving"
+    }
+  ],
+  "rooms": [
+    {
+      "id": "living-dining",
+      "name": "Living & dining",
+      "polygon": [[0, 0], [665, 0], [665, 545], [0, 545]],
+      "floor": "oak"
+    }
+  ],
+  "plot": { "polygon": [[-362.5, -362.5], [1027.5, -362.5], [1027.5, 907.5], [-362.5, 907.5]], "material": "grass" },
+  "fences": [
+    {
+      "id": "hedge-north",
+      "from": [-362.5, -362.5],
+      "to": [1027.5, -362.5],
+      "style": "hedge",
+      "height": 75,
+      "thickness": 40,
+      "material": "plant-green"
+    },
+    {
+      "id": "hedge-east",
+      "from": [1027.5, -362.5],
+      "to": [1027.5, 907.5],
+      "style": "hedge",
+      "height": 75,
+      "thickness": 40,
+      "material": "plant-green",
+      "gates": [{ "offset": 757.5, "width": 120 }]
+    },
+    {
+      "id": "hedge-south",
+      "from": [-362.5, 907.5],
+      "to": [1027.5, 907.5],
+      "style": "hedge",
+      "height": 75,
+      "thickness": 40,
+      "material": "plant-green",
+      "gates": [{ "offset": 462.5, "width": 600 }]
+    },
+    {
+      "id": "hedge-west",
+      "from": [-362.5, -362.5],
+      "to": [-362.5, 907.5],
+      "style": "hedge",
+      "height": 75,
+      "thickness": 40,
+      "material": "plant-green"
+    }
+  ],
+  "areas": [
+    {
+      "id": "south-terrace",
+      "name": "South window terrace",
+      "kind": "paving",
+      "polygon": [[-12.5, 557.5], [797.5, 557.5], [797.5, 807.5], [-12.5, 807.5]],
+      "material": "paving"
+    },
+    {
+      "id": "east-entry-path",
+      "name": "East door gravel approach",
+      "kind": "gravel",
+      "polygon": [[677.5, 395], [1027.5, 395], [1027.5, 515], [797.5, 515], [797.5, 557.5], [677.5, 557.5]],
+      "material": "gravel-path"
+    }
+  ]
+}

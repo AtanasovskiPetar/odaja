@@ -282,6 +282,7 @@ export const TEMPLATES: Template[] = [
       const shade = pendantShade(diameter);
       return [
         { name: "shade", shape: "cylinder", radius: diameter / 2, height: shade, color: SHADE, glow: true },
+        { name: "bulb", shape: "sphere", radius: Math.min(4, diameter / 5), at: [0, 0, Math.round(shade * 0.3)], color: "#fff2cf", glow: true },
         { name: "cord", shape: "cylinder", radius: 0.4, height: Math.max(1, drop - 1.5), at: [0, 0, shade], color: DARK_METAL },
         { name: "canopy", shape: "cylinder", radius: 6, height: 1.5, at: [0, 0, shade + drop - 1.5], color: FITTING },
       ];
@@ -306,6 +307,7 @@ export const TEMPLATES: Template[] = [
       { name: "base", shape: "cylinder", radius: 14, height: 3, color: DARK_METAL },
       { name: "pole", shape: "cylinder", radius: 1.2, height: height - 33, at: [0, 0, 3], color: DARK_METAL },
       { name: "shade", shape: "cylinder", radius: diameter / 2, height: 30, at: [0, 0, height - 30], color: SHADE, glow: true },
+      { name: "bulb", shape: "sphere", radius: Math.min(4.5, diameter / 5), at: [0, 0, height - 15], color: "#fff2cf", glow: true },
     ],
     light: ({ height }) => ({ at: [0, 0, height - 15], lumens: 1000, kelvin: 2700 }),
   },
@@ -319,6 +321,7 @@ export const TEMPLATES: Template[] = [
       return [
         { name: "body", shape: "cylinder", radius: Math.min(8, diameter / 3), height: height - shade, color: "#d8d2c8" },
         { name: "shade", shape: "cylinder", radius: diameter / 2, height: shade, at: [0, 0, height - shade], color: SHADE, glow: true },
+        { name: "bulb", shape: "sphere", radius: Math.min(4, diameter / 5), at: [0, 0, Math.round(height * 0.75)], color: "#fff2cf", glow: true },
       ];
     },
     light: ({ height }) => ({ at: [0, 0, Math.round(height * 0.75)], lumens: 450, kelvin: 2700 }),
@@ -332,6 +335,7 @@ export const TEMPLATES: Template[] = [
     build: ({ width }) => [
       { name: "plate", shape: "box", size: [width, 2, width], at: [0, 5, 0], color: FITTING },
       { name: "shade", shape: "box", size: [width, 10, width], at: [0, -1, 0], color: SHADE, radius: 2, glow: true },
+      { name: "bulb", shape: "sphere", radius: Math.min(4, width / 3), at: [0, -1, width / 2], color: "#fff2cf", glow: true },
     ],
     light: ({ width }) => ({ at: [0, -10, width / 2], lumens: 400, kelvin: 2700 }),
   },

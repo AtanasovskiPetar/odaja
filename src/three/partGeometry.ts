@@ -75,7 +75,8 @@ export function partGeometry(part: Part): THREE.BufferGeometry {
       return g;
     }
     case "cylinder": {
-      const g = new THREE.CylinderGeometry(M(part.radius), M(part.radius), M(part.height), 32);
+      const openEnded = part.name === "shade";
+      const g = new THREE.CylinderGeometry(M(part.radius), M(part.radius), M(part.height), 32, 1, openEnded);
       if (part.axis === "x") {
         g.rotateZ(Math.PI / 2);
         g.translate(0, M(part.radius), 0);
