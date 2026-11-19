@@ -92,31 +92,28 @@ export function LampLight({ light }: { light: Light }) {
     invalidate();
   }, [lamp, target, x, y, z, tx, ty, tz, light.angle, gl, invalidate]);
 
-  // Aim RectAreaLight toward `targetPos` (RectAreaLight emits along local -Z
-  // and Object3D.lookAt points -Z at the target for lights).
+  // Compute local orientation for RectAreaLight so local -Z points from
+  // `position` toward `targetPos` (Object3D.lookAt expects world space, which
+  // would aim sideways toward world origin when nested inside an object group).
+  const areaQuaternion = useMemo(() => {
+    const dir = new THREE.Vector3(targetPos[0] - position[0], targetPos[1] - position[1], targetPos[2] - position[2]);
+    if (dir.lengthSq() < 1e-6) dir.set(0, -1, 0);
+    else dir.normalize();
+    const up = Math.abs(dir.y) < 0.99 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, -1);
+    return new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().lookAt(new THREE.Vector3(), dir, up));
+  }, [position[0], position[1], position[2], targetPos[0], targetPos[1], targetPos[2]]);
+
   useEffect(() => {
-    const rect = rectRef.current;
-    if (!rect || light.type !== "area") return;
-    rect.position.set(position[0], position[1], position[2]);
-    // Avoid degenerate lookAt when target coincides with position.
-    const dx = targetPos[0] - position[0];
-    const dy = targetPos[1] - position[1];
-    const dz = targetPos[2] - position[2];
-    if (dx * dx + dy * dy + dz * dz < 1e-6) {
-      rect.lookAt(position[0], position[1] - 1, position[2]);
-    } else {
-      rect.lookAt(targetPos[0], targetPos[1], targetPos[2]);
-    }
-    rect.updateMatrixWorld();
+    if (light.type !== "area") return;
     invalidate();
-  }, [light.type, position[0], position[1], position[2], targetPos[0], targetPos[1], targetPos[2], sw, sd, invalidate]);
+  }, [light.type, areaQuaternion, sw, sd, invalidate]);
 
   if (light.type === "area") {
     const w = Math.max(0.05, M(sw));
     const d = Math.max(0.05, M(sd));
     const area = Math.max(w * d, 0.01);
     const intensity = (light.lumens / (Math.PI * area)) * AREA_EXPOSURE * adaptation;
-    return <rectAreaLight ref={rectRef} position={position} color={color} intensity={intensity} width={w} height={d} />;
+    return <rectAreaLight ref={rectRef} position={position} quaternion={areaQuaternion} color={color} intensity={intensity} width={w} height={d} />;
   }
 
   if (light.type === "spot") {
