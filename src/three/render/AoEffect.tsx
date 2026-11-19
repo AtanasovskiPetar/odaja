@@ -52,7 +52,12 @@ export function AoEffect({ enabled = true }: { enabled?: boolean }) {
   useEffect(() => {
     sceneDirty.current = true;
     materialsDirty.current = true;
-  }, [shell, wholeShell, sceneDoc, level, wallsCut, showRoofs, editingObjectId, dragPreview, lampsOn, sunOn, plan, enabled]);
+  }, [shell, wholeShell, sceneDoc, level, wallsCut, showRoofs, editingObjectId, lampsOn, sunOn, plan, enabled]);
+
+  // Dragging only moves an existing mesh; no materials are added or replaced.
+  useEffect(() => {
+    sceneDirty.current = true;
+  }, [dragPreview]);
 
   useLayoutEffect(() => {
     gl.getDrawingBufferSize(drawingSize);
