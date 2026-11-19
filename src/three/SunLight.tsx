@@ -11,10 +11,8 @@ import { siteBounds } from "../model/site";
 import { skyColor, sunDirection, sunlight } from "../model/sun";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
-import { useLamps } from "../ui/lampState";
 import { useSun } from "../ui/sunState";
 import { isDark } from "../ui/themePref";
-import { LampShadows } from "./LampLight";
 import { WindowLight } from "./render/WindowLight";
 import { useSky, type Sky } from "./sky";
 import type { SceneTheme } from "./theme";
@@ -127,15 +125,12 @@ function SunPlayer() {
 
 export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean; walk: boolean }) {
   const sky = useSky();
-  const lampsOn = useLamps((s) => s.on);
-  const lamps = lampsOn && !plan && <LampShadows />;
   if (sky && !plan) {
     return (
       <>
         <Sun theme={theme} walk={walk} sky={sky} />
         <SunPlayer />
         <WindowLight />
-        {lamps}
       </>
     );
   }
@@ -143,7 +138,6 @@ export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean
     <>
       <color attach="background" args={[plan ? theme.paper : walk ? theme.walk : theme.room]} />
       {!plan && <WindowLight />}
-      {lamps}
       <hemisphereLight args={["#ffffff", theme.ground, plan ? 2.2 : walk ? 0.3 : 0.35]} />
       {/* Bias keeps sloped surfaces (roofs) from shadowing themselves in rings. */}
       <directionalLight position={[6, 12, 4]} intensity={plan ? 0.8 : 1.4} castShadow={!plan} shadow-mapSize={[2048, 2048]} shadow-bias={-0.0005} shadow-normalBias={0.02}>
