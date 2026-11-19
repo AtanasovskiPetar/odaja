@@ -3360,10 +3360,11 @@ button.link.danger {
   border-color: var(--ink-muted);
 }
 
+/* No z-index: like the structure layer, it covers the plan but stays under
+   the toolbar and panels that come after it, so they stay clickable. */
 .measure-layer {
   position: absolute;
   inset: 0;
-  z-index: 6;
   cursor: crosshair;
 }
 
