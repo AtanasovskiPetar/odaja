@@ -133,14 +133,17 @@ const toolPart = z
   .describe("A part: box, cylinder, sphere, wedge or extrusion (custom outline)");
 const toolLight = z
   .object({
-    type: z.enum(["point", "spot"]).optional().describe("point: shines all round (default); spot: a cone straight down"),
+    type: z.enum(["point", "spot", "area"]).optional().describe("point: shines all round (default); spot: a directional cone aimed at `target`; area: a soft rectangular emitter (`RectAreaLight`) aimed at `target` (ideal for ring lights, ceiling panels, linear bars)"),
     at: vec3.optional().describe("[x, y, z] cm where the light sits, relative to the object origin like a part's `at`; default the middle, 80% of the way up"),
+    target: vec3.optional().describe("spot/area: [x, y, z] cm where the light aims, relative to the object origin (default: 100 cm straight below `at`)"),
+    size: vec2.optional().describe("area: [width, depth] cm of the emitting rectangle (default [60, 60])"),
     lumens: z.number().min(0).max(20000).optional().describe("brightness as on the bulb's box (default 800)"),
     kelvin: z.number().min(1500).max(10000).optional().describe("colour: 2700 warm white (default), 3000, 4000 neutral, 6500 daylight"),
     angle: z.number().min(10).max(160).optional().describe("spot: beam width in degrees (default 60)"),
+    penumbra: z.number().min(0).max(1).optional().describe("spot: beam edge softness 0..1 (default scales from 0.6 at 60° to 0.92 for wide ceiling spots)"),
     on: z.boolean().optional(),
   })
-  .describe("Light the object gives off (lamps). Lighting templates have one already; these fields change it.");
+  .describe("Light the object gives off (lamps: point, directional spot, or area panel/ring). Lighting templates have one already; these fields change it.");
 const toParts = (parts: z.infer<typeof toolPart>[]) =>
   parts.map((p, i) => {
     const r = PartSchema.safeParse(p);
@@ -342,6 +345,7 @@ function describeObject(o: ReturnType<typeof SceneSchema.parse>["objects"][numbe
     locked: o.locked || undefined,
     notes: o.notes,
     light: o.light,
+    lights: o.lights,
   };
 }
 
@@ -517,6 +521,7 @@ export const TOOLS: ToolDef[] = [
       library_item: z.string().optional().describe("id from list_library"),
       parts: z.array(toolPart).optional(),
       light: toolLight.optional(),
+      lights: z.array(toolLight).optional().describe("multiple light sources on one fixture (e.g. multi-spot track or chandelier)"),
       attached_to: z.string().optional(),
       notes: z.string().optional(),
       level: levelArg,
@@ -550,6 +555,7 @@ export const TOOLS: ToolDef[] = [
           parts: o.parts,
           model,
           light: o.light,
+          lights: o.lights,
           elevation: input.elevation ?? o.elevation,
           notes: input.notes ?? item.notes,
           libraryItem: { id, category: item.category },
@@ -563,7 +569,11 @@ export const TOOLS: ToolDef[] = [
           id,
           name: input.name,
           ...fields,
-          ...(input.light ? { light: { ...fields.light, ...(input.light as ObjectDoc["light"]) } } : {}),
+          ...(input.lights
+            ? { lights: input.lights as ObjectDoc["lights"], light: undefined }
+            : input.light
+              ? { light: { ...fields.light, ...(input.light as ObjectDoc["light"]) }, lights: undefined }
+              : {}),
           position: input.position as [number, number],
           rotation: input.rotation || undefined,
           level: levelId === levelsOf(loaded.shell)[0].id ? undefined : levelId,
@@ -582,7 +592,7 @@ export const TOOLS: ToolDef[] = [
 
   tool({
     name: "update_object",
-    description: "Change an object: move (position), turn (rotation), raise (elevation), rename, resize a template object (params), replace its parts, its light (light: fields to change, null to remove), attach to / detach from a wall (attached_to: wall id or null), notes, locked, or move it to another level (level; it keeps its plan position).",
+    description: "Change an object: move (position), turn (rotation), raise (elevation), rename, resize a template object (params), replace its parts, its light (light: fields to change, null to remove) or multiple lights (lights: array of light sources for multi-head fixtures, null to remove), attach to / detach from a wall (attached_to: wall id or null), notes, locked, or move it to another level (level; it keeps its plan position).",
     input: z.object({
       scene: sceneArg,
       id: z.string(),
@@ -593,6 +603,7 @@ export const TOOLS: ToolDef[] = [
       params: z.record(z.string(), z.number()).optional(),
       parts: z.array(toolPart).optional(),
       light: toolLight.nullable().optional(),
+      lights: z.array(toolLight).nullable().optional().describe("replace with multiple light sources on one fixture, or null to remove"),
       attached_to: z.string().nullable().optional(),
       notes: z.string().optional(),
       locked: z.boolean().optional(),
@@ -610,7 +621,18 @@ export const TOOLS: ToolDef[] = [
           ...(input.rotation !== undefined ? { rotation: ((input.rotation % 360) + 360) % 360 || undefined } : {}),
           ...(input.elevation !== undefined ? { elevation: input.elevation || undefined } : {}),
           ...(input.parts ? { parts: toParts(input.parts), template: undefined, params: undefined, light: lightInput(current) } : {}),
-          ...(input.light !== undefined ? { light: input.light === null ? undefined : { ...(input.parts ? lightInput(current) : current.light), ...(input.light as ObjectDoc["light"]) } } : {}),
+          ...(input.light !== undefined
+            ? {
+                light: input.light === null ? undefined : { ...(input.parts ? lightInput(current) : current.light), ...(input.light as ObjectDoc["light"]) },
+                ...(input.light !== null ? { lights: undefined } : {}),
+              }
+            : {}),
+          ...(input.lights !== undefined
+            ? {
+                lights: input.lights === null || input.lights.length === 0 ? undefined : (input.lights as ObjectDoc["lights"]),
+                ...(input.lights !== null && input.lights.length > 0 ? { light: undefined } : {}),
+              }
+            : {}),
           ...(input.attached_to !== undefined ? { attachedTo: input.attached_to ?? undefined } : {}),
           ...(input.notes !== undefined ? { notes: input.notes || undefined } : {}),
           ...(input.locked !== undefined ? { locked: input.locked || undefined } : {}),
@@ -1640,6 +1662,7 @@ export const TOOLS: ToolDef[] = [
           ...(o.parts ? { parts: o.parts } : {}),
           ...(o.model ? { model: { src: "model.glb", size: o.model.size } } : {}),
           ...(o.light ? { light: o.light } : {}),
+          ...(o.lights ? { lights: o.lights } : {}),
         },
       };
       await libraryFiles(ctx).write(`${id}/item.json`, JSON.stringify(item, null, 2) + "\n");

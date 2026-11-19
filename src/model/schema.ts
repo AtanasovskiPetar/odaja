@@ -498,6 +498,7 @@ export const LibraryItemSchema = z.object({
     parts: z.array(PartSchema).min(1).optional(),
     model: z.object({ src: z.literal("model.glb"), size: point3 }).optional(),
     light: LightSchema.optional(),
+    lights: z.array(LightSchema).optional(),
   }).optional(),
 }).refine((i) => !!i.object !== !!i.material, "a library item has either object or material");
 
