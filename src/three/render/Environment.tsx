@@ -6,7 +6,7 @@ import { useOdaja } from "../../store";
 import { useLamps } from "../../ui/lampState";
 import { SUN_YEAR, useSun } from "../../ui/sunState";
 import { useIsDark } from "../../ui/themePref";
-import { ENVIRONMENT_DEFAULTS, environmentIntensity, SkyEnvironment, type EnvironmentSettings } from "./environment";
+import { ENVIRONMENT_DEFAULTS, environmentIntensity, SkyEnvironment, type EnvironmentSettings } from "./skyEnvironment";
 import { configureExposure } from "./exposure";
 import { PresentationSky } from "./PresentationSky";
 
