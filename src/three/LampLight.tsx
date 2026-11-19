@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import type { Light } from "../model/schema";
 import { M } from "../model/units";
 
-const EXPOSURE = 0.1;
+// Scale lamp output without changing the viewport's exposure or window fill.
+// Point lamps represent broad shaded emitters in a single-bounce renderer:
+// a gentler decay softens near-wall hotspots while keeping room-scale reach.
+const POINT_EXPOSURE = 0.055;
+const SPOT_EXPOSURE = 0.085;
+const POINT_DECAY = 1.55;
+const SPOT_DECAY = 1.85;
 const SHADOW_LAMPS = 4;
 
 export function kelvinColor(kelvin: number): THREE.Color {
@@ -21,21 +27,33 @@ const lamps = new Set<THREE.PointLight | THREE.SpotLight>();
 export function LampLight({ light }: { light: Light }) {
   const [lamp, setLamp] = useState<THREE.PointLight | THREE.SpotLight | null>(null);
   const [target] = useState(() => new THREE.Object3D());
+  const invalidate = useThree((s) => s.invalidate);
   const color = useMemo(() => kelvinColor(light.kelvin), [light.kelvin]);
   const [x, y, z] = light.at;
   const position: [number, number, number] = [M(x), M(z), M(y)];
 
   useEffect(() => {
     if (!lamp) return;
-    lamp.castShadow = false;
-    lamp.shadow.mapSize.set(512, 512);
-    lamp.shadow.bias = -0.002;
+    const point = lamp instanceof THREE.PointLight;
+    // Start casting immediately when within the budget so shaders compile once
+    // instead of compiling without shadows and recompiling 250 ms later.
+    lamp.castShadow = lamps.size < SHADOW_LAMPS;
+    // 512 cube map with radius 2.5 matches 1024/4.5 angular sharpness (0.0049
+    // vs 0.0044 rad) at 4x lower fillrate and VRAM per point lamp.
+    lamp.shadow.mapSize.set(point ? 512 : 1024, point ? 512 : 1024);
+    lamp.shadow.bias = -0.0008;
     lamp.shadow.normalBias = 0.02;
-    lamp.shadow.camera.near = 0.05;
+    lamp.shadow.radius = point ? 2.5 : 3;
+    lamp.shadow.intensity = point ? 0.85 : 0.9;
+    lamp.shadow.camera.near = 0.15;
     lamp.shadow.camera.far = 15;
     lamps.add(lamp);
-    return () => void lamps.delete(lamp);
-  }, [lamp]);
+    invalidate();
+    return () => {
+      lamps.delete(lamp);
+      invalidate();
+    };
+  }, [lamp, invalidate]);
 
   if (light.type === "spot") {
     const half = ((light.angle / 2) * Math.PI) / 180;
@@ -43,24 +61,44 @@ export function LampLight({ light }: { light: Light }) {
     return (
       <>
         <primitive object={target} position={[position[0], position[1] - 1, position[2]]} />
-        <spotLight ref={setLamp} position={position} target={target} color={color} intensity={candela * EXPOSURE} angle={half} penumbra={0.3} decay={2} />
+        <spotLight ref={setLamp} position={position} target={target} color={color} intensity={candela * SPOT_EXPOSURE} angle={half} penumbra={0.6} decay={SPOT_DECAY} />
       </>
     );
   }
-  return <pointLight ref={setLamp} position={position} color={color} intensity={(light.lumens / (4 * Math.PI)) * EXPOSURE} decay={2} />;
+  return <pointLight ref={setLamp} position={position} color={color} intensity={(light.lumens / (4 * Math.PI)) * POINT_EXPOSURE} decay={POINT_DECAY} />;
 }
 
 export function LampShadows() {
   const since = useRef(0);
   const at = useMemo(() => new THREE.Vector3(), []);
-  useFrame(({ camera }, delta) => {
+  useFrame(({ camera, gl, invalidate }, delta) => {
     since.current += delta;
     if (since.current < 0.25) return;
     since.current = 0;
-    const nearest = [...lamps]
-      .map((lamp) => ({ lamp, d: lamp.getWorldPosition(at).distanceToSquared(camera.position) }))
-      .sort((a, b) => a.d - b.d);
-    nearest.forEach(({ lamp }, i) => (lamp.castShadow = i < SHADOW_LAMPS));
+    let changed = false;
+    if (lamps.size <= SHADOW_LAMPS) {
+      for (const lamp of lamps) {
+        if (!lamp.castShadow) {
+          lamp.castShadow = true;
+          changed = true;
+        }
+      }
+    } else {
+      const nearest = [...lamps]
+        .map((lamp) => ({ lamp, d: lamp.getWorldPosition(at).distanceToSquared(camera.position) }))
+        .sort((a, b) => a.d - b.d);
+      nearest.forEach(({ lamp }, i) => {
+        const next = i < SHADOW_LAMPS;
+        if (lamp.castShadow !== next) {
+          lamp.castShadow = next;
+          changed = true;
+        }
+      });
+    }
+    if (changed) {
+      gl.shadowMap.needsUpdate = true;
+      invalidate();
+    }
   });
   return null;
 }

@@ -1,6 +1,7 @@
-// Where the sun is for a place and moment, and where that is on the plan.
-// The formulas are the standard low-precision ones (as in SunCalc, after
-// Astronomy Answers): good to a fraction of a degree, offline.
+// Where the sun and moon are for a place and moment (and the moon's phase),
+// and where that is on the plan. The formulas are the standard low-precision
+// ones (as in SunCalc, after Astronomy Answers): good to a fraction of a
+// degree for the sun and about a degree for the moon, offline.
 import type { Site } from "./schema";
 
 const RAD = Math.PI / 180;
@@ -8,6 +9,7 @@ const DAY_MS = 86400000;
 const J1970 = 2440588;
 const J2000 = 2451545;
 const OBLIQUITY = RAD * 23.4397;
+const SUN_DISTANCE = 149598000; // km
 
 const toDays = (date: Date) => date.valueOf() / DAY_MS - 0.5 + J1970 - J2000;
 
@@ -21,6 +23,20 @@ function sunCoords(d: number) {
   };
 }
 
+// The moon's place in the sky (geocentric, distance in km).
+function moonCoords(d: number) {
+  const l0 = RAD * (218.316 + 13.176396 * d); // mean longitude
+  const m = RAD * (134.963 + 13.064993 * d); // mean anomaly
+  const f = RAD * (93.272 + 13.22935 * d); // mean distance from its node
+  const longitude = l0 + RAD * 6.289 * Math.sin(m);
+  const latitude = RAD * 5.128 * Math.sin(f);
+  return {
+    declination: Math.asin(Math.sin(latitude) * Math.cos(OBLIQUITY) + Math.cos(latitude) * Math.sin(OBLIQUITY) * Math.sin(longitude)),
+    rightAscension: Math.atan2(Math.sin(longitude) * Math.cos(OBLIQUITY) - Math.tan(latitude) * Math.sin(OBLIQUITY), Math.cos(longitude)),
+    distance: 385001 - 20905 * Math.cos(m),
+  };
+}
+
 export interface SunPosition {
   // Degrees above the horizon (negative: below).
   altitude: number;
@@ -28,15 +44,42 @@ export interface SunPosition {
   bearing: number;
 }
 
-export function sunPosition(date: Date, latitude: number, longitude: number): SunPosition {
+// Where something at these celestial coordinates is in the sky.
+function skyPosition(d: number, latitude: number, longitude: number, c: { declination: number; rightAscension: number }): SunPosition {
   const phi = RAD * latitude;
-  const d = toDays(date);
-  const { declination, rightAscension } = sunCoords(d);
-  const hourAngle = RAD * (280.16 + 360.9856235 * d) + RAD * longitude - rightAscension;
-  const altitude = Math.asin(Math.sin(phi) * Math.sin(declination) + Math.cos(phi) * Math.cos(declination) * Math.cos(hourAngle));
+  const hourAngle = RAD * (280.16 + 360.9856235 * d) + RAD * longitude - c.rightAscension;
+  const altitude = Math.asin(Math.sin(phi) * Math.sin(c.declination) + Math.cos(phi) * Math.cos(c.declination) * Math.cos(hourAngle));
   // Measured from south, westward.
-  const azimuth = Math.atan2(Math.sin(hourAngle), Math.cos(hourAngle) * Math.sin(phi) - Math.tan(declination) * Math.cos(phi));
+  const azimuth = Math.atan2(Math.sin(hourAngle), Math.cos(hourAngle) * Math.sin(phi) - Math.tan(c.declination) * Math.cos(phi));
   return { altitude: altitude / RAD, bearing: (((azimuth / RAD + 180) % 360) + 360) % 360 };
+}
+
+export function sunPosition(date: Date, latitude: number, longitude: number): SunPosition {
+  const d = toDays(date);
+  return skyPosition(d, latitude, longitude, sunCoords(d));
+}
+
+export interface MoonPosition extends SunPosition {
+  // How much of the moon is lit, 0 (new) to 1 (full), and whether it's growing.
+  lit: number;
+  waxing: boolean;
+}
+
+export function moonPosition(date: Date, latitude: number, longitude: number): MoonPosition {
+  const d = toDays(date);
+  const sun = sunCoords(d);
+  const moon = moonCoords(d);
+  // The angle between sun and moon seen from the earth, then from the moon.
+  const elongation = Math.acos(
+    Math.sin(sun.declination) * Math.sin(moon.declination) +
+      Math.cos(sun.declination) * Math.cos(moon.declination) * Math.cos(sun.rightAscension - moon.rightAscension),
+  );
+  const phase = Math.atan2(SUN_DISTANCE * Math.sin(elongation), moon.distance - SUN_DISTANCE * Math.cos(elongation));
+  const side = Math.atan2(
+    Math.cos(sun.declination) * Math.sin(sun.rightAscension - moon.rightAscension),
+    Math.sin(sun.declination) * Math.cos(moon.declination) - Math.cos(sun.declination) * Math.sin(moon.declination) * Math.cos(sun.rightAscension - moon.rightAscension),
+  );
+  return { ...skyPosition(d, latitude, longitude, moon), lit: (1 + Math.cos(phase)) / 2, waxing: side < 0 };
 }
 
 // Unit vector pointing at the sun in the 3D scene (x = plan x, y up,
@@ -83,6 +126,24 @@ export function sunlight(altitude: number): { strength: number; color: string } 
   const mix = (a: number, b: number) => Math.round(a + (b - a) * t);
   const color = `rgb(${mix(255, 255)}, ${mix(170, 246)}, ${mix(110, 232)})`;
   return { strength, color };
+}
+
+const smooth = (t: number) => {
+  const c = Math.min(1, Math.max(0, t));
+  return c * c * (3 - 2 * c);
+};
+
+// How much of the day's sky light is left: 1 with the sun 18° up, falling
+// smoothly through dusk to 0 once the sky is dark (the sun 12° down). All the
+// light from the sky follows it, so evenings darken without jumps.
+export function daylightLeft(altitude: number): number {
+  return smooth((altitude + 12) / 30);
+}
+
+// Light from the moon: 0 (new, or below the horizon) to 1 (full and high).
+// Its brightness falls off fast with the phase; a half moon gives a fraction.
+export function moonlight(moon: MoonPosition): number {
+  return moon.lit * moon.lit * smooth((moon.altitude + 1) / 16);
 }
 
 // Sky colour for the time: night blue, warm at sunrise and sunset, day blue.

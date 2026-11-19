@@ -1,23 +1,32 @@
 // The 3D lighting. Normally a fixed soft light; with the sunlight view on
-// (and a site set) the real sun for the chosen day and time: its direction,
-// strength and colour, sharp shadows through the windows, a dimmer room so the
-// patches of sun stand out, and a sky that follows the time.
+// (and a site set) the real sky for the chosen day and time: the sun's
+// direction, strength and colour, sharp shadows through the windows, a dimmer
+// room so the patches of sun stand out, and a sky that follows the time. After
+// sunset the moon takes over, by its phase; lamps add to either.
 import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame, useThree } from "@react-three/fiber";
 import { shellBounds } from "../model/geometry";
 import { siteBounds } from "../model/site";
-import { momentOf, skyColor, sunDirection, sunlight, sunPosition } from "../model/sun";
+import { skyColor, sunDirection, sunlight } from "../model/sun";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
 import { useLamps } from "../ui/lampState";
-import { SUN_YEAR, useSun } from "../ui/sunState";
+import { useSun } from "../ui/sunState";
 import { isDark } from "../ui/themePref";
 import { LampShadows } from "./LampLight";
+import { WindowLight } from "./render/WindowLight";
+import { useSky, type Sky } from "./sky";
 import type { SceneTheme } from "./theme";
 
-const NIGHT_SKY = "#8a9ab8";
-const NIGHT_FILL = 0.15;
+// The night's fill, toward which the sky's light fades after sunset.
+const NIGHT_SKY = "#9cb6d8";
+const NIGHT_GROUND = "#343b48";
+const MOON_COLOR = "#aebfdd";
+// A full moon high up, against the sun's 2.6: far brighter than the real
+// ratio so a moonlit room reads, yet below the sun at sunset, so evenings
+// only get darker.
+const MOON_LIGHT = 0.15;
 
 // Blocks sun from above (the 3D view has no ceiling), invisible otherwise:
 // it only casts shadows.
@@ -33,21 +42,24 @@ function SunCeiling({ bounds, height }: { bounds: { minX: number; minY: number; 
   );
 }
 
-function Sun({ theme, walk }: { theme: SceneTheme; walk: boolean }) {
-  const site = useOdaja((s) => s.project?.site);
+function Sun({ theme, walk, sky }: { theme: SceneTheme; walk: boolean; sky: Sky }) {
   const shell = useOdaja((s) => s.shell);
   const whole = useOdaja((s) => s.wholeShell);
-  const day = useSun((s) => s.day);
-  const minutes = useSun((s) => s.minutes);
   const scene = useThree((s) => s.scene);
+  const invalidate = useThree((s) => s.invalidate);
   const light = useRef<THREE.DirectionalLight>(null);
 
   // The shadow-only ceiling covers the house; shadows fall across the plot.
   const house = useMemo(() => (shell ? shellBounds(shell) : null), [shell]);
   const bounds = useMemo(() => (whole ? siteBounds(whole) : null), [whole]);
-  const pos = sunPosition(momentOf(SUN_YEAR, day, minutes), site!.latitude, site!.longitude);
-  const dir = sunDirection(pos, site!.north);
-  const { strength, color } = sunlight(pos.altitude);
+  // Once the sun is down the same light is the moon: one light, so the
+  // shaders stay the same (ShaderGate). It shows as the sky darkens.
+  const sun = sunlight(sky.sun.altitude);
+  const byMoon = sun.strength === 0;
+  const dir = sunDirection(byMoon ? sky.moon : sky.sun, sky.north);
+  const color = byMoon ? MOON_COLOR : sun.color;
+  const moonIn = Math.min(1, (-1 - sky.sun.altitude) / 7); // from no sun to the sun 8° down
+  const intensity = byMoon ? MOON_LIGHT * sky.moonlight * moonIn : 2.6 * sun.strength;
   const center: [number, number, number] = bounds ? [M((bounds.minX + bounds.maxX) / 2), 0, M((bounds.minY + bounds.maxY) / 2)] : [0, 0, 0];
   // The shadow box just covers the house and garden, for the sharpest shadows.
   const radius = bounds ? Math.hypot(M(bounds.maxX - bounds.minX), M(bounds.maxY - bounds.minY)) / 2 + 1 : 10;
@@ -61,24 +73,33 @@ function Sun({ theme, walk }: { theme: SceneTheme; walk: boolean }) {
   useEffect(() => {
     light.current?.target.position.set(...center);
     light.current?.target.updateMatrixWorld();
-  });
+    invalidate();
+  }, [center[0], center[1], center[2], invalidate]);
 
-  const sky = skyColor(pos.altitude, isDark());
-  // Daylight in the room comes mostly from the sky through the windows: dimmer
-  // indoors at night, never black.
-  const ambient = (walk ? 1.15 : 1.3) * (0.3 + 0.7 * Math.min(1, Math.max(0, (pos.altitude + 6) / 20)));
+  const background = skyColor(sky.sun.altitude, isDark());
+  // A small fill from the sky (PMREM gives most of it), keeping deep
+  // interiors readable. It fades with the daylight to the night's, which
+  // the moon brightens; never black.
+  const night = 1 - sky.daylight;
+  const nightFill = 0.1 + 0.06 * sky.moonlight;
+  const ambient = nightFill + ((walk ? 0.3 : 0.35) - nightFill) * sky.daylight;
+  const fillSky = useMemo(() => new THREE.Color(background).lerp(new THREE.Color(NIGHT_SKY), night), [background, night]);
+  const fillGround = useMemo(() => new THREE.Color(theme.ground).lerp(new THREE.Color(NIGHT_GROUND), night), [theme.ground, night]);
   const distance = radius + 30;
 
   return (
     <>
-      <color attach="background" args={[sky]} />
-      <hemisphereLight args={[sky, theme.ground, ambient]} />
+      <color attach="background" args={[background]} />
+      <hemisphereLight color={fillSky} groundColor={fillGround} intensity={ambient} />
       <directionalLight
         ref={light}
         position={[center[0] + dir[0] * distance, Math.max(0.5, dir[1] * distance), center[2] + dir[2] * distance]}
         color={color}
-        intensity={3.2 * strength}
-        castShadow={strength > 0}
+        intensity={intensity}
+        // Casting at all times (sun, moon or neither), so the time passing
+        // sunset doesn't change every shader; a dark light's shadow isn't redrawn.
+        castShadow
+        shadow-autoUpdate={intensity > 0}
         shadow-mapSize={[4096, 4096]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.02}
@@ -104,33 +125,16 @@ function SunPlayer() {
   return null;
 }
 
-function Night({ theme }: { theme: SceneTheme }) {
-  return (
-    <>
-      <color attach="background" args={[skyColor(-18, isDark())]} />
-      <hemisphereLight args={[NIGHT_SKY, theme.ground, NIGHT_FILL]} />
-    </>
-  );
-}
-
 export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean; walk: boolean }) {
-  const sunOn = useSun((s) => s.on);
+  const sky = useSky();
   const lampsOn = useLamps((s) => s.on);
-  const hasSite = useOdaja((s) => Boolean(s.project?.site));
   const lamps = lampsOn && !plan && <LampShadows />;
-  if (sunOn && hasSite && !plan) {
+  if (sky && !plan) {
     return (
       <>
-        <Sun theme={theme} walk={walk} />
+        <Sun theme={theme} walk={walk} sky={sky} />
         <SunPlayer />
-        {lamps}
-      </>
-    );
-  }
-  if (lamps) {
-    return (
-      <>
-        <Night theme={theme} />
+        <WindowLight />
         {lamps}
       </>
     );
@@ -138,9 +142,11 @@ export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean
   return (
     <>
       <color attach="background" args={[plan ? theme.paper : walk ? theme.walk : theme.room]} />
-      <hemisphereLight args={["#ffffff", theme.ground, plan ? 2.2 : walk ? 2.0 : 1.4]} />
+      {!plan && <WindowLight />}
+      {lamps}
+      <hemisphereLight args={["#ffffff", theme.ground, plan ? 2.2 : walk ? 0.3 : 0.35]} />
       {/* Bias keeps sloped surfaces (roofs) from shadowing themselves in rings. */}
-      <directionalLight position={[6, 12, 4]} intensity={plan ? 0.8 : 1.6} castShadow={!plan} shadow-mapSize={[2048, 2048]} shadow-bias={-0.0005} shadow-normalBias={0.02}>
+      <directionalLight position={[6, 12, 4]} intensity={plan ? 0.8 : 1.4} castShadow={!plan} shadow-mapSize={[2048, 2048]} shadow-bias={-0.0005} shadow-normalBias={0.02}>
         <orthographicCamera attach="shadow-camera" args={[-10, 10, 10, -10, 0.5, 40]} />
       </directionalLight>
     </>

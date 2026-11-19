@@ -3,6 +3,7 @@ import { rotateObject } from "../model/operations";
 import { duplicateParts, mirrorParts, removeParts } from "../model/partOps";
 import { useOdaja, type Tool } from "../store";
 import { Viewport } from "../three/Viewport";
+import { PreparingIndicator } from "../three/render/ShaderGate";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
 import { AddPanel } from "./AddPanel";
 import { Inspector } from "./Inspector";
@@ -41,6 +42,7 @@ import { isLibraryFile, openLibraryFileWithNotice } from "./libraryFiles";
 import { WalkOverlay, WalkStartPicker } from "./WalkOverlay";
 import {
   IconChat,
+  IconClose,
   IconCompare,
   IconCube,
   IconCut,
@@ -72,6 +74,20 @@ import {
 function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const state = useOdaja.getState();
+      if (e.key === "Escape" && state.presenting) {
+        e.preventDefault();
+        state.setPresenting(false);
+        return;
+      }
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || Boolean(e.target.closest("input, textarea, select")));
+      if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "p" && state.status === "project") {
+        e.preventDefault();
+        if (!e.repeat) state.togglePresenting();
+        return;
+      }
+      // Presentation is for inspection, not hidden editor shortcuts.
+      if (state.presenting) return;
       // File keys work everywhere, also while typing in a field.
       if ((e.metaKey || e.ctrlKey) && !e.altKey && useOdaja.getState().status === "project") {
         const k = e.key.toLowerCase();
@@ -86,7 +102,7 @@ function useShortcuts() {
           return;
         }
       }
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (typing) return;
       const s = useOdaja.getState();
       if (s.status !== "project") return;
       const mod = e.metaKey || e.ctrlKey;
@@ -132,7 +148,6 @@ function useShortcuts() {
       // only view switches and undo apply.
       if (s.viewMode === "walk") {
         if (key === "t") s.setViewMode("plan");
-        if (key === "p") s.setViewMode("3d");
         return;
       }
       if (key === "escape" && s.pickingWalkStart) return s.setPickingWalkStart(false);
@@ -140,7 +155,6 @@ function useShortcuts() {
 
       // Shared by both modes.
       if (key === "t") return s.setViewMode("plan");
-      if (key === "p") return s.setViewMode("3d");
       if (key === "e") return s.setMode(s.mode === "structure" ? "furnish" : "structure");
 
       if (s.editingObjectId) {
@@ -521,7 +535,7 @@ function Toolbar() {
           <IconPlan size={17} />
           Plan
         </button>
-        <button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")} title="3D view (P)">
+        <button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")} title="3D view">
           <IconCube size={17} />
           3D
         </button>
@@ -555,7 +569,7 @@ function Toolbar() {
           setSunOn(!sunOn);
           if (!sunOn) useOdaja.getState().setUnderlayPanel(false);
         }}
-        title="Sunlight: the real sun for a day and time, through your windows"
+        title="Sunlight: the real sun and moon for a day and time, through your windows"
       >
         <IconSun size={17} />
       </button>
@@ -564,9 +578,16 @@ function Toolbar() {
           className={`icon-only ${lampsOn ? "active" : ""}`}
           onClick={() => {
             setLampsOn(!lampsOn);
-            if (!lampsOn) useOdaja.getState().setNotice("Lamps light the room now. With many lamps the view can get slow; turn this off if it lags.");
+            if (!lampsOn) {
+              useOdaja.getState().setUnderlayPanel(false);
+              useOdaja.getState().setNotice(
+                sunOn
+                  ? "Lamps on. In daylight they're faint, as they are; pick an evening time in Sunlight to see them light the room. With many lamps the view can get slow."
+                  : "Lamps on. With many lamps the view can get slow; turn them off if it lags.",
+              );
+            }
           }}
-          title="Evening: the lamps light the room"
+          title="Lamps: light the room with the lamps that are on"
         >
           <IconLamp size={17} />
         </button>
@@ -585,6 +606,9 @@ function Toolbar() {
       </button>
       <span className="sep" />
       <ChatToggle />
+      <button onClick={() => useOdaja.getState().setPresenting(true)} title="Present the home without editor panels (P)" aria-keyshortcuts="P">
+        Present
+      </button>
     </div>
   );
 }
@@ -660,6 +684,7 @@ export function App() {
   const drop = useFileDrop();
   const chatOpen = useChat((s) => s.open);
   const status = useOdaja((s) => s.status);
+  const presenting = useOdaja((s) => s.presenting);
   const editingStructure = useOdaja((s) => s.mode === "structure" && s.viewMode === "plan");
   useEffect(() => {
     load();
@@ -669,10 +694,19 @@ export function App() {
   if (status === "loading") return null;
   if (status === "start") return <Welcome />;
   return (
-    <div className="app">
-      <Sidebar />
+    <div className={`app${presenting ? " presenting" : ""}`}>
+      {!presenting && <Sidebar />}
       <main className={`viewport ${drop.over ? "drop-over" : ""}`} {...drop.handlers}>
         <Viewport />
+        <PreparingIndicator />
+        {presenting ? (
+          <button className="presentation-exit" onClick={() => useOdaja.getState().setPresenting(false)} title="Exit presentation (Esc)" aria-keyshortcuts="Escape">
+            <IconClose size={15} />
+            Exit presentation
+            <kbd>Esc</kbd>
+          </button>
+        ) : (
+          <>
         <PlanOverlay />
         {editingStructure && <StructureLayer />}
         <UnderlayToolLayer />
@@ -688,9 +722,11 @@ export function App() {
         <Notice />
         <IssuesPanel />
         <Errors />
+          </>
+        )}
       </main>
-      {chatOpen && <ChatPanel />}
-      <Dialogs />
+      {!presenting && chatOpen && <ChatPanel />}
+      {!presenting && <Dialogs />}
     </div>
   );
 }

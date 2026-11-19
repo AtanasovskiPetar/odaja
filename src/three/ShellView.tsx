@@ -353,7 +353,7 @@ export function ShellView() {
       }));
   }, [whole, levelId, plan, walk]);
   return (
-    <group>
+    <group userData={{ compileFirst: true }}>
       {shown.map((l) => (
         <group key={l.id} position={[0, M(l.offset), 0]}>
           <LevelView shell={l.shell} active={l.active} slab={l.slab} arriving={l.arriving} />

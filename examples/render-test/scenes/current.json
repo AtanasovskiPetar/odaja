@@ -1,0 +1,379 @@
+{
+  "version": 1,
+  "name": "Current",
+  "description": "A quiet south-lit living/dining room: linen, walnut and pale stone, with deliberately legible contact shadows.",
+  "shell": "shell.json",
+  "finishes": [
+    { "id": "floor-oak", "surface": "floor", "room": "living-dining", "material": "oak" },
+    { "id": "wall-north-plaster", "surface": "wall", "wall": "wall-north", "side": "right", "material": "wall" },
+    { "id": "wall-east-plaster", "surface": "wall", "wall": "wall-east", "side": "right", "material": "wall" },
+    { "id": "wall-south-plaster", "surface": "wall", "wall": "wall-south", "side": "right", "material": "wall" },
+    { "id": "wall-west-plaster", "surface": "wall", "wall": "wall-west", "side": "right", "material": "wall" }
+  ],
+  "objects": [
+    {
+      "id": "parapet-north",
+      "name": "White roof parapet north",
+      "position": [332.5, -46.5],
+      "elevation": 310,
+      "parts": [{ "name": "parapet", "shape": "box", "size": [770, 12, 45], "material": "white" }],
+      "notes": "Outer face follows the roof's 40 cm overhang; side parapets butt into this full-width piece."
+    },
+    {
+      "id": "parapet-south",
+      "name": "White roof parapet south",
+      "position": [332.5, 591.5],
+      "elevation": 310,
+      "parts": [{ "name": "parapet", "shape": "box", "size": [770, 12, 45], "material": "white" }]
+    },
+    {
+      "id": "parapet-west",
+      "name": "White roof parapet west",
+      "position": [-46.5, 272.5],
+      "elevation": 310,
+      "parts": [{ "name": "parapet", "shape": "box", "size": [12, 626, 45], "material": "white" }]
+    },
+    {
+      "id": "parapet-east",
+      "name": "White roof parapet east",
+      "position": [711.5, 272.5],
+      "elevation": 310,
+      "parts": [{ "name": "parapet", "shape": "box", "size": [12, 626, 45], "material": "white" }]
+    },
+    {
+      "id": "tree-northwest",
+      "name": "Small northwest garden tree",
+      "position": [-225, -225],
+      "elevation": 0,
+      "template": "tree",
+      "params": { "height": 320, "spread": 180 }
+    },
+    {
+      "id": "tree-northeast",
+      "name": "Small northeast garden tree",
+      "position": [890, -225],
+      "elevation": 0,
+      "template": "tree",
+      "params": { "height": 340, "spread": 200 }
+    },
+    {
+      "id": "sofa",
+      "name": "Natural linen sofa",
+      "room": "living-dining",
+      "position": [72, 240],
+      "rotation": 90,
+      "notes": "The built-in fabric-blue material slot is intentionally natural linen in this project.",
+      "parts": [
+        {
+          "shape": "cylinder",
+          "radius": 2.5,
+          "height": 12,
+          "at": [-100, -38, 0],
+          "material": "walnut-oiled",
+          "name": "leg-fl"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 2.5,
+          "height": 12,
+          "at": [100, -38, 0],
+          "material": "walnut-oiled",
+          "name": "leg-fr"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 2.5,
+          "height": 12,
+          "at": [-100, 38, 0],
+          "material": "walnut-oiled",
+          "name": "leg-bl"
+        },
+        {
+          "shape": "cylinder",
+          "radius": 2.5,
+          "height": 12,
+          "at": [100, 38, 0],
+          "material": "walnut-oiled",
+          "name": "leg-br"
+        },
+        {
+          "shape": "box",
+          "size": [220, 95, 22],
+          "radius": 2,
+          "at": [0, 0, 12],
+          "material": "sofa-linen",
+          "name": "base"
+        },
+        {
+          "shape": "box",
+          "size": [18, 95, 52],
+          "radius": 3,
+          "at": [-101, 0, 12],
+          "material": "sofa-linen",
+          "name": "arm-left"
+        },
+        {
+          "shape": "box",
+          "size": [18, 95, 52],
+          "radius": 3,
+          "at": [101, 0, 12],
+          "material": "sofa-linen",
+          "name": "arm-right"
+        },
+        {
+          "shape": "box",
+          "size": [220, 20, 73],
+          "radius": 3,
+          "at": [0, 37.5, 12],
+          "material": "sofa-linen",
+          "name": "back"
+        },
+        {
+          "shape": "box",
+          "size": [90, 68, 14],
+          "radius": 3,
+          "at": [-46, -13, 34],
+          "material": "sofa-linen-cushion",
+          "name": "seat-cushion-left"
+        },
+        {
+          "shape": "box",
+          "size": [90, 68, 14],
+          "radius": 3,
+          "at": [46, -13, 34],
+          "material": "sofa-linen-cushion",
+          "name": "seat-cushion-right"
+        }
+      ]
+    },
+    {
+      "id": "coffee-table",
+      "name": "Walnut coffee table",
+      "room": "living-dining",
+      "position": [215, 240],
+      "rotation": 90,
+      "parts": [
+        {
+          "shape": "box",
+          "size": [110, 60, 4],
+          "radius": 1,
+          "at": [0, 0, 36],
+          "material": "walnut-oiled",
+          "name": "top"
+        },
+        { "shape": "box", "size": [4, 4, 36], "at": [-50, -22, 0], "material": "walnut-oiled", "name": "leg-1" },
+        { "shape": "box", "size": [4, 4, 36], "at": [50, -22, 0], "material": "walnut-oiled", "name": "leg-2" },
+        { "shape": "box", "size": [4, 4, 36], "at": [-50, 22, 0], "material": "walnut-oiled", "name": "leg-3" },
+        { "shape": "box", "size": [4, 4, 36], "at": [50, 22, 0], "material": "walnut-oiled", "name": "leg-4" },
+        { "shape": "box", "size": [100, 50, 2], "at": [0, 0, 10], "material": "walnut-oiled", "name": "lower-shelf" }
+      ]
+    },
+    {
+      "id": "stone-tabletop",
+      "name": "Travertine coffee-table slab",
+      "room": "living-dining",
+      "position": [215, 240],
+      "rotation": 90,
+      "elevation": 40,
+      "parts": [{ "name": "slab", "shape": "box", "size": [114, 64, 2], "radius": 1, "material": "travertine" }]
+    },
+    {
+      "id": "rug",
+      "name": "Flat woven wool rug",
+      "room": "living-dining",
+      "position": [200, 240],
+      "parts": [{ "name": "weave", "shape": "box", "size": [250, 290, 0.8], "radius": 1, "material": "wool-rug" }]
+    },
+    {
+      "id": "cushions",
+      "name": "Two olive velvet cushions",
+      "room": "living-dining",
+      "position": [72, 240],
+      "rotation": 90,
+      "elevation": 48,
+      "parts": [
+        {
+          "name": "cushion-left",
+          "shape": "box",
+          "size": [42, 18, 38],
+          "at": [-56, 18, 0],
+          "radius": 5,
+          "material": "velvet-cushion"
+        },
+        {
+          "name": "cushion-right",
+          "shape": "box",
+          "size": [42, 18, 38],
+          "at": [56, 18, 0],
+          "radius": 5,
+          "material": "velvet-cushion"
+        }
+      ]
+    },
+    {
+      "id": "dining-table",
+      "name": "Walnut dining table",
+      "room": "living-dining",
+      "position": [470, 235],
+      "rotation": 90,
+      "notes": "Built-in table geometry expanded to parts solely to replace its hard-coded oak top with walnut.",
+      "parts": [
+        { "name": "top", "shape": "box", "size": [150, 85, 4], "at": [0, 0, 71], "radius": 1, "material": "walnut" },
+        { "shape": "cylinder", "radius": 2.5, "height": 71, "at": [-67, -34.5, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 2.5, "height": 71, "at": [67, -34.5, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 2.5, "height": 71, "at": [-67, 34.5, 0], "material": "black" },
+        { "shape": "cylinder", "radius": 2.5, "height": 71, "at": [67, 34.5, 0], "material": "black" }
+      ]
+    },
+    {
+      "id": "chair-west-one",
+      "name": "Walnut chair west 1",
+      "room": "living-dining",
+      "position": [390, 195],
+      "rotation": 90,
+      "template": "chair"
+    },
+    {
+      "id": "chair-west-two",
+      "name": "Walnut chair west 2",
+      "room": "living-dining",
+      "position": [390, 275],
+      "rotation": 90,
+      "template": "chair"
+    },
+    {
+      "id": "chair-east-one",
+      "name": "Walnut chair east 1",
+      "room": "living-dining",
+      "position": [550, 195],
+      "rotation": 270,
+      "template": "chair"
+    },
+    {
+      "id": "chair-east-two",
+      "name": "Walnut chair east 2",
+      "room": "living-dining",
+      "position": [550, 275],
+      "rotation": 270,
+      "template": "chair"
+    },
+    {
+      "id": "pendant",
+      "name": "Dining pendant",
+      "room": "living-dining",
+      "position": [470, 235],
+      "elevation": 177,
+      "template": "pendant",
+      "params": { "diameter": 46, "drop": 80 },
+      "light": { "type": "point", "at": [0, 0, 7], "lumens": 1050, "kelvin": 3300, "angle": 85, "on": true }
+    },
+    {
+      "id": "floor-lamp",
+      "name": "Reading floor lamp",
+      "room": "living-dining",
+      "position": [140, 120],
+      "template": "floor-lamp",
+      "params": { "height": 165, "diameter": 36 },
+      "light": { "type": "point", "at": [0, 0, 150], "lumens": 1050, "kelvin": 3700, "on": true }
+    },
+    {
+      "id": "sideboard",
+      "name": "Low open oak sideboard",
+      "room": "living-dining",
+      "position": [475, 42],
+      "rotation": 180,
+      "template": "bookcase",
+      "params": { "width": 140, "depth": 40, "height": 80, "shelves": 2 }
+    },
+    {
+      "id": "planter",
+      "name": "Terracotta planter with leafy shrub",
+      "room": "living-dining",
+      "position": [150, 450],
+      "notes": "Built-in planter geometry expanded to assign named terracotta and plant materials.",
+      "parts": [
+        { "name": "pot", "shape": "box", "size": [45, 45, 52], "radius": 2, "material": "terracotta" },
+        { "name": "soil", "shape": "box", "size": [39, 39, 1], "at": [0, 0, 49], "color": "#5a4433" },
+        { "name": "plant", "shape": "sphere", "radius": 18.9, "at": [0, 0, 44.44], "material": "plant-green" }
+      ]
+    },
+    {
+      "id": "ceramic-vase",
+      "name": "Glazed ceramic vase",
+      "room": "living-dining",
+      "position": [445, 42],
+      "elevation": 80,
+      "parts": [
+        { "name": "body", "shape": "cylinder", "radius": 9, "height": 22, "material": "ceramic" },
+        { "name": "neck", "shape": "cylinder", "radius": 5, "height": 7, "at": [0, 0, 22], "material": "ceramic" }
+      ]
+    },
+    {
+      "id": "glass-carafe",
+      "name": "Clear glass carafe",
+      "room": "living-dining",
+      "position": [485, 235],
+      "elevation": 75,
+      "parts": [
+        { "name": "body", "shape": "cylinder", "radius": 5, "height": 17, "material": "glass" },
+        { "name": "neck", "shape": "cylinder", "radius": 2.5, "height": 9, "at": [0, 0, 17], "material": "glass" }
+      ]
+    },
+    {
+      "id": "steel-tray",
+      "name": "Brushed steel serving tray",
+      "room": "living-dining",
+      "position": [460, 200],
+      "elevation": 75,
+      "parts": [{ "name": "tray", "shape": "box", "size": [24, 34, 1.2], "radius": 1, "material": "steel" }]
+    },
+    {
+      "id": "shade-sample",
+      "name": "Linen-shade accent lamp",
+      "room": "living-dining",
+      "position": [510, 53],
+      "elevation": 80,
+      "parts": [
+        { "name": "base", "shape": "cylinder", "radius": 7, "height": 3, "material": "steel" },
+        { "name": "stem", "shape": "cylinder", "radius": 1, "height": 23, "at": [0, 0, 3], "material": "steel" },
+        {
+          "name": "shade",
+          "shape": "cylinder",
+          "radius": 13,
+          "height": 20,
+          "at": [0, 0, 24],
+          "material": "lampshade",
+          "glow": true
+        },
+        { "name": "bulb", "shape": "sphere", "radius": 4, "at": [0, 0, 34], "color": "#fff2cf", "glow": true }
+      ],
+      "light": { "type": "point", "at": [0, 0, 34], "lumens": 180, "kelvin": 3300, "on": true }
+    },
+    {
+      "id": "wall-art-one",
+      "name": "Framed warm abstract",
+      "room": "living-dining",
+      "position": [15, 195],
+      "elevation": 140,
+      "rotation": 90,
+      "parts": [
+        { "name": "frame", "shape": "box", "size": [55, 3, 70], "material": "walnut" },
+        { "name": "paper", "shape": "box", "size": [49, 0.5, 64], "at": [0, -1.75, 3], "material": "white" },
+        { "name": "composition", "shape": "box", "size": [25, 0.2, 38], "at": [-5, -2.1, 15], "material": "terracotta" }
+      ]
+    },
+    {
+      "id": "wall-art-two",
+      "name": "Framed olive abstract",
+      "room": "living-dining",
+      "position": [15, 285],
+      "elevation": 140,
+      "rotation": 90,
+      "parts": [
+        { "name": "frame", "shape": "box", "size": [55, 3, 70], "material": "walnut" },
+        { "name": "paper", "shape": "box", "size": [49, 0.5, 64], "at": [0, -1.75, 3], "material": "white" },
+        { "name": "composition", "shape": "box", "size": [28, 0.2, 28], "at": [5, -2.1, 24], "material": "plant-green" }
+      ]
+    }
+  ]
+}

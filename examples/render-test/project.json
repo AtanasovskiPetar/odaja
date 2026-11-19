@@ -1,0 +1,49 @@
+{
+  "version": 1,
+  "name": "Render Test",
+  "units": "cm",
+  "site": { "latitude": 41.9981, "longitude": 21.4254, "north": 0 },
+  "materials": {
+    "wall": { "color": "#e8dfd1", "roughness": 0.9 },
+    "white": { "color": "#f7f6f1", "roughness": 0.85 },
+    "oak": {
+      "color": "#bf9566",
+      "roughness": 0.45,
+      "tile": { "size": [20, 120], "grout": 0.25, "groutColor": "#796044", "pattern": "third", "variation": 0.08 }
+    },
+    "walnut": { "color": "#72503b", "roughness": 0.35 },
+    "travertine": { "color": "#d8c9ad", "roughness": 0.25 },
+    "steel": { "color": "#bfc2c4", "roughness": 0.3, "metalness": 0.85 },
+    "black": { "color": "#292a28", "roughness": 0.45, "metalness": 0.7 },
+    "fabric-blue": { "color": "#b7ada0", "roughness": 1 },
+    "velvet-cushion": { "color": "#6c7960", "roughness": 0.9 },
+    "wool-rug": { "color": "#d8cdbc", "roughness": 1 },
+    "glass": { "color": "#e3edef", "roughness": 0.05, "opacity": 0.25 },
+    "ceramic": { "color": "#e9e2d3", "roughness": 0.15 },
+    "terracotta": { "color": "#ad6448", "roughness": 0.85 },
+    "lampshade": { "color": "#eaddc5", "roughness": 0.9 },
+    "plant-green": { "color": "#526b42", "roughness": 0.9 },
+    "grass": { "color": "#425638", "roughness": 1 },
+    "paving": {
+      "color": "#aaa297",
+      "roughness": 0.8,
+      "tile": { "size": [60, 60], "grout": 0.4, "groutColor": "#888176", "pattern": "grid", "variation": 0.03 }
+    },
+    "gravel-path": { "color": "#a29783", "roughness": 1 },
+    "sofa-linen": {
+      "color": "#cbbda3",
+      "roughness": 0.95,
+      "tile": { "size": [2, 2], "grout": 0.05, "groutColor": "#b3a48a", "pattern": "grid", "variation": 0.12 }
+    },
+    "sofa-linen-cushion": {
+      "color": "#bcaa8c",
+      "roughness": 0.92,
+      "tile": { "size": [2, 2], "grout": 0.05, "groutColor": "#a8977a", "pattern": "grid", "variation": 0.15 }
+    },
+    "walnut-oiled": {
+      "color": "#6e4a32",
+      "roughness": 0.4,
+      "tile": { "size": [15, 110], "grout": 0.15, "groutColor": "#3a2619", "pattern": "vertical", "variation": 0.25 }
+    }
+  }
+}

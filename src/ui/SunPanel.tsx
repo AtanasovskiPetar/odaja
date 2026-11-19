@@ -1,14 +1,21 @@
 // The sunlight view's controls: where the flat is (once), then the day and
 // time to show, with play to watch the light move through the day. The light
 // itself is in src/three/SunLight.tsx; the sun maths in src/model/sun.ts.
-import { useState } from "react";
-import { daylight, momentOf, sunPosition } from "../model/sun";
+import { useMemo, useState } from "react";
+import { daylight, momentOf, moonPosition, sunPosition, type MoonPosition } from "../model/sun";
 import { useOdaja } from "../store";
 import { IconClose, IconPause, IconPlay } from "./icons";
 import { SUN_YEAR, useSun } from "./sunState";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
+
+function moonPhase(moon: MoonPosition): string {
+  if (moon.lit < 0.03) return "new moon";
+  if (moon.lit > 0.97) return "full moon";
+  if (moon.lit > 0.4 && moon.lit < 0.6) return moon.waxing ? "first quarter" : "last quarter";
+  return `${moon.waxing ? "waxing" : "waning"} ${moon.lit < 0.5 ? "crescent" : "gibbous"}`;
+}
 
 const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(Math.floor(minutes % 60)).padStart(2, "0")}`;
 const dateLabel = (day: number) => {
@@ -119,9 +126,16 @@ function SiteForm() {
 function SunControls() {
   const site = useOdaja((s) => s.project!.site!);
   const plan = useOdaja((s) => s.viewMode === "plan");
-  const { day, minutes, playing, setDay, setMinutes, setPlaying, setEditingSite } = useSun();
-  const pos = sunPosition(momentOf(SUN_YEAR, day, Math.floor(minutes)), site.latitude, site.longitude);
-  const light = daylight(SUN_YEAR, day, site);
+  const day = useSun((s) => s.day);
+  const minutes = useSun((s) => Math.floor(s.minutes));
+  const playing = useSun((s) => s.playing);
+  const setDay = useSun((s) => s.setDay);
+  const setMinutes = useSun((s) => s.setMinutes);
+  const setPlaying = useSun((s) => s.setPlaying);
+  const setEditingSite = useSun((s) => s.setEditingSite);
+  const pos = sunPosition(momentOf(SUN_YEAR, day, minutes), site.latitude, site.longitude);
+  const moon = moonPosition(momentOf(SUN_YEAR, day, minutes), site.latitude, site.longitude);
+  const light = useMemo(() => daylight(SUN_YEAR, day, site), [day, site.latitude, site.longitude]);
   const today = dayOf(new Date().getMonth(), new Date().getDate());
 
   const play = () => {
@@ -138,8 +152,12 @@ function SunControls() {
           <>
             Sun <strong>{Math.round(pos.altitude)}°</strong> up, from the {COMPASS[Math.round(pos.bearing / 45) % 8]}
           </>
+        ) : moon.altitude > 0 ? (
+          <>
+            Moon <strong>{Math.round(moon.altitude)}°</strong> up, from the {COMPASS[Math.round(moon.bearing / 45) % 8]} · {moonPhase(moon)}
+          </>
         ) : (
-          "The sun is below the horizon."
+          `The sun and moon are below the horizon (${moonPhase(moon)}).`
         )}
       </p>
       <label className="field">
@@ -235,7 +253,7 @@ export function PlanNorthArrow() {
 export function WalkSunTime() {
   const on = useSun((s) => s.on);
   const hasSite = useOdaja((s) => Boolean(s.project?.site));
-  const minutes = useSun((s) => s.minutes);
+  const minutes = useSun((s) => Math.floor(s.minutes));
   const playing = useSun((s) => s.playing);
   const setMinutes = useSun((s) => s.setMinutes);
   const setPlaying = useSun((s) => s.setPlaying);

@@ -114,8 +114,8 @@ north points on the plan.
 `latitude` and `longitude` are in degrees (north and east positive). `north` is
 the direction of true north on the plan, in degrees clockwise from the plan's
 up (−y): 0 means up is north, 90 means north is to the right (+x). The app
-works out the sun's direction for any date and time from these; nothing is
-looked up online.
+works out where the sun and moon are for any date and time from these;
+nothing is looked up online.
 
 ## shell.json
 
@@ -347,7 +347,7 @@ automatically. A floor finish replaces the room's own `floor` in this scene.
 | `parts` | The shapes that make up the object (at least one), unless it uses a `template` or `model`. |
 | `template`, `params` | Build the object from a built-in template instead of `parts` (see below). |
 | `model` | Use a 3D model instead of `parts`: `{ "src": "assets/models/chair-3a2f.glb", "size": [w, d, h] }`. The model is stretched to exactly `size` (cm), centred on the object's origin and standing on its elevation, with its front towards -y like every object. |
-| `light` | Makes the object a lamp that lights the room in the app's evening view (see [Lights](#lights)). |
+| `light` | Makes the object a lamp that lights the room when the app's lamps are on (see [Lights](#lights)). |
 | `libraryItem` | Set by the app when the object was placed from the furniture library: `{ "id": "oak-table", "category": "Living" }`. When someone opens a saved home, Odaja offers to add the items it uses to their library. Keep it when editing; leave it out for objects you create. |
 
 ### Template objects

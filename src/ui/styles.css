@@ -207,6 +207,48 @@ svg {
   height: 100%;
 }
 
+.app.presenting {
+  background: #e7e7e3;
+  overflow: hidden;
+}
+
+.app.presenting .viewport {
+  width: 100%;
+  height: 100%;
+  background: #e7e7e3;
+}
+
+.presentation-exit {
+  position: absolute;
+  top: max(20px, env(safe-area-inset-top));
+  right: max(20px, env(safe-area-inset-right));
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 10px 13px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--glass);
+  color: var(--ink-2);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(16px);
+  font-size: 12px;
+}
+
+.presentation-exit:hover,
+.presentation-exit:focus-visible {
+  background: var(--glass-solid);
+  color: var(--ink);
+}
+
+.presentation-exit kbd {
+  border-left: 1px solid var(--line-strong);
+  padding-left: 9px;
+  color: var(--muted);
+  font: 10px var(--mono);
+}
+
 .sidebar {
   width: 284px;
   flex-shrink: 0;
@@ -1581,7 +1623,8 @@ button.link.danger {
   z-index: 3;
 }
 
-.issues-badge {
+.issues-badge,
+.preparing {
   position: absolute;
   right: 14px;
   bottom: 14px;
@@ -1610,6 +1653,16 @@ button.link.danger {
 
 .issues .issues-badge {
   position: static;
+}
+
+/* While the 3D view's shaders compile (ShaderGate), in the middle. */
+.preparing {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  animation: fade 0.2s ease-out;
 }
 
 .issues-badge.ok {
@@ -2842,7 +2895,8 @@ button.link.danger {
   font-size: 16px;
 }
 
-.thinking::before {
+.thinking::before,
+.preparing::before {
   content: "";
   width: 14px;
   height: 14px;

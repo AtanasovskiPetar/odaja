@@ -5,6 +5,7 @@ import type * as THREE from "three";
 import serifItalic from "@fontsource/instrument-serif/files/instrument-serif-latin-400-italic.woff2?url";
 import serifRegular from "@fontsource/instrument-serif/files/instrument-serif-latin-400-normal.woff2?url";
 import { useOdaja, type ViewMode } from "../store";
+import { whenShadersReady } from "./render/ShaderGate";
 
 export const viewport: { gl: THREE.WebGLRenderer | null; scene: THREE.Scene | null; camera: THREE.Camera | null } = {
   gl: null,
@@ -77,6 +78,8 @@ export async function renderView(view: ViewMode, maxWidth?: number, level?: stri
   if (otherLevel) state.setLevel(level);
   if (view !== previous) state.setViewMode(view);
   if (view !== previous || otherLevel) await frames(4);
+  // Everything drawn, not just what was ready (see ShaderGate).
+  await whenShadersReady();
   try {
     const { gl, scene, camera } = viewport;
     if (!gl || !scene || !camera) throw new Error("the 3D view isn't ready");
