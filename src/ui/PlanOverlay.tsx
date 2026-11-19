@@ -8,7 +8,6 @@ import {
   clearances,
   doorSwings,
   exteriorSide,
-  formatCm,
   objectFootprint,
   pointInPolygon,
   pointOnWall,
@@ -29,8 +28,9 @@ import { stairOutline, stairPath, stairTreads } from "../model/stairs";
 import { roofFaces, roofOutline } from "../model/roofs";
 import type { Stair } from "../model/schema";
 import type { Shell } from "../model/schema";
-import { M } from "../model/units";
+import { M, formatArea, formatDim } from "../model/units";
 import { useOdaja, type PlanView } from "../store";
+import { useUnitSystem } from "./unitPref";
 
 // Distances of the dimension rows outside the walls' outer face, in cm.
 const CHAIN_OFFSET = 45;
@@ -78,6 +78,7 @@ interface DimProps {
 }
 
 function Dim({ toScreen, a, b, offset = 0, extFrom, label, className = "dim" }: DimProps) {
+  const units = useUnitSystem();
   const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
   if (len < 0.5) return null;
   const n: Vec = [-(b[1] - a[1]) / len, (b[0] - a[0]) / len];
@@ -111,7 +112,7 @@ function Dim({ toScreen, a, b, offset = 0, extFrom, label, className = "dim" }: 
       {tick(sb)}
       {pxLen >= MIN_LABEL_PX && (
         <Label at={mid} angle={angle}>
-          {label ?? formatCm(len)}
+          {label ?? formatDim(len, units)}
         </Label>
       )}
     </g>
@@ -124,6 +125,7 @@ function Line({ toScreen, a, b, className }: { toScreen: ToScreen; a: Vec; b: Ve
 }
 
 function WallDims({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  const units = useUnitSystem();
   const bounds = shellBounds(shell);
   return (
     <g>
@@ -170,7 +172,7 @@ function WallDims({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
         if (o.offset + o.width > wallLength(wall)) return null;
         return (
           <Label key={o.id} at={toScreen(pointOnWall(wall, o.offset + o.width / 2))} className="opening-label">
-            {formatCm(o.width)}
+            {formatDim(o.width, units)}
           </Label>
         );
       })}
@@ -224,6 +226,7 @@ function DoorSwings({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
 // The garden: each outdoor area's name and size, and the plot boundary,
 // dashed, with the length of each side outside it.
 function SiteDrawing({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  const units = useUnitSystem();
   const plot = shell.plot?.polygon;
   const clockwise = plot ? plot.reduce((s, p, i) => s + (plot[(i + 1) % plot.length][0] - p[0]) * (plot[(i + 1) % plot.length][1] + p[1]), 0) < 0 : true;
   return (
@@ -243,7 +246,7 @@ function SiteDrawing({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) 
             if (angle < -90) angle += 180;
             return (
               <Label key={i} at={toScreen(mid)} angle={angle} className="plot-size">
-                {formatCm(len)}
+                {formatDim(len, units)}
               </Label>
             );
           })}
@@ -264,7 +267,7 @@ function SiteDrawing({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) 
               {a.name}
             </Label>
             <Label at={[c[0], c[1] + 9]} className="room-size">
-              {(polygonArea(a.polygon) / 10000).toFixed(1)} m²{a.height ? ` · +${formatCm(a.height)}` : ""}
+              {formatArea(polygonArea(a.polygon), units)}{a.height ? ` · +${formatDim(a.height, units)}` : ""}
             </Label>
           </g>
         );
@@ -274,6 +277,7 @@ function SiteDrawing({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) 
 }
 
 function RoomLabels({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  const units = useUnitSystem();
   const edges = useMemo(() => wallEdges(shell), [shell]);
   return (
     <g>
@@ -293,8 +297,8 @@ function RoomLabels({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
             </Label>
             {screenWidth >= 150 && (
               <Label at={[c[0], c[1] + 10]} className="room-size">
-                {size ? `${formatCm(size.width)} × ${formatCm(size.depth)} · ` : ""}
-                {(area / 10000).toFixed(1)} m²
+                {size ? `${formatDim(size.width, units)} × ${formatDim(size.depth, units)} · ` : ""}
+                {formatArea(area, units)}
               </Label>
             )}
           </g>
@@ -305,6 +309,7 @@ function RoomLabels({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
 }
 
 function SelectionDims({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }) {
+  const units = useUnitSystem();
   const object = useOdaja((s) => s.scene?.objects.find((o) => o.id === s.selectedId));
   const others = useOdaja((s) => s.scene?.objects);
   const preview = useOdaja((s) => s.dragPreview);
@@ -337,7 +342,7 @@ function SelectionDims({ shell, toScreen }: { shell: Shell; toScreen: ToScreen }
         d === null || d > 800 ? null : <Dim key={i} toScreen={toScreen} a={from} b={add(from, scale(dir, d))} className="dim selection" />,
       )}
       <Label at={toScreen([cx, cy])} className="size-label">
-        {formatCm(r.maxX - r.minX)} × {formatCm(r.maxY - r.minY)}
+        {formatDim(r.maxX - r.minX, units)} × {formatDim(r.maxY - r.minY, units)}
       </Label>
     </g>
   );

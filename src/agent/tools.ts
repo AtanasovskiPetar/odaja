@@ -1523,6 +1523,61 @@ export const TOOLS: ToolDef[] = [
   }),
 
   tool({
+    name: "view_background",
+    description:
+      "Inspect the project's loaded floor plan background image. When grid is true (default), overlays a 0.0..1.0 fractional grid (vertical red lines every 0.1 in x, horizontal blue lines every 0.1 in y, thicker at 0.5) so you can read exact fractions for image_to_plan and scale_from.",
+    input: z.object({ grid: z.boolean().default(true) }),
+    async run({ grid }, ctx) {
+      const project = await readProject(ctx);
+      if (!project.underlay) throw new ToolError("there's no floor plan background; ask the user to add one or pass a photo to set_background");
+      const u = UnderlaySchema.parse(project.underlay);
+      const bytes = await projectFiles(ctx).read(u.image);
+      if (!bytes) throw new ToolError(`background image not found: ${u.image}`);
+      let raster = await fit(await decode(bytes), 1400);
+      if (grid) {
+        const data = new Uint8Array(raster.data);
+        const { width, height } = raster;
+        const blend = (x: number, y: number, cr: number, cg: number, cb: number, alpha: number) => {
+          if (x < 0 || x >= width || y < 0 || y >= height) return;
+          const i = (y * width + x) * 4;
+          const inv = 1 - alpha;
+          data[i] = Math.round(data[i]! * inv + cr * alpha);
+          data[i + 1] = Math.round(data[i + 1]! * inv + cg * alpha);
+          data[i + 2] = Math.round(data[i + 2]! * inv + cb * alpha);
+        };
+        for (let step = 1; step < 10; step++) {
+          const major = step === 5;
+          const alpha = major ? 0.55 : 0.35;
+          const x0 = Math.round((step / 10) * (width - 1));
+          const y0 = Math.round((step / 10) * (height - 1));
+          const span = major ? [-1, 0] : [0];
+          for (const dx of span) {
+            for (let y = 0; y < height; y++) blend(x0 + dx, y, 220, 45, 45, alpha);
+          }
+          for (const dy of span) {
+            for (let x = 0; x < width; x++) blend(x, y0 + dy, 35, 100, 220, alpha);
+          }
+        }
+        raster = { width, height, data };
+      }
+      const jpeg = await encodeJpeg(raster, 85);
+      const info = describeUnderlay(u);
+      return {
+        content: [
+          { type: "image", data: toBase64(jpeg), mimeType: "image/jpeg" },
+          {
+            type: "text",
+            text:
+              `Floor plan background (${u.width}×${u.height} px, scale=${r1(u.scale * 100) / 100} cm/px, rotation=${u.rotation ?? 0}°). ` +
+              (grid ? "Grid lines are at 0.1..0.9 fractions (red = x left→right, blue = y top→bottom, bold = 0.5). " : "") +
+              JSON.stringify(info),
+          },
+        ],
+      };
+    },
+  }),
+
+  tool({
     name: "image_to_plan",
     description: "Convert points on the floor plan background image (fractions 0..1, x right, y down) to plan coordinates in cm, using its current scale and position. Use it to place walls exactly where the plan shows them.",
     input: z.object({ points: z.array(fraction).min(1).max(200) }),

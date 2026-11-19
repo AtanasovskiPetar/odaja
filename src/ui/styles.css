@@ -3341,6 +3341,115 @@ button.link.danger {
   font-variant-numeric: tabular-nums;
 }
 
+/* ——— Tape measure & unit toggle ——— */
+
+.unit-toggle {
+  padding: 3px 6px;
+  border-radius: var(--r-s);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-muted);
+  background: transparent;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.unit-toggle:hover {
+  color: var(--ink);
+  border-color: var(--ink-muted);
+}
+
+/* No z-index: like the structure layer, it covers the plan but stays under
+   the toolbar and panels that come after it, so they stay clickable. */
+.measure-layer {
+  position: absolute;
+  inset: 0;
+  cursor: crosshair;
+}
+
+.measure-svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.measure-span line {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.measure-span circle {
+  fill: var(--card);
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.measure-legs line {
+  stroke: var(--accent);
+  stroke-width: 1.1;
+  stroke-dasharray: 4 4;
+  opacity: 0.65;
+}
+
+.measure-legs text {
+  fill: var(--ink);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  paint-order: stroke;
+  stroke: var(--card);
+  stroke-width: 3;
+}
+
+.measure-snap {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.75;
+}
+
+.measure-badge {
+  position: absolute;
+  transform: translate(-50%, -135%);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: var(--r-m);
+  background: var(--ink);
+  color: var(--card);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.22);
+}
+
+.measure-badge-3d {
+  position: static;
+  transform: none;
+}
+
+.measure-delta {
+  opacity: 0.78;
+  font-size: 11px;
+}
+
+.measure-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  padding: 7px 14px;
+  border-radius: var(--r-l);
+  background: var(--card);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
 /* ——— Accessibility ——— */
 
 @media (prefers-reduced-motion: reduce) {

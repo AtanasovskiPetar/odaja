@@ -159,18 +159,21 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
   let projectWatcher: FSWatcher | null = null;
   const changed = new Set<string>();
   let flush: ReturnType<typeof setTimeout> | null = null;
+  function notifyFileChanged(rel: string) {
+    changed.add(rel);
+    flush ??= setTimeout(() => {
+      flush = null;
+      for (const r of changed) broadcast("file-changed", { path: r });
+      changed.clear();
+    }, 40);
+  }
   function watchProject(dir: string | null) {
     projectWatcher?.close();
     projectWatcher = null;
     if (!dir) return;
     projectWatcher = watch(dir, { recursive: true }, (_type, name) => {
       if (!name) return;
-      changed.add(String(name).split(path.sep).join("/"));
-      flush ??= setTimeout(() => {
-        flush = null;
-        for (const rel of changed) broadcast("file-changed", { path: rel });
-        changed.clear();
-      }, 40);
+      notifyFileChanged(String(name).split(path.sep).join("/"));
     });
     projectWatcher.on("error", (err) => console.warn(`[odaja] watching ${dir}: ${err.message}`));
   }
@@ -179,7 +182,7 @@ export async function createOdajaApi({ port }: { port: () => number }): Promise<
   const pendingShots = new Map<string, { resolve: (s: { data: string; mimeType: string }) => void; reject: (e: Error) => void }>();
 
   const toolContext: ToolContext = {
-    files: () => (projectDir ? folderFiles(projectDir, LIBRARY_ROOT) : null),
+    files: () => (projectDir ? folderFiles(projectDir, LIBRARY_ROOT, notifyFileChanged) : null),
     scenePath: () => openScenePath,
     editingObject: () => editingObject,
     level: () => openLevel,

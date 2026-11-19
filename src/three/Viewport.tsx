@@ -27,6 +27,7 @@ import { Environment } from "./render/Environment";
 import { AoEffect } from "./render/AoEffect";
 import { ShaderGate } from "./render/ShaderGate";
 import { setProceduralAnisotropy } from "./render/proceduralMaps";
+import { Measure3D } from "./Measure3D";
 import { UnderlayView } from "./UnderlayView";
 import { WalkControls } from "./WalkControls";
 
@@ -235,6 +236,7 @@ export function Viewport() {
   return (
     <Canvas frameloop={walk || sunPlaying ? "always" : "demand"} shadows dpr={[1, 1.5]} onPointerMissed={() => {
         if (performance.now() - gizmo.lastUsed < 300) return;
+        if (useOdaja.getState().measuring) return;
         // In the shape editor a click on empty space clears the part selection.
         if (useOdaja.getState().editingObjectId) useOdaja.getState().selectParts([]);
         else select(null);
@@ -253,6 +255,7 @@ export function Viewport() {
       {!presenting && <UnderlayView />}
       <ObjectsView />
       {!presenting && <ShapeEditorView />}
+      {!presenting && <Measure3D ground={ground} />}
       {walk && <WalkControls />}
       <OrbitControls
         makeDefault

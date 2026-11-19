@@ -34,7 +34,9 @@ import { ManageHomesDialog } from "./ManageHomes";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
 import { UnderlayPanel, UnderlayToolLayer } from "./UnderlayPanel";
+import { MeasureLayer } from "./MeasureLayer";
 import { ThemeCycleButton } from "./ThemeSwitch";
+import { toggleUnitSystem, useUnitSystem } from "./unitPref";
 import { HomeMenu, openHomeFromPicker } from "./HomeMenu";
 import { AddToLibraryDialog, ExportImageDialog, OpenHomeDialog, SaveFileDialog } from "./HomeFileDialogs";
 import { isHomeFile, requestOpenHome, saveHome } from "./homeFileActions";
@@ -62,6 +64,7 @@ import {
   IconFence,
   IconPlot,
   IconRoof,
+  IconRuler,
   IconStructure,
   IconSwatch,
   IconUndo,
@@ -156,6 +159,7 @@ function useShortcuts() {
       // Shared by both modes.
       if (key === "t") return s.setViewMode("plan");
       if (key === "e") return s.setMode(s.mode === "structure" ? "furnish" : "structure");
+      if (key === "m" && !s.editingObjectId) return s.toggleMeasuring();
 
       if (s.editingObjectId) {
         const id = s.editingObjectId;
@@ -213,6 +217,19 @@ function useShortcuts() {
   }, []);
 }
 
+function UnitToggleButton() {
+  const units = useUnitSystem();
+  return (
+    <button
+      className="unit-toggle"
+      onClick={toggleUnitSystem}
+      title={units === "metric" ? "Units: Metric (cm / m²) — click for Imperial (ft / in)" : "Units: Imperial (ft / in) — click for Metric (cm / m²)"}
+    >
+      {units === "metric" ? "cm" : "ft"}
+    </button>
+  );
+}
+
 function Sidebar() {
   const scene = useOdaja((s) => s.scene);
   const selectedId = useOdaja((s) => s.selectedId);
@@ -230,6 +247,7 @@ function Sidebar() {
           <span className="logo">Odaja</span>
         </span>
         <HomeMenu />
+        <UnitToggleButton />
         <ThemeCycleButton />
       </header>
 
@@ -507,6 +525,8 @@ function Toolbar() {
   const hasBase = useOdaja((s) => s.baseShell !== null);
   const underlayOpen = useOdaja((s) => s.underlayPanel);
   const setUnderlayPanel = useOdaja((s) => s.setUnderlayPanel);
+  const measuring = useOdaja((s) => s.measuring);
+  const toggleMeasuring = useOdaja((s) => s.toggleMeasuring);
   const showChanges = useOdaja((s) => s.showChanges);
   const sunOn = useSun((s) => s.on);
   const setSunOn = useSun((s) => s.setOn);
@@ -561,6 +581,11 @@ function Toolbar() {
       {viewMode === "plan" && (
         <button className={`icon-only ${underlayOpen ? "active" : ""}`} onClick={() => setUnderlayPanel(!underlayOpen)} title="Floor plan background: an image under the plan, to check and trace walls">
           <IconLayers size={17} />
+        </button>
+      )}
+      {viewMode !== "walk" && (
+        <button className={`icon-only ${measuring ? "active" : ""}`} onClick={toggleMeasuring} title="Tape measure: click two points to measure distance (M)">
+          <IconRuler size={17} />
         </button>
       )}
       <button
@@ -686,6 +711,7 @@ export function App() {
   const status = useOdaja((s) => s.status);
   const presenting = useOdaja((s) => s.presenting);
   const editingStructure = useOdaja((s) => s.mode === "structure" && s.viewMode === "plan");
+  const measuring3D = useOdaja((s) => s.measuring && s.viewMode === "3d");
   useEffect(() => {
     load();
   }, [load]);
@@ -710,6 +736,8 @@ export function App() {
         <PlanOverlay />
         {editingStructure && <StructureLayer />}
         <UnderlayToolLayer />
+        <MeasureLayer />
+        {measuring3D && <div className="measure-hint">Click two surfaces to measure · Drag to orbit · Shift locks vertical/horizontal · Esc clears</div>}
         <UnderlayPanel />
         <SunPanel />
         <PlanNorthArrow />
