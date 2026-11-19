@@ -3,6 +3,7 @@ import { rotateObject } from "../model/operations";
 import { duplicateParts, mirrorParts, removeParts } from "../model/partOps";
 import { useOdaja, type Tool } from "../store";
 import { Viewport } from "../three/Viewport";
+import { PreparingIndicator } from "../three/render/ShaderGate";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
 import { AddPanel } from "./AddPanel";
 import { Inspector } from "./Inspector";
@@ -699,6 +700,7 @@ export function App() {
       {!presenting && <Sidebar />}
       <main className={`viewport ${drop.over ? "drop-over" : ""}`} {...drop.handlers}>
         <Viewport />
+        <PreparingIndicator />
         {presenting ? (
           <button className="presentation-exit" onClick={() => useOdaja.getState().setPresenting(false)} title="Exit presentation (Esc)" aria-keyshortcuts="Escape">
             <IconClose size={15} />

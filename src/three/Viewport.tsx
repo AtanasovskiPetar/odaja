@@ -25,6 +25,7 @@ import { ShellView } from "./ShellView";
 import { Lights } from "./SunLight";
 import { Environment } from "./render/Environment";
 import { AoEffect } from "./render/AoEffect";
+import { ShaderGate } from "./render/ShaderGate";
 import { setProceduralAnisotropy } from "./render/proceduralMaps";
 import { UnderlayView } from "./UnderlayView";
 import { WalkControls } from "./WalkControls";
@@ -222,6 +223,7 @@ export function Viewport() {
         else select(null);
       }}>
       <ShadowUpdater />
+      <ShaderGate />
       <PerspectiveCamera makeDefault={!plan} fov={presenting ? 40 : 45} near={0.05} far={200} />
       <OrthographicCamera makeDefault={plan} near={0.1} far={200} />
       <Lights theme={theme} plan={plan} walk={walk} />

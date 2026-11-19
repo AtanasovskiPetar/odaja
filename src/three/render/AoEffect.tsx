@@ -6,6 +6,7 @@ import { useLamps } from "../../ui/lampState";
 import { useSun } from "../../ui/sunState";
 import { createAoPipeline, type AoPipeline } from "./ao";
 import { applyAoToMaterial, createAoUniforms, updateAoUniforms } from "./aoMaterial";
+import { useShaders } from "./ShaderGate";
 
 function excluded(object: THREE.Object3D): boolean {
   for (let parent: THREE.Object3D | null = object; parent; parent = parent.parent) {
@@ -46,6 +47,7 @@ export function AoEffect({ enabled = true }: { enabled?: boolean }) {
   const lastSize = useRef<[number, number]>([0, 0]);
   const sceneDirty = useRef(true);
   const materialsDirty = useRef(true);
+  const shadersVersion = useRef(useShaders.getState().version);
 
   useEffect(() => {
     sceneDirty.current = true;
@@ -86,6 +88,12 @@ export function AoEffect({ enabled = true }: { enabled?: boolean }) {
 
   useFrame(() => {
     if (!enabled || plan) return;
+    // Meshes that waited for their shaders have appeared.
+    const { version } = useShaders.getState();
+    if (shadersVersion.current !== version) {
+      shadersVersion.current = version;
+      sceneDirty.current = true;
+    }
     if (materialsDirty.current) {
       materialsDirty.current = false;
       scene.traverse((object) => {
