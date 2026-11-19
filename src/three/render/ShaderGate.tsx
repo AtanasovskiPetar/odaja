@@ -34,6 +34,12 @@ export function whenShadersReady(timeout = 10_000): Promise<void> {
 
 const materialsOf = (mesh: THREE.Mesh) => (Array.isArray(mesh.material) ? mesh.material : [mesh.material]);
 
+// A material's version changes when it needs a new program, except that three
+// bumps it itself every time it draws or compiles a see-through double-sided
+// material (back faces, then front): for those it means nothing, and trusting
+// it would hold them back for ever (the move arrows).
+const versionOf = (m: THREE.Material) => (m.transparent && m.side === THREE.DoubleSide && !m.forceSinglePass ? -1 : m.version);
+
 // Per material version: the light setups it was compiled for, and those it's ready for.
 type Compiled = { version: number; asked: WeakSet<object>; ready: WeakSet<object> };
 
@@ -65,7 +71,8 @@ export function ShaderGate() {
     const setup = (gl.properties.get(probe.material) as { currentProgram: object }).currentProgram;
     const record = (m: THREE.Material) => {
       let r = compiled.get(m);
-      if (r?.version !== m.version) compiled.set(m, (r = { version: m.version, asked: new WeakSet(), ready: new WeakSet() }));
+      const version = versionOf(m);
+      if (r?.version !== version) compiled.set(m, (r = { version, asked: new WeakSet(), ready: new WeakSet() }));
       return r;
     };
     const ready = (mesh: THREE.Mesh) => materialsOf(mesh).every((m) => record(m).ready.has(setup));
