@@ -23,9 +23,6 @@ Nothing to install, no account. Your home stays in your browser.
 - **Sunlight:** give the flat's location and which way it faces, then watch
   the real sun move through your windows on any day of the year, in 3D or
   walking through.
-- **Lamps:** ceiling lights, pendants, downlights and floor, table and wall
-  lamps, or a light on anything you build. In the evening view each lamp
-  lights its room by its lumens and colour, with shadows from the furniture.
 - **Checks:** furniture in walls, overlaps, blocked doors, too little space in
   front of a toilet or a wardrobe, each with a quick fix.
 
