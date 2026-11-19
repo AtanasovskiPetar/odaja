@@ -567,12 +567,9 @@ function Toolbar() {
         className={`icon-only ${sunOn ? "active" : ""}`}
         onClick={() => {
           setSunOn(!sunOn);
-          if (!sunOn) {
-            setLampsOn(false);
-            useOdaja.getState().setUnderlayPanel(false);
-          }
+          if (!sunOn) useOdaja.getState().setUnderlayPanel(false);
         }}
-        title="Sunlight: the real sun for a day and time, through your windows"
+        title="Sunlight: the real sun and moon for a day and time, through your windows"
       >
         <IconSun size={17} />
       </button>
@@ -582,14 +579,15 @@ function Toolbar() {
           onClick={() => {
             setLampsOn(!lampsOn);
             if (!lampsOn) {
-              // Lamps are the evening mode: leave daylight so they are the
-              // light source instead of being washed out by sun and sky fill.
-              setSunOn(false);
               useOdaja.getState().setUnderlayPanel(false);
-              useOdaja.getState().setNotice("Evening: the lamps light the room now. With many lamps the view can get slow; turn this off if it lags.");
+              useOdaja.getState().setNotice(
+                sunOn
+                  ? "Lamps on. In daylight they're faint, as they are; pick an evening time in Sunlight to see them light the room. With many lamps the view can get slow."
+                  : "Lamps on. With many lamps the view can get slow; turn them off if it lags.",
+              );
             }
           }}
-          title="Evening: the lamps light the room"
+          title="Lamps: light the room with the lamps that are on"
         >
           <IconLamp size={17} />
         </button>

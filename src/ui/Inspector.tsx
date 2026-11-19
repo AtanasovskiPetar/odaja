@@ -94,7 +94,7 @@ function TemplateFields({ object }: { object: SceneObject }) {
 function LightFields({ object }: { object: SceneObject }) {
   const apply = useOdaja((s) => s.apply);
   const written = useOdaja((s) => s.sceneDoc?.objects?.find((o) => o.id === object.id)?.light);
-  const evening = useLamps((s) => s.on);
+  const lampsOn = useLamps((s) => s.on);
   const light = object.light;
   if (!light) return null;
   const set = (patch: LightInput) => apply(setObjectProps(object.id, { light: { ...written, ...patch } }));
@@ -104,7 +104,7 @@ function LightFields({ object }: { object: SceneObject }) {
       <label className="check">
         <input type="checkbox" checked={light.on} onChange={(e) => set({ on: e.target.checked })} />
         On
-        {!evening && light.on && <span className="muted"> (shows in the evening view)</span>}
+        {!lampsOn && light.on && <span className="muted"> (shows with the lamps on)</span>}
       </label>
       <label className="field">
         <span>Shines</span>
@@ -213,7 +213,7 @@ export function Inspector() {
           Save as file
         </button>
         {!object.light && (
-          <button onClick={() => set({ light: {} })} title="Make it a lamp that lights the room in the evening view">
+          <button onClick={() => set({ light: {} })} title="Make it a lamp that lights the room when the lamps are on">
             Add light
           </button>
         )}

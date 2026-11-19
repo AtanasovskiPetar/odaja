@@ -7,6 +7,8 @@ export interface PresentationSkySettings {
   sunColor: THREE.Color;
   sunDir: THREE.Vector3;
   sunGlow: number;
+  moonDir: THREE.Vector3;
+  moonGlow: number;
 }
 
 /** Visible background only. Never add this calibrated gradient to the IBL scene. */
@@ -23,6 +25,8 @@ export class PresentationSky extends THREE.Mesh<THREE.SphereGeometry, THREE.Shad
         sunColor: { value: new THREE.Color() },
         sunDir: { value: new THREE.Vector3(0, 1, 0) },
         sunGlow: { value: 0 },
+        moonDir: { value: new THREE.Vector3(0, -1, 0) },
+        moonGlow: { value: 0 },
       },
       vertexShader: `
         varying vec3 vDir;
@@ -39,6 +43,8 @@ export class PresentationSky extends THREE.Mesh<THREE.SphereGeometry, THREE.Shad
         uniform vec3 sunColor;
         uniform vec3 sunDir;
         uniform float sunGlow;
+        uniform vec3 moonDir;
+        uniform float moonGlow;
         varying vec3 vDir;
         void main() {
           vec3 dir = normalize(vDir);
@@ -50,6 +56,11 @@ export class PresentationSky extends THREE.Mesh<THREE.SphereGeometry, THREE.Shad
             sky = mix(horizonColor, groundColor, 1.0 - smoothstep(-0.18, 0.0, dir.y));
           }
           sky += sunColor * pow(max(dot(dir, sunDir), 0.0), 350.0) * sunGlow;
+          // The moon: a disc (larger than life, about 1.4° across) with a faint halo,
+          // above the horizon only.
+          float toMoon = dot(dir, moonDir);
+          float moon = smoothstep(0.99993, 0.99996, toMoon) + 0.15 * pow(max(toMoon, 0.0), 4000.0);
+          sky += vec3(0.92, 0.95, 1.0) * moon * moonGlow * step(0.0, dir.y);
           gl_FragColor = vec4(sky, 1.0);
           // Linear HDR until the renderer's standard output transforms.
           #include <tonemapping_fragment>
@@ -72,6 +83,8 @@ export class PresentationSky extends THREE.Mesh<THREE.SphereGeometry, THREE.Shad
     uniforms.sunColor.value.copy(settings.sunColor);
     uniforms.sunDir.value.copy(settings.sunDir);
     uniforms.sunGlow.value = settings.sunGlow;
+    uniforms.moonDir.value.copy(settings.moonDir);
+    uniforms.moonGlow.value = settings.moonGlow;
   }
 
   dispose(): void {
