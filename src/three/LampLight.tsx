@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
-import { useFrame, useThree } from "@react-three/fiber";
+import { useThree } from "@react-three/fiber";
 import type { Light } from "../model/schema";
 import { M } from "../model/units";
 
@@ -22,11 +22,24 @@ export function kelvinColor(kelvin: number): THREE.Color {
   return new THREE.Color().setRGB(c(r), c(g), c(b), THREE.SRGBColorSpace);
 }
 
-const lamps = new Set<THREE.PointLight | THREE.SpotLight>();
+type Lamp = THREE.PointLight | THREE.SpotLight;
+// Every lit lamp, with its lumens.
+const lamps = new Map<Lamp, number>();
+
+// The brightest lamps cast shadows, whatever the viewpoint. Choosing by the
+// camera would make rooms light up differently as you move (a lamp without a
+// shadow shines through walls), and a new mix of point and spot shadows
+// recompiles every shader (see ShaderGate).
+function chooseShadows() {
+  [...lamps]
+    .sort((a, b) => b[1] - a[1])
+    .forEach(([lamp], i) => (lamp.castShadow = i < SHADOW_LAMPS));
+}
 
 export function LampLight({ light }: { light: Light }) {
-  const [lamp, setLamp] = useState<THREE.PointLight | THREE.SpotLight | null>(null);
+  const [lamp, setLamp] = useState<Lamp | null>(null);
   const [target] = useState(() => new THREE.Object3D());
+  const gl = useThree((s) => s.gl);
   const invalidate = useThree((s) => s.invalidate);
   const color = useMemo(() => kelvinColor(light.kelvin), [light.kelvin]);
   const [x, y, z] = light.at;
@@ -35,9 +48,6 @@ export function LampLight({ light }: { light: Light }) {
   useEffect(() => {
     if (!lamp) return;
     const point = lamp instanceof THREE.PointLight;
-    // Start casting immediately when within the budget so shaders compile once
-    // instead of compiling without shadows and recompiling 250 ms later.
-    lamp.castShadow = lamps.size < SHADOW_LAMPS;
     // 512 cube map with radius 2.5 matches 1024/4.5 angular sharpness (0.0049
     // vs 0.0044 rad) at 4x lower fillrate and VRAM per point lamp.
     lamp.shadow.mapSize.set(point ? 512 : 1024, point ? 512 : 1024);
@@ -47,13 +57,17 @@ export function LampLight({ light }: { light: Light }) {
     lamp.shadow.intensity = point ? 0.85 : 0.9;
     lamp.shadow.camera.near = 0.15;
     lamp.shadow.camera.far = 15;
-    lamps.add(lamp);
+    lamps.set(lamp, light.lumens);
+    chooseShadows();
+    gl.shadowMap.needsUpdate = true;
     invalidate();
     return () => {
       lamps.delete(lamp);
+      chooseShadows();
+      gl.shadowMap.needsUpdate = true;
       invalidate();
     };
-  }, [lamp, invalidate]);
+  }, [lamp, light.lumens, gl, invalidate]);
 
   if (light.type === "spot") {
     const half = ((light.angle / 2) * Math.PI) / 180;
@@ -66,39 +80,4 @@ export function LampLight({ light }: { light: Light }) {
     );
   }
   return <pointLight ref={setLamp} position={position} color={color} intensity={(light.lumens / (4 * Math.PI)) * POINT_EXPOSURE} decay={POINT_DECAY} />;
-}
-
-export function LampShadows() {
-  const since = useRef(0);
-  const at = useMemo(() => new THREE.Vector3(), []);
-  useFrame(({ camera, gl, invalidate }, delta) => {
-    since.current += delta;
-    if (since.current < 0.25) return;
-    since.current = 0;
-    let changed = false;
-    if (lamps.size <= SHADOW_LAMPS) {
-      for (const lamp of lamps) {
-        if (!lamp.castShadow) {
-          lamp.castShadow = true;
-          changed = true;
-        }
-      }
-    } else {
-      const nearest = [...lamps]
-        .map((lamp) => ({ lamp, d: lamp.getWorldPosition(at).distanceToSquared(camera.position) }))
-        .sort((a, b) => a.d - b.d);
-      nearest.forEach(({ lamp }, i) => {
-        const next = i < SHADOW_LAMPS;
-        if (lamp.castShadow !== next) {
-          lamp.castShadow = next;
-          changed = true;
-        }
-      });
-    }
-    if (changed) {
-      gl.shadowMap.needsUpdate = true;
-      invalidate();
-    }
-  });
-  return null;
 }

@@ -5,12 +5,16 @@ import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLigh
 import { pointInPolygon, pointOnWall, wallLength, wallNormal, type Vec } from "../../model/geometry";
 import { levelById, levelShell, levelsOf } from "../../model/levels";
 import type { Shell } from "../../model/schema";
-import { momentOf, skyColor, sunlight, sunPosition } from "../../model/sun";
+import { skyColor, sunlight } from "../../model/sun";
 import { M } from "../../model/units";
 import { useOdaja } from "../../store";
-import { SUN_YEAR, useSun } from "../../ui/sunState";
+import { useSun } from "../../ui/sunState";
+import { useSky } from "../sky";
 
 RectAreaLightUniformsLib.init();
+
+const DAY_FILL = 4.02;
+const NIGHT_COLOR = "#9bb8df";
 
 function centroid(polygon: Vec[]): Vec {
   let area = 0;
@@ -67,16 +71,14 @@ function windowLights(shell: Shell): THREE.RectAreaLight[] {
   });
 }
 
-export function WindowLight({ evening = false }: { evening?: boolean }) {
+export function WindowLight() {
   const scene = useThree((s) => s.scene);
   const invalidate = useThree((s) => s.invalidate);
   const shell = useOdaja((s) => s.shell);
   const whole = useOdaja((s) => s.wholeShell);
   const level = useOdaja((s) => s.level);
-  const site = useOdaja((s) => s.project?.site);
   const on = useSun((s) => s.on);
-  const day = useSun((s) => s.day);
-  const minutes = useSun((s) => s.minutes);
+  const sky = useSky();
   const lights = useRef<THREE.RectAreaLight[]>([]);
   const active = useMemo(() => shell ?? (whole ? levelShell(whole, levelById(whole, level).id) : null), [shell, whole, level]);
   const pool = useMemo(() => poolSize(whole), [whole]);
@@ -99,21 +101,25 @@ export function WindowLight({ evening = false }: { evening?: boolean }) {
   }, [active, pool, scene, invalidate]);
 
   useEffect(() => {
-    const altitude = on && site ? sunPosition(momentOf(SUN_YEAR, day, minutes), site.latitude, site.longitude).altitude : -18;
-    const sun = sunlight(altitude);
-    const color = new THREE.Color(sun.color).lerp(new THREE.Color(skyColor(altitude, false)), 0.45);
-    // Artistic exposure: keep enough cool twilight window fill to balance the
-    // warm local lamps, without changing the real-sun or standard views.
-    const intensity = evening ? 1.25 : !on ? 0.5 : !site ? 3 : 4 * sun.strength + 0.02;
-    if (evening) color.set("#9bb8df");
-    else if (!on || (site && sun.strength === 0)) color.set("#8a9ab8");
-    else if (!site) color.set("#dce8f5");
+    // Daylight through the windows, in the sky's colour (warm at sunset),
+    // fading with the daylight to a cool night fill that the moon brightens.
+    // Without the sunlight view a soft cool fill; with it but no site set, a
+    // bright neutral one.
+    let color = new THREE.Color(on ? "#dce8f5" : "#8a9ab8");
+    let intensity = on ? 3 : 0.5;
+    if (sky) {
+      const altitude = sky.sun.altitude;
+      const day = new THREE.Color(sunlight(altitude).color).lerp(new THREE.Color(skyColor(altitude, false)), 0.45);
+      const night = 0.4 + 0.4 * sky.moonlight;
+      color = new THREE.Color(NIGHT_COLOR).lerp(day, sky.daylight);
+      intensity = night + (DAY_FILL - night) * sky.daylight;
+    }
     lights.current.forEach((light) => {
       light.color.copy(color);
       light.intensity = intensity;
     });
     invalidate();
-  }, [active, pool, scene, site, on, day, minutes, evening, invalidate]);
+  }, [active, pool, scene, sky, on, invalidate]);
 
   return null;
 }
