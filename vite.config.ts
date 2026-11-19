@@ -8,6 +8,10 @@ export default defineConfig({
   // root, a sub-path (GitHub Pages: /odaja/), or the companion's localhost.
   // Moving Odaja to another domain needs no code change.
   base: "./",
+  // Three's example modules import the bare "three" package; dedupe keeps one
+  // instance so RectAreaLight/material instanceof checks and shader chunks
+  // do not split across two copies.
+  resolve: { dedupe: ["three"] },
   plugins: [react(), odajaProjectServer(), contentSecurityPolicy(), serviceWorker()],
   server: { port: 5173 },
 });

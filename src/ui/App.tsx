@@ -41,6 +41,7 @@ import { isLibraryFile, openLibraryFileWithNotice } from "./libraryFiles";
 import { WalkOverlay, WalkStartPicker } from "./WalkOverlay";
 import {
   IconChat,
+  IconClose,
   IconCompare,
   IconCube,
   IconCut,
@@ -72,6 +73,20 @@ import {
 function useShortcuts() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      const state = useOdaja.getState();
+      if (e.key === "Escape" && state.presenting) {
+        e.preventDefault();
+        state.setPresenting(false);
+        return;
+      }
+      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || Boolean(e.target.closest("input, textarea, select")));
+      if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "p" && state.status === "project") {
+        e.preventDefault();
+        if (!e.repeat) state.togglePresenting();
+        return;
+      }
+      // Presentation is for inspection, not hidden editor shortcuts.
+      if (state.presenting) return;
       // File keys work everywhere, also while typing in a field.
       if ((e.metaKey || e.ctrlKey) && !e.altKey && useOdaja.getState().status === "project") {
         const k = e.key.toLowerCase();
@@ -86,7 +101,7 @@ function useShortcuts() {
           return;
         }
       }
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return;
+      if (typing) return;
       const s = useOdaja.getState();
       if (s.status !== "project") return;
       const mod = e.metaKey || e.ctrlKey;
@@ -132,7 +147,6 @@ function useShortcuts() {
       // only view switches and undo apply.
       if (s.viewMode === "walk") {
         if (key === "t") s.setViewMode("plan");
-        if (key === "p") s.setViewMode("3d");
         return;
       }
       if (key === "escape" && s.pickingWalkStart) return s.setPickingWalkStart(false);
@@ -140,7 +154,6 @@ function useShortcuts() {
 
       // Shared by both modes.
       if (key === "t") return s.setViewMode("plan");
-      if (key === "p") return s.setViewMode("3d");
       if (key === "e") return s.setMode(s.mode === "structure" ? "furnish" : "structure");
 
       if (s.editingObjectId) {
@@ -521,7 +534,7 @@ function Toolbar() {
           <IconPlan size={17} />
           Plan
         </button>
-        <button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")} title="3D view (P)">
+        <button className={viewMode === "3d" ? "active" : ""} onClick={() => setViewMode("3d")} title="3D view">
           <IconCube size={17} />
           3D
         </button>
@@ -553,7 +566,10 @@ function Toolbar() {
         className={`icon-only ${sunOn ? "active" : ""}`}
         onClick={() => {
           setSunOn(!sunOn);
-          if (!sunOn) useOdaja.getState().setUnderlayPanel(false);
+          if (!sunOn) {
+            setLampsOn(false);
+            useOdaja.getState().setUnderlayPanel(false);
+          }
         }}
         title="Sunlight: the real sun for a day and time, through your windows"
       >
@@ -564,7 +580,13 @@ function Toolbar() {
           className={`icon-only ${lampsOn ? "active" : ""}`}
           onClick={() => {
             setLampsOn(!lampsOn);
-            if (!lampsOn) useOdaja.getState().setNotice("Lamps light the room now. With many lamps the view can get slow; turn this off if it lags.");
+            if (!lampsOn) {
+              // Lamps are the evening mode: leave daylight so they are the
+              // light source instead of being washed out by sun and sky fill.
+              setSunOn(false);
+              useOdaja.getState().setUnderlayPanel(false);
+              useOdaja.getState().setNotice("Evening: the lamps light the room now. With many lamps the view can get slow; turn this off if it lags.");
+            }
           }}
           title="Evening: the lamps light the room"
         >
@@ -585,6 +607,9 @@ function Toolbar() {
       </button>
       <span className="sep" />
       <ChatToggle />
+      <button onClick={() => useOdaja.getState().setPresenting(true)} title="Present the home without editor panels (P)" aria-keyshortcuts="P">
+        Present
+      </button>
     </div>
   );
 }
@@ -660,6 +685,7 @@ export function App() {
   const drop = useFileDrop();
   const chatOpen = useChat((s) => s.open);
   const status = useOdaja((s) => s.status);
+  const presenting = useOdaja((s) => s.presenting);
   const editingStructure = useOdaja((s) => s.mode === "structure" && s.viewMode === "plan");
   useEffect(() => {
     load();
@@ -669,10 +695,18 @@ export function App() {
   if (status === "loading") return null;
   if (status === "start") return <Welcome />;
   return (
-    <div className="app">
-      <Sidebar />
+    <div className={`app${presenting ? " presenting" : ""}`}>
+      {!presenting && <Sidebar />}
       <main className={`viewport ${drop.over ? "drop-over" : ""}`} {...drop.handlers}>
         <Viewport />
+        {presenting ? (
+          <button className="presentation-exit" onClick={() => useOdaja.getState().setPresenting(false)} title="Exit presentation (Esc)" aria-keyshortcuts="Escape">
+            <IconClose size={15} />
+            Exit presentation
+            <kbd>Esc</kbd>
+          </button>
+        ) : (
+          <>
         <PlanOverlay />
         {editingStructure && <StructureLayer />}
         <UnderlayToolLayer />
@@ -688,9 +722,11 @@ export function App() {
         <Notice />
         <IssuesPanel />
         <Errors />
+          </>
+        )}
       </main>
-      {chatOpen && <ChatPanel />}
-      <Dialogs />
+      {!presenting && chatOpen && <ChatPanel />}
+      {!presenting && <Dialogs />}
     </div>
   );
 }

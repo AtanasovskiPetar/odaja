@@ -14,10 +14,12 @@ import { useLamps } from "../ui/lampState";
 import { SUN_YEAR, useSun } from "../ui/sunState";
 import { isDark } from "../ui/themePref";
 import { LampShadows } from "./LampLight";
+import { WindowLight } from "./render/WindowLight";
 import type { SceneTheme } from "./theme";
 
-const NIGHT_SKY = "#8a9ab8";
-const NIGHT_FILL = 0.15;
+const NIGHT_SKY = "#9cb6d8";
+const NIGHT_GROUND = "#343b48";
+const NIGHT_FILL = 0.22;
 
 // Blocks sun from above (the 3D view has no ceiling), invisible otherwise:
 // it only casts shadows.
@@ -40,6 +42,7 @@ function Sun({ theme, walk }: { theme: SceneTheme; walk: boolean }) {
   const day = useSun((s) => s.day);
   const minutes = useSun((s) => s.minutes);
   const scene = useThree((s) => s.scene);
+  const invalidate = useThree((s) => s.invalidate);
   const light = useRef<THREE.DirectionalLight>(null);
 
   // The shadow-only ceiling covers the house; shadows fall across the plot.
@@ -61,12 +64,15 @@ function Sun({ theme, walk }: { theme: SceneTheme; walk: boolean }) {
   useEffect(() => {
     light.current?.target.position.set(...center);
     light.current?.target.updateMatrixWorld();
-  });
+    invalidate();
+  }, [center[0], center[1], center[2], invalidate]);
 
   const sky = skyColor(pos.altitude, isDark());
   // Daylight in the room comes mostly from the sky through the windows: dimmer
   // indoors at night, never black.
-  const ambient = (walk ? 1.15 : 1.3) * (0.3 + 0.7 * Math.min(1, Math.max(0, (pos.altitude + 6) / 20)));
+  // PMREM provides sky fill now; this small residual keeps deep interiors
+  // readable without washing out the directional sun or local lamps.
+  const ambient = (walk ? 0.3 : 0.35) * (0.25 + 0.75 * Math.min(1, Math.max(0, (pos.altitude + 6) / 20)));
   const distance = radius + 30;
 
   return (
@@ -77,7 +83,7 @@ function Sun({ theme, walk }: { theme: SceneTheme; walk: boolean }) {
         ref={light}
         position={[center[0] + dir[0] * distance, Math.max(0.5, dir[1] * distance), center[2] + dir[2] * distance]}
         color={color}
-        intensity={3.2 * strength}
+        intensity={2.6 * strength}
         castShadow={strength > 0}
         shadow-mapSize={[4096, 4096]}
         shadow-bias={-0.0004}
@@ -104,11 +110,11 @@ function SunPlayer() {
   return null;
 }
 
-function Night({ theme }: { theme: SceneTheme }) {
+function Night() {
   return (
     <>
       <color attach="background" args={[skyColor(-18, isDark())]} />
-      <hemisphereLight args={[NIGHT_SKY, theme.ground, NIGHT_FILL]} />
+      <hemisphereLight args={[NIGHT_SKY, NIGHT_GROUND, NIGHT_FILL]} />
     </>
   );
 }
@@ -123,6 +129,7 @@ export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean
       <>
         <Sun theme={theme} walk={walk} />
         <SunPlayer />
+        <WindowLight />
         {lamps}
       </>
     );
@@ -130,7 +137,8 @@ export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean
   if (lamps) {
     return (
       <>
-        <Night theme={theme} />
+        <Night />
+        <WindowLight evening />
         {lamps}
       </>
     );
@@ -138,9 +146,10 @@ export function Lights({ theme, plan, walk }: { theme: SceneTheme; plan: boolean
   return (
     <>
       <color attach="background" args={[plan ? theme.paper : walk ? theme.walk : theme.room]} />
-      <hemisphereLight args={["#ffffff", theme.ground, plan ? 2.2 : walk ? 2.0 : 1.4]} />
+      {!plan && <WindowLight />}
+      <hemisphereLight args={["#ffffff", theme.ground, plan ? 2.2 : walk ? 0.3 : 0.35]} />
       {/* Bias keeps sloped surfaces (roofs) from shadowing themselves in rings. */}
-      <directionalLight position={[6, 12, 4]} intensity={plan ? 0.8 : 1.6} castShadow={!plan} shadow-mapSize={[2048, 2048]} shadow-bias={-0.0005} shadow-normalBias={0.02}>
+      <directionalLight position={[6, 12, 4]} intensity={plan ? 0.8 : 1.4} castShadow={!plan} shadow-mapSize={[2048, 2048]} shadow-bias={-0.0005} shadow-normalBias={0.02}>
         <orthographicCamera attach="shadow-camera" args={[-10, 10, 10, -10, 0.5, 40]} />
       </directionalLight>
     </>

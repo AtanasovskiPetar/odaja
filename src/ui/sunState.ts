@@ -24,9 +24,11 @@ interface SunState {
 const now = new Date();
 
 export const useSun = create<SunState>((set) => ({
-  on: false,
+  // Sunlight is the best default for a home that has a site. 14:00 gives a
+  // clear sun patch without the low, red light of late afternoon. Not saved.
+  on: true,
   day: dayOfYear(now),
-  minutes: Math.round((now.getHours() * 60 + now.getMinutes()) / 15) * 15,
+  minutes: 840,
   playing: false,
   editingSite: false,
   draftNorth: null,
