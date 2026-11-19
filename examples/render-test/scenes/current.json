@@ -289,7 +289,7 @@
       "id": "planter",
       "name": "Terracotta planter with leafy shrub",
       "room": "living-dining",
-      "position": [75, 450],
+      "position": [150, 450],
       "notes": "Built-in planter geometry expanded to assign named terracotta and plant materials.",
       "parts": [
         { "name": "pot", "shape": "box", "size": [45, 45, 52], "radius": 2, "material": "terracotta" },
@@ -347,7 +347,7 @@
         },
         { "name": "bulb", "shape": "sphere", "radius": 4, "at": [0, 0, 34], "color": "#fff2cf", "glow": true }
       ],
-      "light": { "type": "point", "at": [0, 0, 34], "lumens": 180, "kelvin": 3100, "on": true }
+      "light": { "type": "point", "at": [0, 0, 34], "lumens": 180, "kelvin": 3300, "on": true }
     },
     {
       "id": "wall-art-one",
