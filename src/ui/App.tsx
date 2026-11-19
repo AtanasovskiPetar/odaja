@@ -98,7 +98,10 @@ function useShortcuts() {
         state.setPresenting(false);
         return;
       }
-      const typing = e.target instanceof HTMLElement && (e.target.isContentEditable || Boolean(e.target.closest("input, textarea, select")));
+      const inputEl = e.target instanceof HTMLElement ? e.target.closest("input, textarea") : null;
+      const nonTextInput = inputEl instanceof HTMLInputElement && /^(checkbox|radio|button|submit|reset|range|color|file)$/i.test(inputEl.type);
+      const typingText = e.target instanceof HTMLElement && (e.target.isContentEditable || (Boolean(inputEl) && !nonTextInput));
+      const typing = typingText || (e.target instanceof HTMLElement && Boolean(e.target.closest("select")));
       if (!typing && !e.metaKey && !e.ctrlKey && !e.altKey && e.key.toLowerCase() === "p" && state.status === "project") {
         e.preventDefault();
         if (!e.repeat) state.togglePresenting();
@@ -120,16 +123,22 @@ function useShortcuts() {
           return;
         }
       }
-      if (typing) return;
+      if (typingText) return;
       const s = useOdaja.getState();
       if (s.status !== "project") return;
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === "z") {
+      if (mod && (e.key.toLowerCase() === "z" || e.code === "KeyZ")) {
         e.preventDefault();
         if (e.shiftKey) s.redo();
         else s.undo();
         return;
       }
+      if (mod && !e.shiftKey && (e.key.toLowerCase() === "y" || e.code === "KeyY")) {
+        e.preventDefault();
+        s.redo();
+        return;
+      }
+      if (typing) return;
       if (mod && e.key.toLowerCase() === "j") {
         e.preventDefault();
         useChat.getState().toggle();
