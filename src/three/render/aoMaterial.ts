@@ -38,9 +38,15 @@ export function applyAoToMaterial(material: THREE.Material, uniforms: AoUniforms
     shader.fragmentShader = "uniform sampler2D tAo;\nuniform vec2 uResolution;\n" + shader.fragmentShader;
     // RectAreaLight (window sky fill) has no shadow map; gating it with Guided
     // AO keeps window fill from leaking under furniture in any room layout.
+    // It also fades out 4–8 m from its window and is skipped beyond (and when
+    // dark), so a pixel pays only for the windows near it. The loop is
+    // unrolled: no local variables.
     const lightsBegin = THREE.ShaderChunk.lights_fragment_begin.replace(
       "rectAreaLight = rectAreaLights[ i ];",
-      "rectAreaLight = rectAreaLights[ i ];\nrectAreaLight.color *= aoVisibility;",
+      "rectAreaLight = rectAreaLights[ i ];\nrectAreaLight.color *= aoVisibility * (1.0 - smoothstep(4.0, 8.0, distance(rectAreaLight.position, geometryPosition)));",
+    ).replace(
+      "RE_Direct_RectArea( rectAreaLight,",
+      "if ( any(greaterThan(rectAreaLight.color, vec3(0.0))) ) RE_Direct_RectArea( rectAreaLight,",
     );
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <lights_fragment_begin>",

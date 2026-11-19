@@ -3,7 +3,7 @@ import { useThree } from "@react-three/fiber";
 import * as THREE from "three";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import { pointInPolygon, pointOnWall, wallLength, wallNormal, type Vec } from "../../model/geometry";
-import { levelById, levelShell } from "../../model/levels";
+import { levelById, levelShell, levelsOf } from "../../model/levels";
 import type { Shell } from "../../model/schema";
 import { momentOf, skyColor, sunlight, sunPosition } from "../../model/sun";
 import { M } from "../../model/units";
@@ -26,6 +26,16 @@ function centroid(polygon: Vec[]): Vec {
   return Math.abs(area) > 1e-6
     ? [x / (3 * area), y / (3 * area)]
     : polygon.reduce<Vec>((sum, p) => [sum[0] + p[0] / polygon.length, sum[1] + p[1] / polygon.length], [0, 0]);
+}
+
+// The number of window lights stays the same while the house is edited or
+// another level is viewed: enough for the level with the most windows,
+// rounded up to 4, the spare ones dark. A different number would change every
+// shader (see ShaderGate); dark ones cost almost nothing (aoMaterial skips them).
+function poolSize(whole: Shell | null): number {
+  if (!whole) return 0;
+  const windows = levelsOf(whole).map((l) => levelShell(whole, l.id).openings.filter((o) => o.type === "window").length);
+  return Math.ceil(Math.max(0, ...windows) / 4) * 4;
 }
 
 function windowLights(shell: Shell): THREE.RectAreaLight[] {
@@ -69,21 +79,24 @@ export function WindowLight({ evening = false }: { evening?: boolean }) {
   const minutes = useSun((s) => s.minutes);
   const lights = useRef<THREE.RectAreaLight[]>([]);
   const active = useMemo(() => shell ?? (whole ? levelShell(whole, levelById(whole, level).id) : null), [shell, whole, level]);
+  const pool = useMemo(() => poolSize(whole), [whole]);
 
   useEffect(() => {
     const windows = active ? windowLights(active) : [];
+    const spares = Array.from({ length: Math.max(0, pool - windows.length) }, () => new THREE.RectAreaLight("#ffffff", 0));
+    const all = [...windows, ...spares];
     lights.current = windows;
-    windows.forEach((light) => scene.add(light));
+    all.forEach((light) => scene.add(light));
     invalidate();
     return () => {
-      windows.forEach((light) => {
+      all.forEach((light) => {
         scene.remove(light);
         light.dispose();
       });
       lights.current = [];
       invalidate();
     };
-  }, [active, scene, invalidate]);
+  }, [active, pool, scene, invalidate]);
 
   useEffect(() => {
     const altitude = on && site ? sunPosition(momentOf(SUN_YEAR, day, minutes), site.latitude, site.longitude).altitude : -18;
@@ -100,7 +113,7 @@ export function WindowLight({ evening = false }: { evening?: boolean }) {
       light.intensity = intensity;
     });
     invalidate();
-  }, [active, scene, site, on, day, minutes, evening, invalidate]);
+  }, [active, pool, scene, site, on, day, minutes, evening, invalidate]);
 
   return null;
 }

@@ -84,7 +84,10 @@ function Sun({ theme, walk }: { theme: SceneTheme; walk: boolean }) {
         position={[center[0] + dir[0] * distance, Math.max(0.5, dir[1] * distance), center[2] + dir[2] * distance]}
         color={color}
         intensity={2.6 * strength}
-        castShadow={strength > 0}
+        // Casting even after sunset, so the time passing sunset doesn't
+        // change every shader (ShaderGate); its shadow just isn't redrawn.
+        castShadow
+        shadow-autoUpdate={strength > 0}
         shadow-mapSize={[4096, 4096]}
         shadow-bias={-0.0004}
         shadow-normalBias={0.02}

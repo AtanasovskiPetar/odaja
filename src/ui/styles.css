@@ -1623,7 +1623,8 @@ button.link.danger {
   z-index: 3;
 }
 
-.issues-badge {
+.issues-badge,
+.preparing {
   position: absolute;
   right: 14px;
   bottom: 14px;
@@ -1652,6 +1653,16 @@ button.link.danger {
 
 .issues .issues-badge {
   position: static;
+}
+
+/* While the 3D view's shaders compile (ShaderGate), in the middle. */
+.preparing {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  color: var(--muted);
+  pointer-events: none;
+  animation: fade 0.2s ease-out;
 }
 
 .issues-badge.ok {
@@ -2884,7 +2895,8 @@ button.link.danger {
   font-size: 16px;
 }
 
-.thinking::before {
+.thinking::before,
+.preparing::before {
   content: "";
   width: 14px;
   height: 14px;
