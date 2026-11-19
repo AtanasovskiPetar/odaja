@@ -73,6 +73,7 @@ const TOOL_LABELS: Record<string, string> = {
   measure_object: "Measured",
   check_issues: "Checked issues",
   screenshot: "Took a screenshot",
+  view_background: "Looked at the floor plan",
   add_wall: "Added a wall",
   update_wall: "Changed a wall",
   delete_wall: "Removed a wall",
@@ -164,6 +165,11 @@ function ModelPicker() {
   );
 }
 
+// Track which home the chat store is currently showing so closing/reopening
+// the chat sidebar (or toggling Present mode) doesn't abort an active reply or
+// clear the current conversation.
+let loadedProjectDir: string | null | undefined = undefined;
+
 export function ChatPanel() {
   const status = useOdaja((s) => s.status);
   const turns = useChat((s) => s.turns);
@@ -187,11 +193,17 @@ export function ChatPanel() {
   const scroller = useRef<HTMLDivElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
-  // Chats belong to the home: reload the list when it changes (and stop a
-  // reply still running, so it isn't saved into the next home).
+  // Chats belong to the home: reload the list only when the home actually
+  // changes (and stop a reply still running, so it isn't saved into the next
+  // home). Toggling the chat panel closed/open keeps the active chat running.
   useEffect(() => {
-    useChat.getState().stop();
-    openChat(null);
+    if (loadedProjectDir === projectDir) return;
+    const switched = loadedProjectDir !== undefined;
+    loadedProjectDir = projectDir;
+    if (switched) {
+      useChat.getState().stop();
+      openChat(null);
+    }
     refreshChats();
   }, [projectDir, openChat, refreshChats]);
 

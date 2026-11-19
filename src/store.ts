@@ -150,6 +150,7 @@ interface OdajaState {
   // Floor plan background: panel open, and the active tool on the plan.
   underlayPanel: boolean;
   underlayTool: "calibrate" | "move" | null;
+  measuring: boolean;
   // Camera request to frame something (world metres).
   focus: { center: [number, number, number]; radius: number; at: number } | null;
   // Walking: where to start (picked on the plan), the current pose (for the
@@ -206,6 +207,8 @@ interface OdajaState {
   focusOn(center: [number, number, number], radius: number): void;
   setUnderlayPanel(open: boolean): void;
   setUnderlayTool(tool: OdajaState["underlayTool"]): void;
+  setMeasuring(on: boolean): void;
+  toggleMeasuring(): void;
   apply(change: (doc: SceneDoc) => SceneDoc): void;
   // Change the open level's walls (the change gets the level's view).
   applyShell(change: (doc: ShellDoc) => ShellDoc): Promise<void>;
@@ -415,6 +418,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     if (path === "project.json") {
       const text = await platform.readFile(path).catch(() => null);
       if (text === null || text === lastWritten.get(path)) return;
+      lastWritten.set(path, text);
       const loaded = await loadFile(path, ProjectSchema);
       if (loaded) set({ project: loaded.data, projectDoc: loaded.raw });
       return;
@@ -430,6 +434,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     }
     const text = await platform.readFile(path).catch(() => null);
     if (text === null || text === lastWritten.get(path)) return;
+    lastWritten.set(path, text);
     const loaded = await loadFile(path, isScene ? SceneSchema : ShellSchema);
     if (!loaded) return;
     const before = isScene ? get().sceneDoc : get().wholeShellDoc;
@@ -474,6 +479,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     partTool: "move",
     underlayPanel: false,
     underlayTool: null,
+    measuring: false,
     focus: null,
     walkStart: null,
     walkPose: null,
@@ -670,6 +676,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
         ...(viewMode !== "walk" ? { walkPose: null } : {}),
         ...(viewMode !== "3d" ? { editingObjectId: null, partSelection: [] } : {}),
         ...(viewMode !== "plan" ? { underlayPanel: false, underlayTool: null } : {}),
+        ...(viewMode === "walk" ? { measuring: false } : {}),
         pickingWalkStart: false,
       }));
     },
@@ -743,7 +750,16 @@ export const useOdaja = create<OdajaState>((set, get) => {
     },
 
     setUnderlayTool(underlayTool) {
-      set({ underlayTool });
+      set({ underlayTool, ...(underlayTool ? { measuring: false } : {}) });
+    },
+
+    setMeasuring(measuring) {
+      set({ measuring, ...(measuring ? { underlayTool: null, pickingWalkStart: false } : {}) });
+      if (measuring && get().viewMode === "walk") get().setViewMode("3d");
+    },
+
+    toggleMeasuring() {
+      get().setMeasuring(!get().measuring);
     },
 
     focusOn(center, radius) {

@@ -178,8 +178,9 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
   const castShadow = !object.light;
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
-    // While walking, clicks are for looking around.
-    if (ghost || inert || useOdaja.getState().viewMode === "walk") return;
+    // While walking or measuring, clicks are not for selecting furniture.
+    const s = useOdaja.getState();
+    if (ghost || inert || s.viewMode === "walk" || s.measuring) return;
     e.stopPropagation();
     select(object.id);
   };

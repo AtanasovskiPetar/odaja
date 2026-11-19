@@ -263,3 +263,10 @@ export const IconAuto = icon(
 export const IconPlay = icon(<path d="M6.5 4.5v11l9-5.5Z" />);
 
 export const IconPause = icon(<path d="M7 4.5v11M13 4.5v11" />);
+
+export const IconRuler = icon(
+  <>
+    <path d="m3.5 13.5 10-10 3 3-10 10-3-3Z" />
+    <path d="m7.5 9.5 1.5 1.5M10 7l1.5 1.5M12.5 4.5l1.2 1.2" strokeWidth={1.2} />
+  </>,
+);

@@ -4,7 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { checkPath, type AgentFiles, type FileArea } from "../src/agent/files";
 
-function folderArea(root: string): FileArea {
+function folderArea(root: string, onWrite?: (rel: string) => void): FileArea {
   // "" is the folder itself; anything else must stay inside it.
   const abs = (rel: string) => {
     if (!rel) return root;
@@ -17,9 +17,11 @@ function folderArea(root: string): FileArea {
     read: (rel) => fs.readFile(abs(rel)).then((b) => new Uint8Array(b), () => null),
     readText: (rel) => fs.readFile(abs(rel), "utf8").catch(() => null),
     async write(rel, data) {
-      const file = abs(rel);
+      const clean = checkPath(rel);
+      const file = abs(clean);
       await fs.mkdir(path.dirname(file), { recursive: true });
       await fs.writeFile(file, data);
+      onWrite?.(clean);
     },
     listFiles: async (dir) => (await entries(dir)).filter((e) => e.isFile()).map((e) => e.name),
     listDirs: async (dir) => (await entries(dir)).filter((e) => e.isDirectory()).map((e) => e.name),
@@ -27,7 +29,7 @@ function folderArea(root: string): FileArea {
   };
 }
 
-export const folderFiles = (projectDir: string, libraryRoot: string): AgentFiles => ({
-  project: folderArea(projectDir),
+export const folderFiles = (projectDir: string, libraryRoot: string, onProjectWrite?: (rel: string) => void): AgentFiles => ({
+  project: folderArea(projectDir, onProjectWrite),
   library: folderArea(libraryRoot),
 });

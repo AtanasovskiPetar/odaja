@@ -4,9 +4,12 @@
 import { useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import type { Vec } from "../model/geometry";
 import { calibrate } from "../model/underlay";
+import { formatLength, parseLength } from "../model/units";
 import { useOdaja, type PlanView } from "../store";
-import { IconClose } from "./icons";
+import { useChat } from "./chat/chatStore";
+import { IconChat, IconClose } from "./icons";
 import { PLAN_ACCEPT, savePlanFile } from "./planImage";
+import { useUnitSystem } from "./unitPref";
 
 function screenToPlan(view: PlanView, sx: number, sy: number): Vec {
   return [((sx - view.width / 2) / view.zoom + view.centerX) * 100, ((sy - view.height / 2) / view.zoom + view.centerZ) * 100];
@@ -87,6 +90,21 @@ export function UnderlayPanel() {
             <button onClick={() => set({ rotation: ((underlay.rotation ?? 0) + 90) % 360 })}>↻ 90°</button>
           </div>
           <p className="hint">1 px = {underlay.scale.toFixed(3)} cm · turned {(underlay.rotation ?? 0).toFixed(1)}°</p>
+          <button
+            className="primary"
+            onClick={() => {
+              setTool(null);
+              useChat
+                .getState()
+                .startDraft(
+                  "Trace the floor plan background into walls, doors, windows, and rooms. Call view_background (with grid: true) to read wall and opening coordinates, convert them with image_to_plan, build the layout with build_shell, and verify with a plan screenshot.",
+                  [],
+                );
+            }}
+            title="Open chat with a ready-to-send prompt to trace walls, doors, windows and rooms from this floor plan"
+          >
+            <IconChat size={15} /> Trace walls with AI
+          </button>
           <div className="actions">
             <button onClick={() => fileInput.current?.click()} disabled={busy}>
               Replace…
@@ -112,6 +130,7 @@ export function UnderlayToolLayer() {
   const underlay = useOdaja((s) => s.projectDoc?.underlay);
   const applyProject = useOdaja((s) => s.applyProject);
   const setTool = useOdaja((s) => s.setUnderlayTool);
+  const units = useUnitSystem();
   const [points, setPoints] = useState<Vec[]>([]);
   const [cursor, setCursor] = useState<Vec | null>(null);
   const [length, setLength] = useState("");
@@ -124,9 +143,10 @@ export function UnderlayToolLayer() {
     return screenToPlan(view, e.clientX - r.left, e.clientY - r.top);
   };
 
+  const parsedCm = parseLength(length, units);
+
   const finishCalibration = () => {
-    const cm = Number(length.replace(",", "."));
-    if (points.length === 2 && cm > 0) applyProject((doc) => ({ ...doc, underlay: calibrate(doc.underlay!, points[0], points[1], cm) }));
+    if (points.length === 2 && parsedCm && parsedCm > 0) applyProject((doc) => ({ ...doc, underlay: calibrate(doc.underlay!, points[0], points[1], parsedCm) }));
     setPoints([]);
     setLength("");
     setTool(null);
@@ -186,10 +206,10 @@ export function UnderlayToolLayer() {
             finishCalibration();
           }}
         >
-          <span>Real length of this line (now {Math.round(measured)} cm):</span>
-          <input autoFocus value={length} onChange={(e) => setLength(e.target.value)} placeholder="e.g. 420" inputMode="decimal" />
-          <span>cm</span>
-          <button type="submit" disabled={!(Number(length.replace(",", ".")) > 0)}>
+          <span>Real length of this line (now {formatLength(measured, units)}):</span>
+          <input autoFocus value={length} onChange={(e) => setLength(e.target.value)} placeholder={units === "imperial" ? "e.g. 12' 6\"" : "e.g. 420 or 4.2m"} />
+          <span>{units === "imperial" ? "in / ft" : "cm"}</span>
+          <button type="submit" disabled={!(parsedCm && parsedCm > 0)}>
             Set scale
           </button>
           <button type="button" onClick={() => setPoints([])}>
