@@ -1,11 +1,12 @@
 import * as THREE from "three";
-import { sunDirection, sunlight } from "../../model/sun";
+import { daylightLeft, sunDirection, sunlight } from "../../model/sun";
 import { SkyDome } from "./sky";
 
 export interface EnvironmentSettings {
   altitude: number;
   azimuth: number;
-  night: boolean;
+  /** Moonlight, 0 (none) to 1 (a full moon high up). */
+  moon: number;
   turbidity: number;
   groundAlbedo: number;
   /** Radians. */
@@ -18,7 +19,7 @@ export interface EnvironmentSettings {
 }
 
 // Numeric defaults aligned with TexSky; no V-Ray code or assets are used.
-export const ENVIRONMENT_DEFAULTS: Omit<EnvironmentSettings, "altitude" | "azimuth" | "night"> = {
+export const ENVIRONMENT_DEFAULTS: Omit<EnvironmentSettings, "altitude" | "azimuth" | "moon"> = {
   turbidity: 3,
   groundAlbedo: 0.2,
   blendAngle: 0.10017,
@@ -27,11 +28,16 @@ export const ENVIRONMENT_DEFAULTS: Omit<EnvironmentSettings, "altitude" | "azimu
   skyModel: 0,
 };
 
+// How far the day sky has given way to the night sky: from the sun 2° up to
+// 10° down (the sky's colours; its brightness follows daylightLeft).
+export const nightSky = (altitude: number) => 1 - THREE.MathUtils.smoothstep(altitude, -10, 2);
+
 // Two-degree buckets avoid rebaking for tiny slider changes; time playback is
 // additionally capped at five PMREMs/second by Environment.tsx.
 export function environmentKey(s: EnvironmentSettings): string {
-  return s.night ? "night" : [
-    Math.round(s.altitude / 2), Math.round(s.azimuth / 2),
+  const moon = Math.round(s.moon * 10);
+  return nightSky(s.altitude) >= 1 ? `night:${moon}` : [
+    Math.round(s.altitude / 2), Math.round(s.azimuth / 2), moon,
     s.turbidity, s.intensityMultiplier,
     s.groundAlbedo, s.blendAngle, s.horizonOffset, s.skyModel,
   ].join(":");
@@ -39,7 +45,9 @@ export function environmentKey(s: EnvironmentSettings): string {
 
 export function environmentIntensity(s: EnvironmentSettings, plan: boolean): number {
   if (plan) return 0;
-  const base = s.night ? 0.30 : THREE.MathUtils.lerp(0.1, 0.9, THREE.MathUtils.clamp((s.altitude + 6) / 22, 0, 1));
+  // Fading with the daylight to the night's, which the moon brightens.
+  const night = 0.15 + 0.08 * s.moon;
+  const base = night + (0.9 - night) * daylightLeft(s.altitude);
   // Overall environment gain. Daytime integration bakes the multiplier into
   // the dome, so it requests unit multiplier here to avoid applying it twice.
   return base * Math.max(0, s.intensityMultiplier);
@@ -60,11 +68,14 @@ export class SkyEnvironment {
     this.sky.scale.setScalar(100);
     // Cool twilight upper hemisphere + dim warm-neutral interior bounce below
     // so metals, glass and fabrics pick up directional night reflections.
+    // Drawn over the day sky, more of it as dusk deepens; brighter with the moon.
     this.nightDome = new THREE.Mesh(
       new THREE.SphereGeometry(50, 16, 12),
       new THREE.ShaderMaterial({
         side: THREE.BackSide,
         depthWrite: false,
+        transparent: true,
+        uniforms: { opacity: { value: 1 }, brightness: { value: 1 } },
         vertexShader: `
           varying vec3 vDir;
           void main() {
@@ -73,6 +84,8 @@ export class SkyEnvironment {
           }
         `,
         fragmentShader: `
+          uniform float opacity;
+          uniform float brightness;
           varying vec3 vDir;
           void main() {
             float y = vDir.y;
@@ -81,7 +94,7 @@ export class SkyEnvironment {
             vec3 ground = vec3(0.11, 0.09, 0.07);
             vec3 skyCol = mix(horizon, zenith, pow(clamp(y, 0.0, 1.0), 0.65));
             vec3 col = mix(ground, skyCol, smoothstep(-0.18, 0.14, y));
-            gl_FragColor = vec4(col, 1.0);
+            gl_FragColor = vec4(col * brightness, opacity);
           }
         `,
       }),
@@ -97,12 +110,16 @@ export class SkyEnvironment {
   get(s: EnvironmentSettings): THREE.Texture {
     const key = environmentKey(s);
     if (this.target && key === this.key) return this.target.texture;
-    this.sky.setVisible(!s.night);
-    this.nightDome.visible = s.night;
+    const night = nightSky(s.altitude);
+    this.sky.setVisible(night < 1);
+    this.nightDome.visible = night > 0;
+    this.nightDome.material.uniforms.opacity.value = night;
+    this.nightDome.material.uniforms.brightness.value = 0.3 + 0.2 * s.moon;
     this.scene.background = null;
-    if (s.night) this.sky.update({ sunIntensity: 0, showSunDisc: false });
-    if (!s.night) {
-      const altitude = Math.round(s.altitude / 2) * 2;
+    if (night < 1) {
+      // Below the horizon the day sky stays as at sunset (the model alone
+      // would go black at once); the night sky covers it as dusk deepens.
+      const altitude = Math.max(0, Math.round(s.altitude / 2) * 2);
       const azimuth = Math.round(s.azimuth / 2) * 2;
       const light = sunlight(altitude);
       this.sky.update({
@@ -110,7 +127,9 @@ export class SkyEnvironment {
         sunDirection: new THREE.Vector3(...sunDirection({ altitude, bearing: azimuth }, 0)),
         // THREE.Color converts the CSS sRGB sunlight color to linear RGB.
         sunColor: new THREE.Color(light.color),
-        sunIntensity: light.strength,
+        // Twilight stays bright for a while after sunset (at least what the
+        // sun gives 2.6° up).
+        sunIntensity: Math.max(light.strength, 0.3),
         turbidity: s.turbidity,
         groundAlbedo: s.groundAlbedo,
         blendAngle: s.blendAngle,
