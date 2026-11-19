@@ -265,7 +265,7 @@
       "elevation": 177,
       "template": "pendant",
       "params": { "diameter": 46, "drop": 80 },
-      "light": { "type": "point", "at": [0, 0, 7], "lumens": 1050, "kelvin": 3300, "angle": 85, "on": true }
+      "light": { "type": "spot", "at": [0, 0, 7], "lumens": 1050, "kelvin": 3300, "angle": 115, "on": true }
     },
     {
       "id": "floor-lamp",

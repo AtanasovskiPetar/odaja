@@ -11,7 +11,7 @@ import { IconArrowUp } from "./icons";
 const CATEGORIES: Template["category"][] = ["Kitchen", "Living", "Bedroom", "Bathroom", "Lighting", "Garden", "Basic"];
 
 // Your own furniture, saved from scenes or imported, shared by all projects.
-function MyLibrary({ onPlaced }: { onPlaced: () => void }) {
+function MyLibrary({ query, onPlaced }: { query: string; onPlaced: () => void }) {
   const version = useOdaja((s) => s.libraryVersion);
   const libraryChanged = useOdaja((s) => s.libraryChanged);
   const openDialog = useOdaja((s) => s.openDialog);
@@ -59,6 +59,20 @@ function MyLibrary({ onPlaced }: { onPlaced: () => void }) {
     await platform.deleteLibraryItem(entry.id);
     libraryChanged();
   };
+
+  const q = query.trim().toLowerCase();
+  const filtered = (items ?? []).filter((entry) => {
+    if (!q) return true;
+    const item = entry.item;
+    return (
+      item.name.toLowerCase().includes(q) ||
+      (item.category?.toLowerCase().includes(q) ?? false) ||
+      (item.notes?.toLowerCase().includes(q) ?? false) ||
+      (Boolean(item.material) && "material".includes(q))
+    );
+  });
+
+  if (q && items !== null && filtered.length === 0) return null;
 
   return (
     <div>
@@ -111,7 +125,7 @@ function MyLibrary({ onPlaced }: { onPlaced: () => void }) {
         </p>
       ) : (
         <div className="library-grid">
-          {items.map((entry) => (
+          {filtered.map((entry) => (
             <div key={entry.id} className="library-card">
               <button onClick={() => place(entry)} title={[entry.item.name, entry.item.notes].filter(Boolean).join("\n")}>
                 {entry.preview ? (
@@ -143,28 +157,51 @@ function MyLibrary({ onPlaced }: { onPlaced: () => void }) {
 // Your library first, then the built-in templates. Clicking one drops it in
 // the middle of the view, selected, ready to drag into place.
 export function AddPanel({ onClose }: { onClose: () => void }) {
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const matchingTemplates = TEMPLATES.filter(
+    (t) => !q || t.name.toLowerCase().includes(q) || t.id.toLowerCase().includes(q) || t.category.toLowerCase().includes(q),
+  );
+  const categories = CATEGORIES.filter((c) => matchingTemplates.some((t) => t.category === c));
   return (
     <div className="add-panel">
-      <MyLibrary onPlaced={onClose} />
-      <h3 className="builtin-title">Built-in</h3>
-      {CATEGORIES.map((category) => (
+      <div className="list-search">
+        <input
+          autoFocus
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search library & templates…"
+          aria-label="Search items to add"
+        />
+        {query && (
+          <button onClick={() => setQuery("")} title="Clear search">
+            ×
+          </button>
+        )}
+      </div>
+      <MyLibrary query={query} onPlaced={onClose} />
+      {categories.length > 0 && <h3 className="builtin-title">Built-in</h3>}
+      {categories.map((category) => (
         <div key={category}>
           <h3>{category}</h3>
           <div className="add-grid">
-            {TEMPLATES.filter((t) => t.category === category).map((t) => (
-              <button
-                key={t.id}
-                onClick={() => {
-                  addTemplateObject(t.id);
-                  onClose();
-                }}
-              >
-                {t.name}
-              </button>
-            ))}
+            {matchingTemplates
+              .filter((t) => t.category === category)
+              .map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => {
+                    addTemplateObject(t.id);
+                    onClose();
+                  }}
+                >
+                  {t.name}
+                </button>
+              ))}
           </div>
         </div>
       ))}
+      {q && categories.length === 0 && <p className="muted empty-hint">No matching built-in templates.</p>}
     </div>
   );
 }

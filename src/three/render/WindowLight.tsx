@@ -15,6 +15,12 @@ RectAreaLightUniformsLib.init();
 
 const DAY_FILL = 4.02;
 const NIGHT_COLOR = "#9bb8df";
+const WINDOW_DIRECTIONAL = 0.32;
+
+type WindowLightPair = {
+  area: THREE.RectAreaLight;
+  spot: THREE.SpotLight;
+};
 
 function centroid(polygon: Vec[]): Vec {
   let area = 0;
@@ -42,7 +48,7 @@ function poolSize(whole: Shell | null): number {
   return Math.ceil(Math.max(0, ...windows) / 4) * 4;
 }
 
-function windowLights(shell: Shell): THREE.RectAreaLight[] {
+function windowLights(shell: Shell): WindowLightPair[] {
   const rooms = shell.rooms.map((room) => ({ polygon: room.polygon, center: centroid(room.polygon) }));
   const walls = new Map(shell.walls.map((wall) => [wall.id, wall]));
   return shell.openings.flatMap((opening) => {
@@ -61,13 +67,22 @@ function windowLights(shell: Shell): THREE.RectAreaLight[] {
     // toward the room centroid, regardless of the wall's drawing direction.
     const side = (room.center[0] - center[0]) * normal[0] + (room.center[1] - center[1]) * normal[1] >= 0 ? 1 : -1;
     const inside = pointOnWall(wall, along, side * inset);
-    const light = new THREE.RectAreaLight("#ffffff", 0, M(opening.width) * 0.92, M(opening.height) * 0.92);
-    light.name = `window-fill:${opening.id}`;
-    light.position.set(M(inside[0]), M(opening.sill + opening.height / 2), M(inside[1]));
+    const area = new THREE.RectAreaLight("#ffffff", 0, M(opening.width) * 0.92, M(opening.height) * 0.92);
+    area.name = `window-fill:${opening.id}`;
+    area.position.set(M(inside[0]), M(opening.sill + opening.height / 2), M(inside[1]));
     // RectAreaLight emits along local -Z. It has no shadow support; the sun
     // remains responsible for shadowed direct light through the opening.
-    light.lookAt(light.position.x + normal[0] * side, light.position.y, light.position.z + normal[1] * side);
-    return [light];
+    area.lookAt(area.position.x + normal[0] * side, area.position.y, area.position.z + normal[1] * side);
+    const spot = new THREE.SpotLight("#ffffff", 0, 0, 1.25, 0.9, 2);
+    spot.name = `window-spot:${opening.id}`;
+    spot.position.copy(area.position);
+    spot.target.position.set(
+      area.position.x + normal[0] * side * 2,
+      area.position.y,
+      area.position.z + normal[1] * side * 2,
+    );
+    spot.castShadow = false;
+    return [{ area, spot }];
   });
 }
 
@@ -79,21 +94,33 @@ export function WindowLight() {
   const level = useOdaja((s) => s.level);
   const on = useSun((s) => s.on);
   const sky = useSky();
-  const lights = useRef<THREE.RectAreaLight[]>([]);
+  const lights = useRef<WindowLightPair[]>([]);
   const active = useMemo(() => shell ?? (whole ? levelShell(whole, levelById(whole, level).id) : null), [shell, whole, level]);
   const pool = useMemo(() => poolSize(whole), [whole]);
 
   useEffect(() => {
     const windows = active ? windowLights(active) : [];
-    const spares = Array.from({ length: Math.max(0, pool - windows.length) }, () => new THREE.RectAreaLight("#ffffff", 0));
+    const spares: WindowLightPair[] = Array.from({ length: Math.max(0, pool - windows.length) }, () => {
+      const area = new THREE.RectAreaLight("#ffffff", 0);
+      const spot = new THREE.SpotLight("#ffffff", 0, 0, 1.25, 0.9, 2);
+      spot.castShadow = false;
+      return { area, spot };
+    });
     const all = [...windows, ...spares];
     lights.current = windows;
-    all.forEach((light) => scene.add(light));
+    all.forEach(({ area, spot }) => {
+      scene.add(area);
+      scene.add(spot);
+      scene.add(spot.target);
+    });
     invalidate();
     return () => {
-      all.forEach((light) => {
-        scene.remove(light);
-        light.dispose();
+      all.forEach(({ area, spot }) => {
+        scene.remove(area);
+        scene.remove(spot);
+        scene.remove(spot.target);
+        area.dispose();
+        spot.dispose();
       });
       lights.current = [];
       invalidate();
@@ -114,9 +141,13 @@ export function WindowLight() {
       color = new THREE.Color(NIGHT_COLOR).lerp(day, sky.daylight);
       intensity = night + (DAY_FILL - night) * sky.daylight;
     }
-    lights.current.forEach((light) => {
-      light.color.copy(color);
-      light.intensity = intensity;
+    const spotAngle = THREE.MathUtils.lerp(1.25, 0.55, WINDOW_DIRECTIONAL);
+    lights.current.forEach(({ area, spot }) => {
+      area.color.copy(color);
+      area.intensity = intensity;
+      spot.color.copy(color);
+      spot.intensity = intensity * WINDOW_DIRECTIONAL * 0.35;
+      spot.angle = spotAngle;
     });
     invalidate();
   }, [active, pool, scene, sky, on, invalidate]);

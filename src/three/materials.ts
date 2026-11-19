@@ -4,6 +4,7 @@ import type { Material } from "../model/schema";
 import { useOdaja } from "../store";
 import { tileTexture } from "./textures";
 import { proceduralMaps, type DetailKind } from "./render/proceduralMaps";
+import { FALLOFF_GLSL } from "./render/falloff";
 
 const FALLBACK: Material = { color: "#c8c8c8", roughness: 0.8, metalness: 0, opacity: 1 };
 const WHITE = new THREE.Color("#ffffff");
@@ -58,6 +59,7 @@ function makeMaterial(m: Material, name: string | undefined, transmission: boole
     transparent: transmissiveGlass ? false : m.opacity < 1,
     opacity: transmissiveGlass ? 1 : m.opacity,
     depthWrite: transmissiveGlass ? true : m.opacity >= 1,
+    dithering: true,
   };
 
   // Only pay for MeshPhysicalMaterial's heavier shader when a physical-only
@@ -82,16 +84,48 @@ function makeMaterial(m: Material, name: string | undefined, transmission: boole
       })
     : new THREE.MeshStandardMaterial(common);
 
-  if (detail) {
-    // Three normally multiplies roughness by the map. Recenter our 0.5 ±
-    // 0.06 data at 1 so a rough plaster does not become half as rough.
+  const fabricSheen = sheen > 0;
+  const glassEdge = isGlass && !transmissiveGlass;
+  if (detail || fabricSheen || glassEdge) {
+    const cacheKey = [
+      detail ? "rough-centered" : "",
+      fabricSheen ? "fabric-falloff" : "",
+      glassEdge ? "glass-falloff" : "",
+    ].filter(Boolean).join("|") + "-v1";
     material.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        "roughnessFactor *= texelRoughness.g;",
-        "roughnessFactor *= (texelRoughness.g + 0.5);",
-      );
+      let fs = shader.fragmentShader;
+      if (fabricSheen || glassEdge) {
+        fs = `${FALLOFF_GLSL}\n${fs}`;
+      }
+      if (detail) {
+        // Three normally multiplies roughness by the map. Recenter our 0.5 ±
+        // 0.06 data at 1 so a rough plaster does not become half as rough.
+        fs = fs.replace(
+          "roughnessFactor *= texelRoughness.g;",
+          "roughnessFactor *= (texelRoughness.g + 0.5);",
+        );
+      }
+      if (glassEdge) {
+        fs = fs.replace(
+          "#include <normal_fragment_maps>",
+          `#include <normal_fragment_maps>
+          float glassFresnel = falloffFresnel(normalize(vViewPosition), normal, 1.5);
+          diffuseColor.a = mix(diffuseColor.a * 0.85, min(1.0, diffuseColor.a + 0.18), glassFresnel);`,
+        );
+      }
+      if (fabricSheen) {
+        fs = fs.replace(
+          "#include <lights_physical_fragment>",
+          `#include <lights_physical_fragment>
+          #ifdef USE_SHEEN
+            float fabricFresnel = falloffFresnel(normalize(vViewPosition), normal, 1.4);
+            material.sheenColor *= mix(1.0, 0.75 + 0.25 * fabricFresnel, 0.5);
+          #endif`,
+        );
+      }
+      shader.fragmentShader = fs;
     };
-    material.customProgramCacheKey = () => "procedural-roughness-centered-v1";
+    material.customProgramCacheKey = () => cacheKey;
   }
   return material;
 }

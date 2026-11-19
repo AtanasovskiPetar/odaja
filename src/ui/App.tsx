@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { rotateObject } from "../model/operations";
+import { moveObject, rotateObject, setObjectProps } from "../model/operations";
+import { roomAt } from "../model/geometry";
+import { round } from "../model/units";
+import { objectLights, type SceneObject } from "../model/schema";
 import { duplicateParts, mirrorParts, removeParts } from "../model/partOps";
 import { useOdaja, type Tool } from "../store";
 import { Viewport } from "../three/Viewport";
@@ -73,6 +76,18 @@ import {
   IconWindow,
   LogoMark,
 } from "./icons";
+
+function focusObject(object: SceneObject) {
+  const s = useOdaja.getState();
+  if (s.viewMode !== "3d") s.setViewMode("3d");
+  const xs = object.parts.map((p) => p.at[0]);
+  const ys = object.parts.map((p) => p.at[1]);
+  const top = Math.max(0, ...object.parts.map((p) => p.at[2])) + object.elevation;
+  const cx = object.position[0] + (Math.min(...xs) + Math.max(...xs)) / 2;
+  const cy = object.position[1] + (Math.min(...ys) + Math.max(...ys)) / 2;
+  const span = Math.max(80, Math.max(...xs) - Math.min(...xs) + 120, Math.max(...ys) - Math.min(...ys) + 120, top - object.elevation + 80);
+  s.focusOn([cx / 100, (object.elevation + Math.max(40, top - object.elevation) / 2) / 100, cy / 100], span / 100);
+}
 
 function useShortcuts() {
   useEffect(() => {
@@ -195,7 +210,71 @@ function useShortcuts() {
       }
 
       const selected = s.scene?.objects.find((o) => o.id === s.selectedId);
+      const selectedLights = objectLights(selected);
+      const activeLightIdx = Math.min(s.selectedLightIndex, Math.max(0, selectedLights.length - 1));
+      const activeLight = selectedLights[activeLightIdx];
+      if (selected && !selected.locked && (key === "arrowup" || key === "arrowdown" || key === "arrowleft" || key === "arrowright")) {
+        e.preventDefault();
+        const step = e.shiftKey ? 1 : e.altKey ? 20 : 5;
+        const dx = key === "arrowright" ? step : key === "arrowleft" ? -step : 0;
+        const dy = key === "arrowdown" ? step : key === "arrowup" ? -step : 0;
+        if (s.objectGizmo === "light" && activeLight) {
+          const writtenObj = s.sceneDoc?.objects?.find((o) => o.id === selected.id);
+          const [lx, ly, lz] = activeLight.at;
+          const nextAt: [number, number, number] = [round(lx + dx), ly, round(lz - dy)];
+          if (writtenObj?.lights?.length) {
+            const nextLights = writtenObj.lights.map((l, i) => (i === activeLightIdx ? { ...l, at: nextAt } : l));
+            s.apply(setObjectProps(selected.id, { lights: nextLights }));
+          } else {
+            s.apply(setObjectProps(selected.id, { light: { ...writtenObj?.light, at: nextAt } }));
+          }
+          return;
+        }
+        if (s.objectGizmo === "target" && activeLight && activeLight.type !== "point") {
+          const writtenObj = s.sceneDoc?.objects?.find((o) => o.id === selected.id);
+          const [tx, ty, tz] = activeLight.target;
+          const nextTarget: [number, number, number] = [round(tx + dx), round(ty + dy), tz];
+          if (writtenObj?.lights?.length) {
+            const nextLights = writtenObj.lights.map((l, i) => (i === activeLightIdx ? { ...l, target: nextTarget } : l));
+            s.apply(setObjectProps(selected.id, { lights: nextLights }));
+          } else {
+            s.apply(setObjectProps(selected.id, { light: { ...writtenObj?.light, target: nextTarget } }));
+          }
+          return;
+        }
+        if (s.objectGizmo === "lift") {
+          const nextElev = Math.max(0, round(selected.elevation - dy));
+          const nextPos: [number, number] = [round(selected.position[0] + dx), selected.position[1]];
+          s.apply(setObjectProps(selected.id, { position: nextPos, elevation: nextElev || undefined }));
+          return;
+        }
+        const nextPos: [number, number] = [round(selected.position[0] + dx), round(selected.position[1] + dy)];
+        s.apply(moveObject(selected.id, nextPos, { room: s.shell ? roomAt(s.shell, nextPos) : undefined }));
+        return;
+      }
       switch (key) {
+        case "g":
+          if (selected && !selected.locked && s.viewMode === "3d") s.setObjectGizmo(s.objectGizmo === "move" ? "lift" : "move");
+          break;
+        case "y":
+          if (selected && !selected.locked && s.viewMode === "3d") s.setObjectGizmo("lift");
+          break;
+        case "l":
+          if (selected && !selected.locked && activeLight && s.viewMode === "3d") {
+            const next =
+              s.objectGizmo === "light"
+                ? activeLight.type !== "point"
+                  ? "target"
+                  : "move"
+                : s.objectGizmo === "target"
+                  ? "move"
+                  : "light";
+            s.setObjectGizmo(next);
+          }
+          break;
+        case "f":
+          if (selected) focusObject(selected);
+          break;
         case "r":
           if (selected && !selected.locked) s.apply(rotateObject(selected.id, e.shiftKey ? 15 : 90));
           break;
@@ -203,7 +282,8 @@ function useShortcuts() {
           s.toggleWallsCut();
           break;
         case "escape":
-          s.select(null);
+          if (s.objectGizmo !== "move") s.setObjectGizmo("move");
+          else s.select(null);
           break;
         case "delete":
         case "backspace":
@@ -232,12 +312,31 @@ function UnitToggleButton() {
 
 function Sidebar() {
   const scene = useOdaja((s) => s.scene);
+  const shell = useOdaja((s) => s.shell);
   const selectedId = useOdaja((s) => s.selectedId);
   const select = useOdaja((s) => s.select);
   const structure = useOdaja((s) => s.mode === "structure");
   const editingShape = useOdaja((s) => s.editingObjectId !== null);
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [onlyLamps, setOnlyLamps] = useState(false);
   const noWalls = useOdaja((s) => s.shell !== null && s.shell.walls.length === 0);
+
+  const roomNames = new Map((shell?.rooms ?? []).map((r) => [r.id, r.name.toLowerCase()]));
+  const q = query.trim().toLowerCase();
+  const filteredObjects = (scene?.objects ?? []).filter((o) => {
+    const hasLight = objectLights(o).length > 0;
+    if (onlyLamps && !hasLight) return false;
+    if (!q) return true;
+    const roomName = o.room ? roomNames.get(o.room) ?? o.room.toLowerCase() : "";
+    return (
+      o.name.toLowerCase().includes(q) ||
+      o.id.toLowerCase().includes(q) ||
+      roomName.includes(q) ||
+      (o.template?.toLowerCase().includes(q) ?? false) ||
+      (hasLight && ("light".includes(q) || "lamp".includes(q)))
+    );
+  });
 
   return (
     <aside className="sidebar">
@@ -284,16 +383,49 @@ function Sidebar() {
         ) : scene?.objects.length === 0 ? (
           <p className="muted empty-hint">An empty room. Add furniture, or ask the chat to furnish it.</p>
         ) : (
-          <ul className="list">
-            {scene?.objects.map((o) => (
-              <li key={o.id}>
-                <button className={o.id === selectedId ? "active" : ""} onClick={() => select(o.id)}>
-                  {o.name}
-                  <span className="muted">{o.id}</span>
+          <>
+            <div className="list-search">
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search objects, rooms, lamps…"
+                aria-label="Search objects"
+              />
+              {query && (
+                <button onClick={() => setQuery("")} title="Clear search">
+                  ×
                 </button>
-              </li>
-            ))}
-          </ul>
+              )}
+              <button className={onlyLamps ? "active" : ""} onClick={() => setOnlyLamps(!onlyLamps)} title="Show only lamps">
+                Lamps
+              </button>
+            </div>
+            {filteredObjects.length === 0 ? (
+              <p className="muted empty-hint">No matching objects.</p>
+            ) : (
+              <ul className="list">
+                {filteredObjects.map((o) => (
+                  <li key={o.id}>
+                    <button
+                      className={o.id === selectedId ? "active" : ""}
+                      onClick={() => select(o.id)}
+                      onDoubleClick={() => {
+                        select(o.id);
+                        focusObject(o);
+                      }}
+                      title="Click to select · Double-click to focus in 3D"
+                    >
+                      <span>
+                        {objectLights(o).length > 0 && <span className="lamp-dot" />}
+                        {o.name}
+                      </span>
+                      <span className="muted">{o.id}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </section>
 
@@ -308,16 +440,33 @@ function RoomsSection() {
   const shell = useOdaja((s) => s.shell);
   const selection = useOdaja((s) => s.structureSelection);
   const selectStructure = useOdaja((s) => s.selectStructure);
+  const [query, setQuery] = useState("");
   if (!shell) return <section className="grow" />;
   const isSelected = (kind: string, id: string) => selection?.kind === kind && "id" in selection && selection.id === id;
+  const q = query.trim().toLowerCase();
+  const matches = (...fields: (string | undefined)[]) => !q || fields.some((f) => f?.toLowerCase().includes(q));
+  const rooms = shell.rooms.filter((r) => matches(r.name, r.id));
+  const walls = shell.walls.filter((w) => matches(w.id, `${w.thickness} cm`));
+  const areas = shell.areas.filter((a) => matches(a.name, a.id, AREA_LOOK[a.kind].label));
+  const fences = shell.fences.filter((f) => matches(f.id, FENCE_LOOK[f.style].label));
+  const roofs = shell.roofs.filter((r) => matches(r.id, ROOF_LOOK[r.type].label));
+  const stairs = shell.stairs.filter((s) => matches(s.id, STAIR_NAMES[s.type]));
   return (
     <section className="grow">
+      <div className="list-search">
+        <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search rooms, walls, stairs…" aria-label="Search structure elements" />
+        {query && (
+          <button onClick={() => setQuery("")} title="Clear search">
+            ×
+          </button>
+        )}
+      </div>
       <h2>Rooms</h2>
       {shell.rooms.length === 0 ? (
         <p className="muted empty-hint">No rooms yet. Draw walls, then click inside an enclosed area and choose Make room.</p>
       ) : (
         <ul className="list">
-          {shell.rooms.map((r) => (
+          {rooms.map((r) => (
             <li key={r.id}>
               <button className={isSelected("room", r.id) ? "active" : ""} onClick={() => selectStructure({ kind: "room", id: r.id })}>
                 {r.name}
@@ -329,7 +478,7 @@ function RoomsSection() {
       )}
       <h2 className="spaced">Walls</h2>
       <ul className="list">
-        {shell.walls.map((w) => (
+        {walls.map((w) => (
           <li key={w.id}>
             <button className={isSelected("wall", w.id) ? "active" : ""} onClick={() => selectStructure({ kind: "wall", id: w.id })}>
               {w.id}
@@ -344,18 +493,18 @@ function RoomsSection() {
           </li>
         ))}
       </ul>
-      {(shell.plot || shell.areas.length > 0 || shell.fences.length > 0) && (
+      {(shell.plot || areas.length > 0 || fences.length > 0) && (
         <>
           <h2 className="spaced">Garden</h2>
           <ul className="list">
-            {shell.plot && (
+            {shell.plot && matches("plot") && (
               <li>
                 <button className={isSelected("plot", "plot") ? "active" : ""} onClick={() => selectStructure({ kind: "plot", id: "plot" })}>
                   Plot
                 </button>
               </li>
             )}
-            {shell.areas.map((a) => (
+            {areas.map((a) => (
               <li key={a.id}>
                 <button className={isSelected("garden", a.id) ? "active" : ""} onClick={() => selectStructure({ kind: "garden", id: a.id })}>
                   {a.name}
@@ -363,7 +512,7 @@ function RoomsSection() {
                 </button>
               </li>
             ))}
-            {shell.fences.map((f) => (
+            {fences.map((f) => (
               <li key={f.id}>
                 <button className={isSelected("fence", f.id) ? "active" : ""} onClick={() => selectStructure({ kind: "fence", id: f.id })}>
                   {f.id}
@@ -374,11 +523,11 @@ function RoomsSection() {
           </ul>
         </>
       )}
-      {shell.roofs.length > 0 && (
+      {roofs.length > 0 && (
         <>
           <h2 className="spaced">Roofs</h2>
           <ul className="list">
-            {shell.roofs.map((r) => (
+            {roofs.map((r) => (
               <li key={r.id}>
                 <button className={isSelected("roof", r.id) ? "active" : ""} onClick={() => selectStructure({ kind: "roof", id: r.id })}>
                   {r.id}
@@ -389,11 +538,11 @@ function RoomsSection() {
           </ul>
         </>
       )}
-      {shell.stairs.length > 0 && (
+      {stairs.length > 0 && (
         <>
           <h2 className="spaced">Stairs</h2>
           <ul className="list">
-            {shell.stairs.map((s) => (
+            {stairs.map((s) => (
               <li key={s.id}>
                 <button className={isSelected("stair", s.id) ? "active" : ""} onClick={() => selectStructure({ kind: "stair", id: s.id })}>
                   {s.id}
@@ -638,6 +787,49 @@ function Toolbar() {
   );
 }
 
+function SelectionGizmoBar() {
+  const viewMode = useOdaja((s) => s.viewMode);
+  const mode = useOdaja((s) => s.mode);
+  const measuring = useOdaja((s) => s.measuring);
+  const editingObjectId = useOdaja((s) => s.editingObjectId);
+  const gizmo = useOdaja((s) => s.objectGizmo);
+  const setGizmo = useOdaja((s) => s.setObjectGizmo);
+  const object = useOdaja((s) => s.scene?.objects.find((o) => o.id === s.selectedId));
+  if (viewMode !== "3d" || mode !== "furnish" || measuring || editingObjectId || !object || object.locked) return null;
+  const selectedLightIndex = useOdaja((s) => s.selectedLightIndex);
+  const lights = objectLights(object);
+  const activeLight = lights[Math.min(selectedLightIndex, Math.max(0, lights.length - 1))];
+  const hasLight = lights.length > 0;
+  const hasAim = Boolean(activeLight && activeLight.type !== "point");
+  return (
+    <div className="gizmo-pill" role="toolbar" aria-label="3D handle mode">
+      <span className="gizmo-pill-name">{object.name}</span>
+      <button className={gizmo === "move" ? "active" : ""} onClick={() => setGizmo("move")} title="Move horizontally (G)">
+        Move
+      </button>
+      <button className={gizmo === "lift" ? "active" : ""} onClick={() => setGizmo("lift")} title="Move in 3D + height (Y)">
+        Lift
+      </button>
+      <button className={gizmo === "rotate" ? "active" : ""} onClick={() => setGizmo("rotate")} title="Rotate handle (R turns 90°)">
+        Rotate
+      </button>
+      {hasLight && (
+        <button className={gizmo === "light" ? "active" : ""} onClick={() => setGizmo("light")} title="Position light emitter in 3D (L)">
+          {lights.length > 1 ? `Bulb #${Math.min(selectedLightIndex, lights.length - 1) + 1}` : "Bulb"}
+        </button>
+      )}
+      {hasAim && (
+        <button className={gizmo === "target" ? "active" : ""} onClick={() => setGizmo("target")} title="Aim light direction in 3D (L)">
+          Aim
+        </button>
+      )}
+      <button onClick={() => focusObject(object)} title="Focus camera on selected object (F)">
+        Focus
+      </button>
+    </div>
+  );
+}
+
 function Notice() {
   const notice = useOdaja((s) => s.notice);
   return notice ? <div className="notice">{notice}</div> : null;
@@ -738,6 +930,7 @@ export function App() {
         <UnderlayToolLayer />
         <MeasureLayer />
         {measuring3D && <div className="measure-hint">Click two surfaces to measure · Drag to orbit · Shift locks vertical/horizontal · Esc clears</div>}
+        <SelectionGizmoBar />
         <UnderlayPanel />
         <SunPanel />
         <PlanNorthArrow />

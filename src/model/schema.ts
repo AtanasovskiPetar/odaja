@@ -294,36 +294,55 @@ export const ModelSchema = z.object({
 });
 
 export const LightSchema = z.object({
-  type: z.enum(["point", "spot"]).optional(),
+  type: z.enum(["point", "spot", "area"]).optional(),
   at: point3.optional(),
+  // Where a spot or area light aims, in local cm relative to the object origin.
+  // Default: 100 cm straight below `at`.
+  target: point3.optional(),
+  // Emitter dimensions [width, depth] in cm for `area` lights (default [60, 60]).
+  size: z.tuple([z.number().min(5).max(500), z.number().min(5).max(500)]).optional(),
   lumens: z.number().min(0).max(20000).optional(),
   kelvin: z.number().min(1500).max(10000).optional(),
   angle: z.number().min(10).max(160).optional(),
+  penumbra: z.number().min(0).max(1).optional(),
   on: z.boolean().optional(),
 });
 
 export type LightInput = z.input<typeof LightSchema>;
 
 export interface Light {
-  type: "point" | "spot";
+  type: "point" | "spot" | "area";
   at: [number, number, number];
+  target: [number, number, number];
+  size: [number, number];
   lumens: number;
   kelvin: number;
   angle: number;
+  penumbra?: number;
   on: boolean;
 }
 
 function resolveLight(input: LightInput | undefined, parts: Part[]): Light | undefined {
   if (!input) return undefined;
   const top = Math.max(0, ...parts.map((p) => p.at[2] + partExtent(p)[5]));
+  const at: [number, number, number] = input.at ?? [0, 0, Math.round(top * 0.8)];
   return {
     type: input.type ?? "point",
-    at: input.at ?? [0, 0, Math.round(top * 0.8)],
+    at,
+    target: input.target ?? [at[0], at[1], at[2] - 100],
+    size: input.size ?? [60, 60],
     lumens: input.lumens ?? 800,
     kelvin: input.kelvin ?? 2700,
     angle: input.angle ?? 60,
+    penumbra: input.penumbra,
     on: input.on ?? true,
   };
+}
+
+export function objectLights(o: { light?: Light; lights?: Light[] } | null | undefined): Light[] {
+  if (!o) return [];
+  if (o.lights?.length) return o.lights;
+  return o.light ? [o.light] : [];
 }
 
 export function lightInput(o: { template?: string; params?: Record<string, number>; light?: LightInput }): LightInput | undefined {
@@ -353,6 +372,7 @@ export const ObjectSchema = z
     parts: z.array(PartSchema).min(1).optional(),
     model: ModelSchema.optional(),
     light: LightSchema.optional(),
+    lights: z.array(LightSchema).optional(),
     libraryItem: LibraryRefSchema.optional(),
   })
   .superRefine((o, ctx) => {
@@ -372,7 +392,8 @@ export const ObjectSchema = z
           ? [PartSchema.parse({ name: "model-bounds", shape: "box", size: o.model.size })]
           : z.array(PartSchema).parse(buildTemplate(o.template!, o.params) ?? [])),
     );
-    return { ...o, parts, light: resolveLight(lightInput(o), parts) };
+    const lights = o.lights?.length ? o.lights.map((l) => resolveLight(l, parts)!) : undefined;
+    return { ...o, parts, light: resolveLight(lightInput(o), parts), lights };
   });
 
 export function expandRepeats(parts: Part[]): Part[] {

@@ -11,6 +11,7 @@ import { siteBounds } from "../model/site";
 import { skyColor, sunDirection, sunlight } from "../model/sun";
 import { M } from "../model/units";
 import { useOdaja } from "../store";
+import { useLamps } from "../ui/lampState";
 import { useSun } from "../ui/sunState";
 import { isDark } from "../ui/themePref";
 import { WindowLight } from "./render/WindowLight";
@@ -20,22 +21,39 @@ import type { SceneTheme } from "./theme";
 // The night's fill, toward which the sky's light fades after sunset.
 const NIGHT_SKY = "#9cb6d8";
 const NIGHT_GROUND = "#343b48";
+// Subtle warm indoor bounce when lamps are lit at night (gated by Guided AO so
+// corners stay grounded while upper walls and ceilings don't crush to black).
+const LAMP_BOUNCE_SKY = "#f5d7b0";
+const LAMP_BOUNCE_GROUND = "#6e563e";
 const MOON_COLOR = "#aebfdd";
 // A full moon high up, against the sun's 2.6: far brighter than the real
 // ratio so a moonlit room reads, yet below the sun at sunset, so evenings
 // only get darker.
 const MOON_LIGHT = 0.15;
 
-// Blocks sun from above (the 3D view has no ceiling), invisible otherwise:
-// it only casts shadows.
-const SHADOW_ONLY = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
+// Blocks sun/moon from above (the 3D view has no ceiling), invisible otherwise:
+// it only casts shadows. Single upward-facing plane with shadowSide: FrontSide
+// so the sun/moon above see it while indoor lamps below cull it completely
+// (preventing grazing PointLight shadow-map texel acne on RoomCeiling).
+const SHADOW_ONLY = new THREE.MeshBasicMaterial({
+  colorWrite: false,
+  depthWrite: false,
+  side: THREE.FrontSide,
+  shadowSide: THREE.FrontSide,
+});
 
 function SunCeiling({ bounds, height }: { bounds: { minX: number; minY: number; maxX: number; maxY: number }; height: number }) {
   const w = M(bounds.maxX - bounds.minX);
   const d = M(bounds.maxY - bounds.minY);
   return (
-    <mesh position={[M((bounds.minX + bounds.maxX) / 2), M(height) + 0.01, M((bounds.minY + bounds.maxY) / 2)]} material={SHADOW_ONLY} castShadow>
-      <boxGeometry args={[w, 0.02, d]} />
+    <mesh
+      name="sunceiling"
+      position={[M((bounds.minX + bounds.maxX) / 2), M(height) + 0.05, M((bounds.minY + bounds.maxY) / 2)]}
+      rotation={[-Math.PI / 2, 0, 0]}
+      material={SHADOW_ONLY}
+      castShadow
+    >
+      <planeGeometry args={[w, d]} />
     </mesh>
   );
 }
@@ -78,11 +96,21 @@ function Sun({ theme, walk, sky }: { theme: SceneTheme; walk: boolean; sky: Sky 
   // A small fill from the sky (PMREM gives most of it), keeping deep
   // interiors readable. It fades with the daylight to the night's, which
   // the moon brightens; never black.
+  const lampsOn = useLamps((s) => s.on);
   const night = 1 - sky.daylight;
-  const nightFill = 0.1 + 0.06 * sky.moonlight;
+  const lampBounce = lampsOn ? night : 0;
+  const nightFill = 0.1 + 0.06 * sky.moonlight + 0.1 * lampBounce;
   const ambient = nightFill + ((walk ? 0.3 : 0.35) - nightFill) * sky.daylight;
-  const fillSky = useMemo(() => new THREE.Color(background).lerp(new THREE.Color(NIGHT_SKY), night), [background, night]);
-  const fillGround = useMemo(() => new THREE.Color(theme.ground).lerp(new THREE.Color(NIGHT_GROUND), night), [theme.ground, night]);
+  const fillSky = useMemo(() => {
+    const c = new THREE.Color(background).lerp(new THREE.Color(NIGHT_SKY), night);
+    if (lampBounce > 0) c.lerp(new THREE.Color(LAMP_BOUNCE_SKY), 0.55 * lampBounce);
+    return c;
+  }, [background, night, lampBounce]);
+  const fillGround = useMemo(() => {
+    const c = new THREE.Color(theme.ground).lerp(new THREE.Color(NIGHT_GROUND), night);
+    if (lampBounce > 0) c.lerp(new THREE.Color(LAMP_BOUNCE_GROUND), 0.55 * lampBounce);
+    return c;
+  }, [theme.ground, night, lampBounce]);
   const distance = radius + 30;
 
   return (
