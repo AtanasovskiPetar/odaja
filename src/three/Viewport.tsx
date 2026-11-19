@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Grid, OrbitControls, OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
@@ -193,10 +193,24 @@ function ShadowUpdater() {
     };
   }, [gl, invalidate]);
 
+  const lastDragShadow = useRef(0);
+
   useEffect(() => {
     gl.shadowMap.needsUpdate = true;
     invalidate();
-  }, [gl, invalidate, shell, wholeShell, scene, level, viewMode, wallsCut, showRoofs, editingObjectId, dragPreview, lampsOn, sunOn, sunDay, sunMinutes]);
+  }, [gl, invalidate, shell, wholeShell, scene, level, viewMode, wallsCut, showRoofs, editingObjectId, lampsOn, sunOn, sunDay, sunMinutes]);
+
+  // Throttle shadow-map re-renders while dragging furniture (100 Hz mousemove
+  // would otherwise rebuild all point-light cube maps + sun shadows every frame);
+  // always flush immediately when the drag ends.
+  useEffect(() => {
+    const now = performance.now();
+    if (!dragPreview || now - lastDragShadow.current >= 50) {
+      lastDragShadow.current = now;
+      gl.shadowMap.needsUpdate = true;
+      invalidate();
+    }
+  }, [gl, invalidate, dragPreview]);
 
   return null;
 }
