@@ -29,7 +29,6 @@ import { TraceGuide } from "./TraceGuide";
 import { PlanNorthArrow, SunPanel } from "./SunPanel";
 import { useSun } from "./sunState";
 import { useLamps } from "./lampState";
-import { LampPanel } from "./LampPanel";
 import { ManageHomesDialog } from "./ManageHomes";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
@@ -679,7 +678,6 @@ export function App() {
         <UnderlayToolLayer />
         <UnderlayPanel />
         <SunPanel />
-        <LampPanel />
         <PlanNorthArrow />
         <WalkStartPicker />
         <WalkOverlay />

@@ -6,8 +6,6 @@ import { daylight, momentOf, sunPosition } from "../model/sun";
 import { useOdaja } from "../store";
 import { IconClose, IconPause, IconPlay } from "./icons";
 import { SUN_YEAR, useSun } from "./sunState";
-import { useLamps } from "./lampState";
-import { LampBrightness } from "./LampPanel";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 const COMPASS = ["north", "north-east", "east", "south-east", "south", "south-west", "west", "north-west"];
@@ -205,9 +203,6 @@ export function SunPanel() {
   const editing = useSun((s) => s.editingSite);
   const setOn = useSun((s) => s.setOn);
   const hasSite = useOdaja((s) => Boolean(s.project?.site));
-  const lampsOn = useLamps((s) => s.on);
-  const plan = useOdaja((s) => s.viewMode === "plan");
-  const lamps = lampsOn && !plan;
   if (!on) return null;
   return (
     <div className="underlay-panel sun-panel">
@@ -218,7 +213,6 @@ export function SunPanel() {
         </button>
       </div>
       {!hasSite || editing ? <SiteForm /> : <SunControls />}
-      {lamps && <LampBrightness />}
     </div>
   );
 }

@@ -1,76 +1,40 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
-import { add, dist, pointInPolygon, polygonArea, rotate, scale, type Vec } from "../model/geometry";
-import type { Light, Room, SceneObject, Shell } from "../model/schema";
-import { M, planToWorld } from "../model/units";
-import { useOdaja } from "../store";
-import { useLamps } from "../ui/lampState";
+import type { Light } from "../model/schema";
+import { M } from "../model/units";
 
-const EXPOSURE = 0.04;
-const TINT = 0.45;
-const LIT_LAMPS = 8;
-const DRAG_MARGIN = 1;
-const REFLECTANCE = 0.5;
+const EXPOSURE = 0.1;
+const SHADOW_LAMPS = 4;
 
 export function kelvinColor(kelvin: number): THREE.Color {
   const t = kelvin / 100;
   const r = t <= 66 ? 255 : 329.698727446 * Math.pow(t - 60, -0.1332047592);
   const g = t <= 66 ? 99.4708025861 * Math.log(t) - 161.1195681661 : 288.1221695283 * Math.pow(t - 60, -0.0755148492);
   const b = t >= 66 ? 255 : t <= 19 ? 0 : 138.5177312231 * Math.log(t - 10) - 305.0447927307;
-  const c = (v: number) => 1 - TINT * (1 - Math.min(255, Math.max(0, v)) / 255);
+  const c = (v: number) => Math.min(255, Math.max(0, v)) / 255;
   return new THREE.Color().setRGB(c(r), c(g), c(b), THREE.SRGBColorSpace);
 }
 
-function bulbAt(object: SceneObject, light: Light): Vec {
-  return add(object.position, rotate([light.at[0], light.at[1]], object.rotation));
-}
+const lamps = new Set<THREE.PointLight | THREE.SpotLight>();
 
-function roomAround(shell: Shell, p: Vec): Room | undefined {
-  return shell.rooms.find((r) => pointInPolygon(p, r.polygon));
-}
-
-function reach(room: Room, p: Vec, height: number): number {
-  const far = Math.max(...room.polygon.map((c) => dist(c, p)));
-  return M(Math.hypot(far, height));
-}
-
-type Lamp = THREE.PointLight | THREE.SpotLight;
-const lamps = new Set<Lamp>();
-let lampsChanged = false;
-
-export function LampLight({ light, object }: { light: Light; object: SceneObject }) {
-  const [lamp, setLamp] = useState<Lamp | null>(null);
+export function LampLight({ light }: { light: Light }) {
+  const [lamp, setLamp] = useState<THREE.PointLight | THREE.SpotLight | null>(null);
   const [target] = useState(() => new THREE.Object3D());
   const color = useMemo(() => kelvinColor(light.kelvin), [light.kelvin]);
-  const shell = useOdaja((s) => s.shell);
-  const exposure = EXPOSURE * useLamps((s) => s.brightness);
-  const distance = useMemo(() => {
-    if (!shell) return 0;
-    const p = bulbAt(object, light);
-    const room = roomAround(shell, p);
-    return room ? reach(room, p, shell.wallHeight) : 0;
-  }, [shell, object, light]);
   const [x, y, z] = light.at;
   const position: [number, number, number] = [M(x), M(z), M(y)];
 
   useEffect(() => {
     if (!lamp) return;
-    lamp.visible = false;
     lamp.castShadow = false;
-    lamp.shadow.autoUpdate = false;
-    const size = lamp instanceof THREE.SpotLight ? 1024 : 768;
-    lamp.shadow.mapSize.set(size, size);
+    lamp.shadow.mapSize.set(512, 512);
     lamp.shadow.bias = -0.002;
     lamp.shadow.normalBias = 0.02;
     lamp.shadow.camera.near = 0.05;
     lamp.shadow.camera.far = 15;
     lamps.add(lamp);
-    lampsChanged = true;
-    return () => {
-      lamps.delete(lamp);
-      lampsChanged = true;
-    };
+    return () => void lamps.delete(lamp);
   }, [lamp]);
 
   if (light.type === "spot") {
@@ -79,106 +43,24 @@ export function LampLight({ light, object }: { light: Light; object: SceneObject
     return (
       <>
         <primitive object={target} position={[position[0], position[1] - 1, position[2]]} />
-        <spotLight ref={setLamp} position={position} target={target} color={color} intensity={candela * exposure} angle={half} penumbra={0.3} decay={2} distance={distance} />
+        <spotLight ref={setLamp} position={position} target={target} color={color} intensity={candela * EXPOSURE} angle={half} penumbra={0.3} decay={2} />
       </>
     );
   }
-  return <pointLight ref={setLamp} position={position} color={color} intensity={(light.lumens / (4 * Math.PI)) * exposure} decay={2} distance={distance} />;
+  return <pointLight ref={setLamp} position={position} color={color} intensity={(light.lumens / (4 * Math.PI)) * EXPOSURE} decay={2} />;
 }
 
-export function LampBudget() {
+export function LampShadows() {
   const since = useRef(0);
-  const meshes = useRef(0);
-  const stale = useRef(true);
-  const dragged = useRef<Vec[] | null>(null);
   const at = useMemo(() => new THREE.Vector3(), []);
-  const scene = useOdaja((s) => s.scene);
-  const shell = useOdaja((s) => s.shell);
-  const drag = useOdaja((s) => s.dragPreview);
-  useEffect(() => {
-    stale.current = true;
-  }, [scene, shell]);
-  useEffect(() => {
-    if (!drag) return;
-    const from = useOdaja.getState().scene?.objects.find((o) => o.id === drag.id)?.position;
-    dragged.current = from ? [from, drag.position] : [drag.position];
-  }, [drag]);
-  useFrame(({ camera, scene: world }, delta) => {
+  useFrame(({ camera }, delta) => {
     since.current += delta;
-    if (!lampsChanged && !stale.current && !dragged.current && since.current < 0.25) return;
+    if (since.current < 0.25) return;
     since.current = 0;
-    let count = 0;
-    world.traverse((o) => {
-      if ((o as THREE.Mesh).isMesh) count++;
-    });
-    if (count !== meshes.current) {
-      meshes.current = count;
-      stale.current = true;
-    }
-    const nearest = (kind: Lamp[]) =>
-      kind
-        .map((lamp) => ({ lamp, d: lamp.getWorldPosition(at).distanceToSquared(camera.position) }))
-        .sort((a, b) => a.d - b.d)
-        .map(({ lamp }) => lamp);
-    const points = nearest([...lamps].filter((l) => l instanceof THREE.PointLight));
-    const spots = nearest([...lamps].filter((l) => l instanceof THREE.SpotLight));
-    const pointSlots = Math.min(points.length, LIT_LAMPS - Math.min(spots.length, LIT_LAMPS / 2));
-    const spotSlots = Math.min(spots.length, LIT_LAMPS - pointSlots);
-    const moved = dragged.current;
-    const nearMove = (lamp: Lamp) => {
-      if (!moved) return false;
-      if (lamp.distance === 0) return true;
-      lamp.getWorldPosition(at);
-      return moved.some(([x, y]) => Math.hypot(at.x - M(x), at.z - M(y)) < lamp.distance + DRAG_MARGIN);
-    };
-    const assign = (lamp: Lamp, lit: boolean) => {
-      if (lit && (stale.current || !lamp.castShadow || nearMove(lamp))) lamp.shadow.needsUpdate = true;
-      lamp.visible = lit;
-      lamp.castShadow = lit;
-    };
-    points.forEach((lamp, i) => assign(lamp, i < pointSlots));
-    spots.forEach((lamp, i) => assign(lamp, i < spotSlots));
-    stale.current = false;
-    dragged.current = null;
-    lampsChanged = false;
+    const nearest = [...lamps]
+      .map((lamp) => ({ lamp, d: lamp.getWorldPosition(at).distanceToSquared(camera.position) }))
+      .sort((a, b) => a.d - b.d);
+    nearest.forEach(({ lamp }, i) => (lamp.castShadow = i < SHADOW_LAMPS));
   });
   return null;
-}
-
-export function RoomBounce() {
-  const objects = useOdaja((s) => s.scene?.objects);
-  const shell = useOdaja((s) => s.shell);
-  const off = useOdaja((s) => s.mode === "structure" || s.editingObjectId !== null);
-  const brightness = useLamps((s) => s.brightness);
-  const fills = useMemo(() => {
-    if (!objects || !shell || off) return [];
-    const rooms = new Map<Room, { lumens: number; at: Vec; color: THREE.Color }>();
-    for (const object of objects) {
-      const light = object.light;
-      if (!light?.on || light.lumens <= 0) continue;
-      const p = bulbAt(object, light);
-      const room = roomAround(shell, p);
-      if (!room) continue;
-      const sum = rooms.get(room) ?? { lumens: 0, at: [0, 0], color: new THREE.Color(0, 0, 0) };
-      sum.lumens += light.lumens;
-      sum.at = add(sum.at, scale(p, light.lumens));
-      sum.color.add(kelvinColor(light.kelvin).multiplyScalar(light.lumens));
-      rooms.set(room, sum);
-    }
-    const height = shell.wallHeight;
-    return [...rooms].map(([room, sum]) => {
-      const at = scale(sum.at, 1 / sum.lumens);
-      const perimeter = room.polygon.reduce((total, c, i) => total + dist(c, room.polygon[(i + 1) % room.polygon.length]), 0);
-      const surfaces = 2 * M(M(polygonArea(room.polygon))) + M(perimeter) * M(height);
-      const lux = (sum.lumens * REFLECTANCE) / (surfaces * (1 - REFLECTANCE));
-      return {
-        id: room.id,
-        position: planToWorld(at[0], at[1], height / 2),
-        color: sum.color.multiplyScalar(1 / sum.lumens),
-        intensity: lux * EXPOSURE,
-        distance: reach(room, at, height / 2),
-      };
-    });
-  }, [objects, shell, off]);
-  return fills.map((f) => <pointLight key={f.id} position={f.position} color={f.color} intensity={f.intensity * brightness} decay={0} distance={f.distance} />);
 }
