@@ -5,6 +5,9 @@ import { round } from "../model/units";
 import { objectLights, type SceneObject } from "../model/schema";
 import { duplicateParts, mirrorParts, removeParts } from "../model/partOps";
 import { useOdaja, type Tool } from "../store";
+import { platform } from "../platform";
+import { useCloudAuth } from "../cloud/auth";
+import { CloudAccountButton, CloudAuthScreen } from "./cloud/AuthGate";
 import { Viewport } from "../three/Viewport";
 import { PreparingIndicator } from "../three/render/ShaderGate";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
@@ -355,6 +358,7 @@ function Sidebar() {
           <span className="logo">Odaja</span>
         </span>
         <HomeMenu />
+        {platform.kind === "cloud" && <CloudAccountButton />}
         <UnitToggleButton />
         <ThemeCycleButton />
       </header>
@@ -913,11 +917,14 @@ export function App() {
   const presenting = useOdaja((s) => s.presenting);
   const editingStructure = useOdaja((s) => s.mode === "structure" && s.viewMode === "plan");
   const measuring3D = useOdaja((s) => s.measuring && s.viewMode === "3d");
+  const cloudAuthStatus = useCloudAuth((s) => s.status);
+  const needsCloudAuth = platform.kind === "cloud" && cloudAuthStatus !== "signed-in";
   useEffect(() => {
-    load();
-  }, [load]);
+    if (!needsCloudAuth) load();
+  }, [load, needsCloudAuth]);
   useShortcuts();
 
+  if (needsCloudAuth) return <CloudAuthScreen />;
   if (status === "loading") return null;
   if (status === "start") return <Welcome />;
   return (

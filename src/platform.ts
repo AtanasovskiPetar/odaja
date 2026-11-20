@@ -44,7 +44,7 @@ export interface ProjectList {
 }
 
 export interface Platform {
-  kind: "server" | "browser";
+  kind: "server" | "browser" | "cloud";
   listProjects(): Promise<ProjectList>;
   openProject(dir: string): Promise<void>;
   // Opens the user's copy of the sample flat, making it (or remaking it when fresh).
@@ -246,14 +246,47 @@ let host: Platform | null = null;
 // Listeners registered before the host is known (the store does this as it loads).
 const early: ((p: Platform) => void)[] = [];
 
-// Development and the companion answer /api/projects with JSON; the website
-// (static files) doesn't.
-// `?host=browser` forces the website host even with a server present (to
-// develop and test website features with `bun run dev`).
+// Host priority:
+// 1. Explicit `?host=cloud | server | browser`
+// 2. Cloud backend if `VITE_CLOUD_API_URL` is configured OR local cloud backend
+//    (`http://localhost:8787/api/v1/health`) responds (default for platform dev)
+// 3. Companion / Vite local server (`/api/projects`)
+// 4. Browser OPFS website fallback
 export async function initPlatform(): Promise<void> {
   if (host) return;
+  const params = new URLSearchParams(location.search);
+  const hostParam = params.get("host");
+  const envCloudUrl = (import.meta.env.VITE_CLOUD_API_URL as string | undefined)?.trim();
+
+  let cloudUrl: string | null = null;
+  if (hostParam === "cloud") {
+    cloudUrl = envCloudUrl || "http://localhost:8787";
+  } else if (hostParam !== "browser" && hostParam !== "server") {
+    if (envCloudUrl) {
+      cloudUrl = envCloudUrl;
+    } else if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
+      try {
+        const res = await fetch("http://localhost:8787/api/v1/health", { cache: "no-store" });
+        if (res.ok) cloudUrl = "http://localhost:8787";
+      } catch {
+        // Cloud backend not running locally: fall through to companion/browser.
+      }
+    }
+  }
+
+  if (cloudUrl) {
+    const [{ useCloudAuth }, { createCloudPlatform }] = await Promise.all([
+      import("./cloud/auth"),
+      import("./cloud/platform"),
+    ]);
+    await useCloudAuth.getState().init(cloudUrl);
+    host = createCloudPlatform(cloudUrl);
+    for (const attach of early.splice(0)) attach(host);
+    return;
+  }
+
   let server = false;
-  const forceBrowser = new URLSearchParams(location.search).get("host") === "browser";
+  const forceBrowser = hostParam === "browser";
   if (!forceBrowser) try {
     const res = await fetch("/api/projects", { cache: "no-store" });
     server = res.ok && (res.headers.get("Content-Type") ?? "").includes("application/json");
