@@ -3431,7 +3431,18 @@ button.link.danger {
   backdrop-filter: blur(20px) saturate(160%);
   -webkit-backdrop-filter: blur(20px) saturate(160%);
   white-space: nowrap;
+  flex-wrap: wrap;
+  justify-content: center;
+  /* Centred with left: 50%, it would otherwise wrap at half the view's width. */
+  width: max-content;
+  max-width: calc(100% - 32px);
   animation: fade 0.2s ease-out;
+}
+
+/* In Walk, Walk's own bar has the bottom: under the toolbar instead. */
+.gizmo-pill.walking {
+  top: 64px;
+  bottom: auto;
 }
 
 .gizmo-pill-name {
@@ -3463,6 +3474,54 @@ button.link.danger {
   background: var(--card);
   color: var(--ink);
   box-shadow: 0 0 0 0.5px var(--line-strong), 0 1px 3px rgba(45, 33, 15, 0.12);
+}
+
+.gizmo-pill button svg {
+  vertical-align: -3px;
+}
+
+.gizmo-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 4px;
+  background: var(--line-strong);
+}
+
+.lamp-colours {
+  display: flex;
+  gap: 5px;
+  padding: 0 6px;
+}
+
+.gizmo-pill button.lamp-colour {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+.gizmo-pill button.lamp-colour.active {
+  box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--ink-2);
+}
+
+.lamp-brightness {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px 0 4px;
+  font-size: 11.5px;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.lamp-brightness input {
+  width: 90px;
+  accent-color: var(--accent);
+}
+
+.lamp-brightness span {
+  min-width: 52px;
 }
 
 /* No z-index: like the structure layer, it covers the plan but stays under
@@ -3620,6 +3679,37 @@ button.link.danger {
 /* ——— Sunlight ——— */
 
 /* Below the toolbar, which reaches the right edge on narrower screens. */
+.sun-chip {
+  position: absolute;
+  top: 66px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px 0 9px;
+  border: none;
+  border-radius: 15px;
+  background: var(--glass);
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  animation: fade 0.2s ease-out;
+}
+
+.sun-chip:hover {
+  color: var(--ink);
+}
+
+.sun-chip svg {
+  color: var(--accent);
+}
+
 .sun-panel {
   top: 66px;
   width: 280px;

@@ -91,7 +91,7 @@ export function WalkOverlay() {
           <kbd>A</kbd>
           <kbd>S</kbd>
           <kbd>D</kbd> move · <kbd>Shift</kbd> faster · <kbd>Q</kbd>
-          <kbd>E</kbd> turn · click or drag to look · <kbd>Esc</kbd> frees the mouse
+          <kbd>E</kbd> turn · drag to look · click something to select it · double-click or <kbd>L</kbd> to look with the mouse, <kbd>Esc</kbd> to stop
         </span>
         <label>
           Eyes at

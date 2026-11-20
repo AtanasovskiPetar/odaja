@@ -5,6 +5,7 @@ import { objectLights, type Light, type LightInput, type SceneObject } from "../
 import { round } from "../model/units";
 import { useOdaja } from "../store";
 import { useLamps } from "./lampState";
+import { LAMP_COLOURS, useLightEdit } from "./lightEdit";
 import { saveObjectAsItemFile } from "./libraryFiles";
 import { deleteSelected, duplicateSelected } from "./actions";
 
@@ -91,13 +92,6 @@ function TemplateFields({ object }: { object: SceneObject }) {
   );
 }
 
-const KELVIN_PRESETS: [number, string][] = [
-  [2200, "2200K"],
-  [2700, "2700K"],
-  [3000, "3000K"],
-  [4000, "4000K"],
-];
-
 function GizmoModeBar({ object }: { object: SceneObject }) {
   const viewMode = useOdaja((s) => s.viewMode);
   const gizmo = useOdaja((s) => s.objectGizmo);
@@ -137,47 +131,13 @@ function GizmoModeBar({ object }: { object: SceneObject }) {
 }
 
 function LightFields({ object }: { object: SceneObject }) {
-  const apply = useOdaja((s) => s.apply);
-  const writtenObj = useOdaja((s) => s.sceneDoc?.objects?.find((o) => o.id === object.id));
   const viewMode = useOdaja((s) => s.viewMode);
   const gizmo = useOdaja((s) => s.objectGizmo);
   const setGizmo = useOdaja((s) => s.setObjectGizmo);
-  const selectedLightIndex = useOdaja((s) => s.selectedLightIndex);
   const setSelectedLightIndex = useOdaja((s) => s.setSelectedLightIndex);
   const lampsOn = useLamps((s) => s.on);
-  const lights = objectLights(object);
-  if (lights.length === 0) return null;
-
-  const idx = Math.min(selectedLightIndex, lights.length - 1);
-  const light = lights[idx]!;
-
-  const currentWrittenList = (): LightInput[] => {
-    if (writtenObj?.lights?.length) return writtenObj.lights.map((l) => ({ ...l }));
-    if (writtenObj?.light) return [{ ...writtenObj.light }];
-    // Template default light not yet written to sceneDoc: materialize from resolved light
-    return lights.map((l) => ({
-      type: l.type,
-      at: [...l.at],
-      lumens: l.lumens,
-      kelvin: l.kelvin,
-      ...(l.type === "spot" ? { angle: l.angle } : {}),
-      ...(l.type === "area" ? { size: [...l.size] } : {}),
-      ...(l.penumbra !== undefined ? { penumbra: l.penumbra } : {}),
-      ...(!l.on ? { on: false } : {}),
-    }));
-  };
-
-  const writeList = (next: LightInput[]) => {
-    if (next.length === 0) apply(setObjectProps(object.id, { light: undefined, lights: undefined }));
-    else if (next.length === 1) apply(setObjectProps(object.id, { light: next[0], lights: undefined }));
-    else apply(setObjectProps(object.id, { light: undefined, lights: next }));
-  };
-
-  const set = (patch: LightInput) => {
-    const list = currentWrittenList();
-    list[idx] = { ...list[idx], ...patch };
-    writeList(list);
-  };
+  const { lights, idx, light, written: currentWrittenList, writeList, set } = useLightEdit(object);
+  if (!light) return null;
 
   const addSource = () => {
     const list = currentWrittenList();
@@ -258,9 +218,9 @@ function LightFields({ object }: { object: SceneObject }) {
         <Field label="Colour" numeric suffix="K" min={1500} max={10000} value={light.kelvin} onCommit={(v) => set({ kelvin: Number(v) })} />
       </div>
       <div className="kelvin-presets">
-        {KELVIN_PRESETS.map(([k, label]) => (
-          <button key={k} className={light.kelvin === k ? "active" : ""} onClick={() => set({ kelvin: k })} title={`Set colour temperature to ${label}`}>
-            {label}
+        {LAMP_COLOURS.map(({ kelvin: k, name }) => (
+          <button key={k} className={light.kelvin === k ? "active" : ""} onClick={() => set({ kelvin: k })} title={`${name}, ${k} K`}>
+            {k}K
           </button>
         ))}
       </div>
