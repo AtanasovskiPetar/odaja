@@ -358,9 +358,9 @@ function Sidebar() {
           <span className="logo">Odaja</span>
         </span>
         <HomeMenu />
-        {platform.kind === "cloud" && <CloudAccountButton />}
         <UnitToggleButton />
         <ThemeCycleButton />
+        {platform.kind === "cloud" && <CloudAccountButton />}
       </header>
 
       <ScenesSection />
