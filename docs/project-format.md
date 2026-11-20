@@ -444,12 +444,17 @@ object becomes a lamp with its own `light` (`{}` uses every default).
 
 | Field | Meaning |
 |---|---|
-| `type` | `point` shines all round (default); `spot` shines straight down in a cone |
+| `type` | `point` shines all round (default); `spot` shines in a cone towards `target`; `area` is a soft rectangular emitter (`RectAreaLight`) facing `target` |
 | `at` | `[x, y, z]` where the light sits, relative to the object's origin like a part's `at` (default: the middle, 80% of the way up) |
+| `target` | `spot` and `area`: `[x, y, z]` where the light aims, in local cm relative to the object's origin (default: 100 cm straight below `at`) |
+| `size` | `area` only: `[width, depth]` of the emitting rectangle in cm (default `[60, 60]`) |
 | `lumens` | Brightness as on the bulb's box (default 800; a 60 W bulb is about 800) |
 | `kelvin` | Colour temperature (default 2700): 2700 warm white, 3000 soft white, 4000 neutral, 6500 daylight |
 | `angle` | `spot` only: the beam's width in degrees (default 60) |
+| `penumbra` | `spot` only: beam edge softness `0..1` (default scales from `0.6` at `60°` to `0.92` for wide ceiling spots) |
 | `on` | `false` turns the lamp off (default true) |
+
+For multi-head fixtures (track lights, multi-spot ceiling bars, multi-bulb chandeliers), use `lights: [...]` (an array of light objects with the same fields) instead of `light`.
 
 Ceiling lights stand on their `elevation` like everything else: put a ceiling
 light's top at the ceiling with `elevation` = wall height − its height.

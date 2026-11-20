@@ -33,6 +33,7 @@ export interface WalkPose {
 // Furnish: move furniture, walls are fixed. Structure: edit walls, doors,
 // windows and rooms, furniture is faded and fixed.
 export type EditMode = "furnish" | "structure";
+export type ObjectGizmo = "move" | "lift" | "rotate" | "light" | "target";
 export type Tool = "select" | "wall" | "room" | "door" | "window" | "stairs" | "roof" | "garden" | "fence" | "plot";
 // A wall, opening, room or stair; in the garden an outdoor area ("garden"), a
 // fence or the plot; or an enclosed area with no room yet, which can be
@@ -151,6 +152,8 @@ interface OdajaState {
   underlayPanel: boolean;
   underlayTool: "calibrate" | "move" | null;
   measuring: boolean;
+  objectGizmo: ObjectGizmo;
+  selectedLightIndex: number;
   // Camera request to frame something (world metres).
   focus: { center: [number, number, number]; radius: number; at: number } | null;
   // Walking: where to start (picked on the plan), the current pose (for the
@@ -209,6 +212,8 @@ interface OdajaState {
   setUnderlayTool(tool: OdajaState["underlayTool"]): void;
   setMeasuring(on: boolean): void;
   toggleMeasuring(): void;
+  setObjectGizmo(gizmo: ObjectGizmo): void;
+  setSelectedLightIndex(index: number): void;
   apply(change: (doc: SceneDoc) => SceneDoc): void;
   // Change the open level's walls (the change gets the level's view).
   applyShell(change: (doc: ShellDoc) => ShellDoc): Promise<void>;
@@ -480,6 +485,8 @@ export const useOdaja = create<OdajaState>((set, get) => {
     underlayPanel: false,
     underlayTool: null,
     measuring: false,
+    objectGizmo: "move",
+    selectedLightIndex: 0,
     focus: null,
     walkStart: null,
     walkPose: null,
@@ -590,7 +597,7 @@ export const useOdaja = create<OdajaState>((set, get) => {
     },
 
     select(id) {
-      set({ selectedId: id });
+      set((s) => ({ selectedId: id, ...(s.selectedId !== id ? { objectGizmo: "move" as const, selectedLightIndex: 0 } : {}) }));
     },
 
     selectStructure(structureSelection) {
@@ -760,6 +767,14 @@ export const useOdaja = create<OdajaState>((set, get) => {
 
     toggleMeasuring() {
       get().setMeasuring(!get().measuring);
+    },
+
+    setObjectGizmo(objectGizmo) {
+      set({ objectGizmo });
+    },
+
+    setSelectedLightIndex(selectedLightIndex) {
+      set({ selectedLightIndex: Math.max(0, selectedLightIndex) });
     },
 
     focusOn(center, radius) {

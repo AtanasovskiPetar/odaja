@@ -270,7 +270,7 @@ export const TEMPLATES: Template[] = [
       { name: "base", shape: "cylinder", radius: diameter / 2, height: Math.min(2, height / 2), at: [0, 0, height - Math.min(2, height / 2)], color: FITTING },
       { name: "diffuser", shape: "cylinder", radius: Math.max(1, diameter / 2 - 1), height: height - Math.min(2, height / 2), color: DIFFUSER, glow: true },
     ],
-    light: () => ({ at: [0, 0, 0], lumens: 1500, kelvin: 3000 }),
+    light: () => ({ type: "spot", at: [0, 0, 0], lumens: 1500, kelvin: 3000, angle: 135 }),
   },
   {
     id: "pendant",
@@ -287,7 +287,7 @@ export const TEMPLATES: Template[] = [
         { name: "canopy", shape: "cylinder", radius: 6, height: 1.5, at: [0, 0, shade + drop - 1.5], color: FITTING },
       ];
     },
-    light: ({ diameter }) => ({ at: [0, 0, Math.round(pendantShade(diameter) * 0.3)], lumens: 800, kelvin: 2700 }),
+    light: ({ diameter }) => ({ type: "spot", at: [0, 0, Math.round(pendantShade(diameter) * 0.3)], lumens: 800, kelvin: 2700, angle: 120 }),
   },
   {
     id: "downlight",

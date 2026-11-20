@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { TEMPLATES_BY_ID } from "../model/library";
 import { setObjectProps, setTemplateParams } from "../model/operations";
-import type { Light, LightInput, SceneObject } from "../model/schema";
+import { objectLights, type Light, type LightInput, type SceneObject } from "../model/schema";
 import { round } from "../model/units";
 import { useOdaja } from "../store";
 import { useLamps } from "./lampState";
@@ -91,16 +91,148 @@ function TemplateFields({ object }: { object: SceneObject }) {
   );
 }
 
-function LightFields({ object }: { object: SceneObject }) {
-  const apply = useOdaja((s) => s.apply);
-  const written = useOdaja((s) => s.sceneDoc?.objects?.find((o) => o.id === object.id)?.light);
-  const lampsOn = useLamps((s) => s.on);
-  const light = object.light;
-  if (!light) return null;
-  const set = (patch: LightInput) => apply(setObjectProps(object.id, { light: { ...written, ...patch } }));
+const KELVIN_PRESETS: [number, string][] = [
+  [2200, "2200K"],
+  [2700, "2700K"],
+  [3000, "3000K"],
+  [4000, "4000K"],
+];
+
+function GizmoModeBar({ object }: { object: SceneObject }) {
+  const viewMode = useOdaja((s) => s.viewMode);
+  const gizmo = useOdaja((s) => s.objectGizmo);
+  const setGizmo = useOdaja((s) => s.setObjectGizmo);
+  const selectedLightIndex = useOdaja((s) => s.selectedLightIndex);
+  if (viewMode !== "3d" || object.locked) return null;
+  const lights = objectLights(object);
+  const activeLight = lights[Math.min(selectedLightIndex, Math.max(0, lights.length - 1))];
+  const hasLight = lights.length > 0;
+  const hasAim = Boolean(activeLight && activeLight.type !== "point");
   return (
     <div className="field-group">
-      <div className="group-title">Light</div>
+      <div className="group-title">3D handle</div>
+      <div className="gizmo-modes">
+        <button className={gizmo === "move" ? "active" : ""} onClick={() => setGizmo("move")} title="Drag horizontally across the floor">
+          Move
+        </button>
+        <button className={gizmo === "lift" ? "active" : ""} onClick={() => setGizmo("lift")} title="Drag in 3D including height off floor">
+          Lift
+        </button>
+        <button className={gizmo === "rotate" ? "active" : ""} onClick={() => setGizmo("rotate")} title="Rotate around vertical axis">
+          Rotate
+        </button>
+        {hasLight && (
+          <button className={gizmo === "light" ? "active" : ""} onClick={() => setGizmo("light")} title="Drag the light source position in 3D">
+            Bulb
+          </button>
+        )}
+        {hasAim && (
+          <button className={gizmo === "target" ? "active" : ""} onClick={() => setGizmo("target")} title="Drag where the light aims in 3D">
+            Aim
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LightFields({ object }: { object: SceneObject }) {
+  const apply = useOdaja((s) => s.apply);
+  const writtenObj = useOdaja((s) => s.sceneDoc?.objects?.find((o) => o.id === object.id));
+  const viewMode = useOdaja((s) => s.viewMode);
+  const gizmo = useOdaja((s) => s.objectGizmo);
+  const setGizmo = useOdaja((s) => s.setObjectGizmo);
+  const selectedLightIndex = useOdaja((s) => s.selectedLightIndex);
+  const setSelectedLightIndex = useOdaja((s) => s.setSelectedLightIndex);
+  const lampsOn = useLamps((s) => s.on);
+  const lights = objectLights(object);
+  if (lights.length === 0) return null;
+
+  const idx = Math.min(selectedLightIndex, lights.length - 1);
+  const light = lights[idx]!;
+
+  const currentWrittenList = (): LightInput[] => {
+    if (writtenObj?.lights?.length) return writtenObj.lights.map((l) => ({ ...l }));
+    if (writtenObj?.light) return [{ ...writtenObj.light }];
+    // Template default light not yet written to sceneDoc: materialize from resolved light
+    return lights.map((l) => ({
+      type: l.type,
+      at: [...l.at],
+      lumens: l.lumens,
+      kelvin: l.kelvin,
+      ...(l.type === "spot" ? { angle: l.angle } : {}),
+      ...(l.type === "area" ? { size: [...l.size] } : {}),
+      ...(l.penumbra !== undefined ? { penumbra: l.penumbra } : {}),
+      ...(!l.on ? { on: false } : {}),
+    }));
+  };
+
+  const writeList = (next: LightInput[]) => {
+    if (next.length === 0) apply(setObjectProps(object.id, { light: undefined, lights: undefined }));
+    else if (next.length === 1) apply(setObjectProps(object.id, { light: next[0], lights: undefined }));
+    else apply(setObjectProps(object.id, { light: undefined, lights: next }));
+  };
+
+  const set = (patch: LightInput) => {
+    const list = currentWrittenList();
+    list[idx] = { ...list[idx], ...patch };
+    writeList(list);
+  };
+
+  const addSource = () => {
+    const list = currentWrittenList();
+    const base = light;
+    const nextAt: [number, number, number] = [round(base.at[0] + 25), base.at[1], base.at[2]];
+    const added: LightInput = {
+      type: base.type,
+      at: nextAt,
+      lumens: base.lumens,
+      kelvin: base.kelvin,
+      ...(base.type === "spot" ? { angle: base.angle } : {}),
+      ...(base.type === "area" ? { size: [...base.size] } : {}),
+      ...(base.penumbra !== undefined ? { penumbra: base.penumbra } : {}),
+    };
+    list.push(added);
+    writeList(list);
+    setSelectedLightIndex(list.length - 1);
+    if (viewMode === "3d" && !object.locked) setGizmo("light");
+  };
+
+  const removeActive = () => {
+    if (lights.length <= 1) {
+      writeList([]);
+      if (gizmo === "light" || gizmo === "target") setGizmo("move");
+      return;
+    }
+    const list = currentWrittenList().filter((_, i) => i !== idx);
+    writeList(list);
+    setSelectedLightIndex(Math.max(0, idx - 1));
+  };
+
+  const defaultPenumbra = Math.round(Math.min(0.92, Math.max(0.6, 0.6 + ((light.angle - 60) / 60) * 0.32)) * 100);
+  const penumbraPct = light.penumbra !== undefined ? Math.round(light.penumbra * 100) : defaultPenumbra;
+  const hasAim = light.type === "spot" || light.type === "area";
+
+  return (
+    <div className="field-group">
+      <div className="group-title">
+        {lights.length > 1 ? `Lights (${lights.length})` : "Light"}
+      </div>
+      <div className="kelvin-presets">
+        {lights.map((_, i) => (
+          <button
+            key={i}
+            className={i === idx ? "active" : ""}
+            onClick={() => setSelectedLightIndex(i)}
+            title={`Select light source #${i + 1}`}
+          >
+            #{i + 1}
+          </button>
+        ))}
+        <button onClick={addSource} title="Add another light source to this fixture (e.g. multi-spot track or chandelier)">
+          + Add
+        </button>
+      </div>
       <label className="check">
         <input type="checkbox" checked={light.on} onChange={(e) => set({ on: e.target.checked })} />
         On
@@ -108,20 +240,82 @@ function LightFields({ object }: { object: SceneObject }) {
       </label>
       <label className="field">
         <span>Shines</span>
-        <select value={light.type} onChange={(e) => set({ type: e.target.value as Light["type"] })}>
-          <option value="point">All round</option>
-          <option value="spot">Down, as a spot</option>
+        <select
+          value={light.type}
+          onChange={(e) => {
+            const nextType = e.target.value as Light["type"];
+            set({ type: nextType });
+            if (nextType === "point" && gizmo === "target") setGizmo("move");
+          }}
+        >
+          <option value="point">All round (point)</option>
+          <option value="spot">Directional spot</option>
+          <option value="area">Area panel / ring</option>
         </select>
       </label>
       <div className="grid-2">
         <Field label="Brightness" numeric suffix="lm" min={0} max={20000} value={light.lumens} onCommit={(v) => set({ lumens: Number(v) })} />
         <Field label="Colour" numeric suffix="K" min={1500} max={10000} value={light.kelvin} onCommit={(v) => set({ kelvin: Number(v) })} />
-        <Field label="Bulb height" numeric suffix="cm" value={light.at[2]} onCommit={(v) => set({ at: [light.at[0], light.at[1], round(Number(v))] })} />
-        {light.type === "spot" && <Field label="Beam" numeric suffix="°" min={10} max={160} value={light.angle} onCommit={(v) => set({ angle: Number(v) })} />}
       </div>
-      {!object.template && (
-        <button onClick={() => apply(setObjectProps(object.id, { light: undefined }))} title="It stops being a lamp">
-          Remove light
+      <div className="kelvin-presets">
+        {KELVIN_PRESETS.map(([k, label]) => (
+          <button key={k} className={light.kelvin === k ? "active" : ""} onClick={() => set({ kelvin: k })} title={`Set colour temperature to ${label}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <div className="grid-3">
+        <Field label="Bulb X" numeric suffix="cm" value={light.at[0]} onCommit={(v) => set({ at: [round(Number(v)), light.at[1], light.at[2]] })} />
+        <Field label="Bulb Y" numeric suffix="cm" value={light.at[1]} onCommit={(v) => set({ at: [light.at[0], round(Number(v)), light.at[2]] })} />
+        <Field label="Bulb Z" numeric suffix="cm" value={light.at[2]} onCommit={(v) => set({ at: [light.at[0], light.at[1], round(Number(v))] })} />
+      </div>
+      {light.type === "spot" && (
+        <div className="grid-2">
+          <Field label="Beam" numeric suffix="°" min={10} max={160} value={light.angle} onCommit={(v) => set({ angle: Number(v) })} />
+          <Field
+            label="Soft edge"
+            numeric
+            suffix="%"
+            min={0}
+            max={100}
+            value={penumbraPct}
+            onCommit={(v) => set({ penumbra: Math.max(0, Math.min(1, Number(v) / 100)) })}
+          />
+        </div>
+      )}
+      {light.type === "area" && (
+        <div className="grid-2">
+          <Field label="Width" numeric suffix="cm" min={5} max={500} value={light.size[0]} onCommit={(v) => set({ size: [round(Number(v)), light.size[1]] })} />
+          <Field label="Depth" numeric suffix="cm" min={5} max={500} value={light.size[1]} onCommit={(v) => set({ size: [light.size[0], round(Number(v))] })} />
+        </div>
+      )}
+      {hasAim && (
+        <div className="grid-3">
+          <Field label="Aim X" numeric suffix="cm" value={light.target[0]} onCommit={(v) => set({ target: [round(Number(v)), light.target[1], light.target[2]] })} />
+          <Field label="Aim Y" numeric suffix="cm" value={light.target[1]} onCommit={(v) => set({ target: [light.target[0], round(Number(v)), light.target[2]] })} />
+          <Field label="Aim Z" numeric suffix="cm" value={light.target[2]} onCommit={(v) => set({ target: [light.target[0], light.target[1], round(Number(v))] })} />
+        </div>
+      )}
+      {viewMode === "3d" && !object.locked && (
+        <div className="actions">
+          <button className={gizmo === "light" ? "active" : ""} onClick={() => setGizmo(gizmo === "light" ? "move" : "light")}>
+            {gizmo === "light" ? "Done moving bulb" : "Move bulb in 3D"}
+          </button>
+          {hasAim && (
+            <button className={gizmo === "target" ? "active" : ""} onClick={() => setGizmo(gizmo === "target" ? "move" : "target")}>
+              {gizmo === "target" ? "Done aiming" : "Aim light in 3D"}
+            </button>
+          )}
+        </div>
+      )}
+      {hasAim && (light.target[0] !== light.at[0] || light.target[1] !== light.at[1]) && (
+        <button onClick={() => set({ target: undefined })} title="Point straight down below the emitter">
+          Reset aim straight down
+        </button>
+      )}
+      {(lights.length > 1 || !object.template) && (
+        <button onClick={removeActive} title={lights.length > 1 ? `Remove light source #${idx + 1}` : "It stops being a lamp"}>
+          {lights.length > 1 ? `Remove light #${idx + 1}` : "Remove light"}
         </button>
       )}
     </div>
@@ -149,6 +343,7 @@ export function Inspector() {
       <Field label="Name" value={object.name} onCommit={(v) => v.trim() && set({ name: v.trim() })} />
       <div className="muted id-line">{object.id}</div>
 
+      <GizmoModeBar object={object} />
       <TemplateFields object={object} />
       <LightFields object={object} />
 
@@ -212,7 +407,7 @@ export function Inspector() {
         >
           Save as file
         </button>
-        {!object.light && (
+        {objectLights(object).length === 0 && (
           <button onClick={() => set({ light: {} })} title="Make it a lamp that lights the room when the lamps are on">
             Add light
           </button>

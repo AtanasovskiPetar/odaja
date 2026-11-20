@@ -3360,6 +3360,111 @@ button.link.danger {
   border-color: var(--ink-muted);
 }
 
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.gizmo-modes,
+.kelvin-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.gizmo-modes button,
+.kelvin-presets button {
+  flex: 1 1 auto;
+  padding: 4px 6px;
+  font-size: 11px;
+}
+
+.list-search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.list-search input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  font-size: 12px;
+  border-radius: var(--r-s);
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.list-search button {
+  padding: 4px 7px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.lamp-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #e5a93c;
+  margin-right: 5px;
+  flex-shrink: 0;
+}
+
+/* The selected object's 3D handles: the same glass and buttons as the toolbar. */
+.gizmo-pill {
+  position: absolute;
+  left: 50%;
+  bottom: 20px;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: var(--glass);
+  border-radius: 13px;
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  white-space: nowrap;
+  animation: fade 0.2s ease-out;
+}
+
+.gizmo-pill-name {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 8px 0 6px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.gizmo-pill button {
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.gizmo-pill button:hover {
+  background: var(--well);
+  color: var(--ink);
+}
+
+.gizmo-pill button.active {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 0 0 0.5px var(--line-strong), 0 1px 3px rgba(45, 33, 15, 0.12);
+}
+
 /* No z-index: like the structure layer, it covers the plan but stays under
    the toolbar and panels that come after it, so they stay clickable. */
 .measure-layer {

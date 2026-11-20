@@ -79,13 +79,25 @@ function WallView({ wall, openings, shell, active, slab }: { wall: Wall; opening
   );
 }
 
-const CEILING = new THREE.MeshStandardMaterial({ color: "#f6f4f0", roughness: 0.95, side: THREE.DoubleSide });
+// Front-facing downward ceiling with dithering to avoid 8-bit gradient banding.
+const CEILING = new THREE.MeshStandardMaterial({ color: "#f6f4f0", roughness: 0.95, side: THREE.FrontSide, dithering: true });
 
 // An outline as shapes to lay flat, cut open where stairs (or pools) are.
 // Shape coordinates are (x, -y) so that after laying the shape flat (rotating
-// -90° about X) plan y ends up on world +z.
+// -90° about X) plan y ends up on world +z (normal pointing up).
 export function flatShapes(outline: Vec[], openings: Vec[][]): THREE.Shape[] {
   const flat = (poly: Vec[]) => poly.map(([x, y]) => new THREE.Vector2(M(x), -M(y)));
+  return cutOut(outline, openings).map((piece) => {
+    const shape = new THREE.Shape(flat(piece.outer));
+    shape.holes = piece.holes.map((h) => new THREE.Path(flat(h)));
+    return shape;
+  });
+}
+
+// Same outline laid flat with +90° about X so the front-face normal points
+// down into the room (avoiding upward normalBias shadow acne against SunCeiling).
+function ceilingShapes(outline: Vec[], openings: Vec[][]): THREE.Shape[] {
+  const flat = (poly: Vec[]) => poly.map(([x, y]) => new THREE.Vector2(M(x), M(y)));
   return cutOut(outline, openings).map((piece) => {
     const shape = new THREE.Shape(flat(piece.outer));
     shape.holes = piece.holes.map((h) => new THREE.Path(flat(h)));
@@ -101,10 +113,10 @@ function useRoomShape(room: Room, openings: Vec[][]) {
 // open where stairs go up. They don't cast shadows, so daylight still reaches
 // the rooms. Just under the slab of a level above, which is the same surface.
 function RoomCeiling({ room, height, openings }: { room: Room; height: number; openings: Vec[][] }) {
-  const shape = useRoomShape(room, openings);
-  const geometry = useMemo(() => new THREE.ShapeGeometry(shape), [shape]);
+  const shapes = useMemo(() => ceilingShapes(room.polygon, openings), [room.polygon, openings]);
+  const geometry = useMemo(() => new THREE.ShapeGeometry(shapes), [shapes]);
   useEffect(() => () => geometry.dispose(), [geometry]);
-  return <mesh geometry={geometry} rotation={[-Math.PI / 2, 0, 0]} position={[0, M(height) - 0.003, 0]} material={CEILING} receiveShadow />;
+  return <mesh geometry={geometry} rotation={[Math.PI / 2, 0, 0]} position={[0, M(height) - 0.003, 0]} material={CEILING} receiveShadow />;
 }
 
 // A room under a roof with sloped ceilings has the roof as its ceiling.
