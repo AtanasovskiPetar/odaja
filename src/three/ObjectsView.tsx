@@ -8,6 +8,7 @@ import { snapToWall } from "../model/attach";
 import { roomAt } from "../model/geometry";
 import { levelById, levelOf, levelsOf } from "../model/levels";
 import { M, planToWorld, rotationToWorld, round, worldToPlan } from "../model/units";
+import { selectSoon } from "./WalkControls";
 import { useOdaja } from "../store";
 import { sceneTheme } from "./theme";
 import { useMaterials } from "./materials";
@@ -220,11 +221,14 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
   }, [activeLight, lightPreview, lightHandle, targetHandle]);
 
   const onClick = (e: ThreeEvent<MouseEvent>) => {
-    // While walking or measuring, clicks are not for selecting furniture.
+    // Measuring, clicks are points; walking, a drag looks around and with
+    // the mouse captured the pointer isn't where you look, so only a plain click selects.
     const s = useOdaja.getState();
-    if (ghost || inert || s.viewMode === "walk" || s.measuring) return;
+    if (ghost || inert || s.measuring) return;
+    if (s.viewMode === "walk" && (e.delta > 4 || document.pointerLockElement)) return;
     e.stopPropagation();
-    select(object.id);
+    if (s.viewMode === "walk") selectSoon(object.id);
+    else select(object.id);
   };
 
   // Wall the object snapped to during the current drag, if any.
@@ -294,7 +298,10 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
     setLightPreview(null);
   };
 
+  const walking = useOdaja((s) => s.viewMode === "walk");
   const showEditorHelpers = selected && !presenting && !ghost && !inert;
+  // Walking, a drag looks around: the selection shows, the handles don't.
+  const showHandles = showEditorHelpers && !walking;
 
   return (
     <>
@@ -323,10 +330,10 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
           object.parts.map((part, i) => <PartMesh key={i} part={part} ghost={ghost} glow={glow} castShadow={castShadow} />)
         )}
         {litLights.map((l, i) => <LampLight key={i} light={l} />)}
-        {showEditorHelpers && !plan && effectiveLights.map((l, i) => (
+        {showHandles && !plan && effectiveLights.map((l, i) => (
           <LightHelper key={i} light={l} active={i === activeLightIndex} onSelect={() => setSelectedLightIndex(i)} />
         ))}
-        {showEditorHelpers && !plan && activeLight && (
+        {showHandles && !plan && activeLight && (
           <>
             <group ref={setLightHandle} position={[M(activeLight.at[0]), M(activeLight.at[2]), M(activeLight.at[1])]} userData={{ noAo: true, measureHelper: true }} />
             <group ref={setTargetHandle} position={[M(activeLight.target[0]), M(activeLight.target[2]), M(activeLight.target[1])]} userData={{ noAo: true, measureHelper: true }} />
@@ -334,7 +341,7 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
         )}
       </group>
       {showEditorHelpers && group && activeGizmo !== "light" && activeGizmo !== "target" && <SelectionBox target={group} />}
-      {showEditorHelpers && !object.locked && activeGizmo === "light" && lightHandle && (
+      {showHandles && !object.locked && activeGizmo === "light" && lightHandle && (
         <TransformControls
           object={lightHandle}
           mode="translate"
@@ -345,7 +352,7 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
           onMouseUp={() => onLightDragEnd("at")}
         />
       )}
-      {showEditorHelpers && !object.locked && activeGizmo === "target" && targetHandle && (
+      {showHandles && !object.locked && activeGizmo === "target" && targetHandle && (
         <TransformControls
           object={targetHandle}
           mode="translate"
@@ -356,7 +363,7 @@ function ObjectView({ object, ghost, inert = false }: { object: SceneObject; gho
           onMouseUp={() => onLightDragEnd("target")}
         />
       )}
-      {showEditorHelpers && group && !object.locked && (activeGizmo === "move" || activeGizmo === "lift" || activeGizmo === "rotate") && (
+      {showHandles && group && !object.locked && (activeGizmo === "move" || activeGizmo === "lift" || activeGizmo === "rotate") && (
         <TransformControls
           object={group}
           mode={activeGizmo === "rotate" ? "rotate" : "translate"}

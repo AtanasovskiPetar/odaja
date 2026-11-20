@@ -4,7 +4,7 @@
 import { useMemo, useState } from "react";
 import { daylight, momentOf, moonPosition, sunPosition, type MoonPosition } from "../model/sun";
 import { useOdaja } from "../store";
-import { IconClose, IconPause, IconPlay } from "./icons";
+import { IconClose, IconPause, IconPlay, IconSun } from "./icons";
 import { SUN_YEAR, useSun } from "./sunState";
 
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
@@ -18,9 +18,10 @@ function moonPhase(moon: MoonPosition): string {
 }
 
 const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(Math.floor(minutes % 60)).padStart(2, "0")}`;
-const dateLabel = (day: number) => {
+const dateLabel = (day: number, short = false) => {
   const d = momentOf(SUN_YEAR, day, 0);
-  return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
+  const month = MONTHS[d.getMonth()];
+  return `${d.getDate()} ${short ? month.slice(0, 3) : month}`;
 };
 const dayOf = (month: number, date: number) => Math.round((new Date(SUN_YEAR, month, date).valueOf() - new Date(SUN_YEAR, 0, 0).valueOf()) / 86400000);
 
@@ -216,17 +217,34 @@ function SunControls() {
   );
 }
 
+// Stands in for the closed panel: the day and time, and a click opens it.
+function SunChip({ hasSite }: { hasSite: boolean }) {
+  const setPanel = useSun((s) => s.setPanel);
+  const day = useSun((s) => s.day);
+  const minutes = useSun((s) => s.minutes);
+  return (
+    <button className="sun-chip" onClick={() => setPanel(true)} title="Sunlight: change the day and time">
+      <IconSun size={14} />
+      {hasSite ? `${clock(minutes)} · ${dateLabel(day, true)}` : "Set the location"}
+    </button>
+  );
+}
+
+// The panel, or the chip when it's closed. Closing keeps the sunlight; the
+// toolbar's sun button turns it off.
 export function SunPanel() {
   const on = useSun((s) => s.on);
+  const panel = useSun((s) => s.panel);
+  const setPanel = useSun((s) => s.setPanel);
   const editing = useSun((s) => s.editingSite);
-  const setOn = useSun((s) => s.setOn);
   const hasSite = useOdaja((s) => Boolean(s.project?.site));
   if (!on) return null;
+  if (!panel && !editing) return <SunChip hasSite={hasSite} />;
   return (
     <div className="underlay-panel sun-panel">
       <div className="underlay-head">
         <strong>Sunlight</strong>
-        <button className="icon" onClick={() => setOn(false)} title="Turn sunlight off">
+        <button className="icon" onClick={() => setPanel(false)} title="Close (the sunlight stays on)">
           <IconClose size={15} />
         </button>
       </div>

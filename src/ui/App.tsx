@@ -36,6 +36,8 @@ import { TraceGuide } from "./TraceGuide";
 import { PlanNorthArrow, SunPanel } from "./SunPanel";
 import { useSun } from "./sunState";
 import { useLamps } from "./lampState";
+import { LAMP_COLOURS, useLightEdit } from "./lightEdit";
+import { kelvinColor } from "../three/LampLight";
 import { ManageHomesDialog } from "./ManageHomes";
 import { StructureInspector } from "./StructureInspector";
 import { StructureLayer } from "./StructureLayer";
@@ -175,9 +177,10 @@ function useShortcuts() {
       }
 
       // While walking, the walk controls own the keyboard (W A S D Q E…);
-      // only view switches and undo apply.
+      // only view switches, undo and Esc (letting go of the selection) apply.
       if (s.viewMode === "walk") {
         if (key === "t") s.setViewMode("plan");
+        if (key === "escape" && s.selectedId && !document.pointerLockElement) s.select(null);
         return;
       }
       if (key === "escape" && s.pickingWalkStart) return s.setPickingWalkStart(false);
@@ -800,6 +803,8 @@ function Toolbar() {
   );
 }
 
+// The selected object, at the bottom of the 3D view: its handles (3D only;
+// in Walk dragging looks around) and, for a lamp, on/off, colour and brightness.
 function SelectionGizmoBar() {
   const viewMode = useOdaja((s) => s.viewMode);
   const mode = useOdaja((s) => s.mode);
@@ -808,38 +813,105 @@ function SelectionGizmoBar() {
   const gizmo = useOdaja((s) => s.objectGizmo);
   const setGizmo = useOdaja((s) => s.setObjectGizmo);
   const object = useOdaja((s) => s.scene?.objects.find((o) => o.id === s.selectedId));
-  if (viewMode !== "3d" || mode !== "furnish" || measuring || editingObjectId || !object || object.locked) return null;
+  // Every hook before the early return: React needs the same hooks each render.
   const selectedLightIndex = useOdaja((s) => s.selectedLightIndex);
+  if ((viewMode !== "3d" && viewMode !== "walk") || mode !== "furnish" || measuring || editingObjectId || !object) return null;
   const lights = objectLights(object);
   const activeLight = lights[Math.min(selectedLightIndex, Math.max(0, lights.length - 1))];
   const hasLight = lights.length > 0;
   const hasAim = Boolean(activeLight && activeLight.type !== "point");
+  const handles = viewMode === "3d" && !object.locked;
   return (
-    <div className="gizmo-pill" role="toolbar" aria-label="3D handle mode">
+    <div className={`gizmo-pill ${viewMode === "walk" ? "walking" : ""}`} role="toolbar" aria-label={`${object.name}: handles and lamp`}>
       <span className="gizmo-pill-name">{object.name}</span>
-      <button className={gizmo === "move" ? "active" : ""} onClick={() => setGizmo("move")} title="Move horizontally (G)">
-        Move
-      </button>
-      <button className={gizmo === "lift" ? "active" : ""} onClick={() => setGizmo("lift")} title="Move in 3D + height (Y)">
-        Lift
-      </button>
-      <button className={gizmo === "rotate" ? "active" : ""} onClick={() => setGizmo("rotate")} title="Rotate handle (R turns 90°)">
-        Rotate
-      </button>
-      {hasLight && (
-        <button className={gizmo === "light" ? "active" : ""} onClick={() => setGizmo("light")} title="Position light emitter in 3D (L)">
-          {lights.length > 1 ? `Bulb #${Math.min(selectedLightIndex, lights.length - 1) + 1}` : "Bulb"}
+      {handles && (
+        <>
+          <button className={gizmo === "move" ? "active" : ""} onClick={() => setGizmo("move")} title="Move horizontally (G)">
+            Move
+          </button>
+          <button className={gizmo === "lift" ? "active" : ""} onClick={() => setGizmo("lift")} title="Move in 3D + height (Y)">
+            Lift
+          </button>
+          <button className={gizmo === "rotate" ? "active" : ""} onClick={() => setGizmo("rotate")} title="Rotate handle (R turns 90°)">
+            Rotate
+          </button>
+          {hasLight && (
+            <button className={gizmo === "light" ? "active" : ""} onClick={() => setGizmo("light")} title="Position light emitter in 3D (L)">
+              {lights.length > 1 ? `Bulb #${Math.min(selectedLightIndex, lights.length - 1) + 1}` : "Bulb"}
+            </button>
+          )}
+          {hasAim && (
+            <button className={gizmo === "target" ? "active" : ""} onClick={() => setGizmo("target")} title="Aim light direction in 3D (L)">
+              Aim
+            </button>
+          )}
+        </>
+      )}
+      {viewMode === "3d" && (
+        <button onClick={() => focusObject(object)} title="Focus camera on selected object (F)">
+          Focus
         </button>
       )}
-      {hasAim && (
-        <button className={gizmo === "target" ? "active" : ""} onClick={() => setGizmo("target")} title="Aim light direction in 3D (L)">
-          Aim
-        </button>
-      )}
-      <button onClick={() => focusObject(object)} title="Focus camera on selected object (F)">
-        Focus
-      </button>
+      {hasLight && <LampControls object={object} />}
     </div>
+  );
+}
+
+const LAMP_DOTS = LAMP_COLOURS.map(({ kelvin, name }) => ({ kelvin, label: `${name}, ${kelvin} K`, css: kelvinColor(kelvin).getStyle() }));
+
+// A lamp's switch, colour and brightness. Switching a lamp on also turns the
+// lamps on in the view, so you see it.
+function LampControls({ object }: { object: SceneObject }) {
+  const { light, set } = useLightEdit(object);
+  const lampsOn = useLamps((s) => s.on);
+  const setLampsOn = useLamps((s) => s.setOn);
+  // The slider moves freely and saves once, when let go (one undo step).
+  const [lumens, setLumens] = useState(light?.lumens ?? 0);
+  useEffect(() => setLumens(light?.lumens ?? 0), [light?.lumens]);
+  if (!light) return null;
+  const commit = () => {
+    if (lumens !== light.lumens) set({ lumens });
+  };
+  return (
+    <>
+      <span className="gizmo-sep" />
+      <button
+        className={light.on ? "active" : ""}
+        onClick={() => {
+          set({ on: !light.on });
+          if (!light.on && !lampsOn) setLampsOn(true);
+        }}
+        title={light.on ? "Switch this lamp off" : "Switch this lamp on"}
+      >
+        <IconLamp size={15} /> {light.on ? "On" : "Off"}
+      </button>
+      <span className="lamp-colours">
+        {LAMP_DOTS.map(({ kelvin, label, css }) => (
+          <button
+            key={kelvin}
+            className={`lamp-colour ${light.kelvin === kelvin ? "active" : ""}`}
+            style={{ background: css }}
+            onClick={() => set({ kelvin })}
+            title={label}
+            aria-label={label}
+          />
+        ))}
+      </span>
+      <label className="lamp-brightness" title="Brightness, in lumens (a 60 W bulb is about 800)">
+        <input
+          type="range"
+          min={50}
+          max={Math.max(5000, light.lumens)}
+          step={50}
+          value={lumens}
+          onChange={(e) => setLumens(Number(e.target.value))}
+          onPointerUp={commit}
+          onKeyUp={commit}
+          onBlur={commit}
+        />
+        <span>{lumens} lm</span>
+      </label>
+    </>
   );
 }
 

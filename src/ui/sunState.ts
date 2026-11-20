@@ -9,6 +9,9 @@ interface SunState {
   day: number;
   minutes: number;
   playing: boolean;
+  // The panel is open; closed, a small chip with the time stands in for it,
+  // so it doesn't cover the room.
+  panel: boolean;
   // The location form is open (also when no site is set yet).
   editingSite: boolean;
   // North while the location form is being edited, shown on the plan before saving.
@@ -17,6 +20,7 @@ interface SunState {
   setDay(day: number): void;
   setMinutes(minutes: number): void;
   setPlaying(playing: boolean): void;
+  setPanel(panel: boolean): void;
   setEditingSite(editing: boolean): void;
   setDraftNorth(north: number | null): void;
 }
@@ -30,12 +34,15 @@ export const useSun = create<SunState>((set) => ({
   day: dayOfYear(now),
   minutes: 840,
   playing: false,
+  panel: false,
   editingSite: false,
   draftNorth: null,
-  setOn: (on) => set(on ? { on } : { on, playing: false, editingSite: false, draftNorth: null }),
+  // Turning sunlight on opens the panel, to pick the day and time.
+  setOn: (on) => set(on ? { on, panel: true } : { on, panel: false, playing: false, editingSite: false, draftNorth: null }),
   setDay: (day) => set({ day: Math.min(365, Math.max(1, Math.round(day))) }),
   setMinutes: (minutes) => set({ minutes: Math.min(1439, Math.max(0, Math.round(minutes))) }),
   setPlaying: (playing) => set({ playing }),
+  setPanel: (panel) => set({ panel }),
   setEditingSite: (editingSite) => set(editingSite ? { editingSite } : { editingSite, draftNorth: null }),
   setDraftNorth: (draftNorth) => set({ draftNorth }),
 }));

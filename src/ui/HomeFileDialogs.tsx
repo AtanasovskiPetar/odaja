@@ -114,7 +114,9 @@ export function OpenHomeDialog({ file, handle }: { file: File; handle?: FileSyst
 export function ExportImageDialog() {
   const name = useOdaja((s) => s.project?.name ?? "Home");
   const current = useOdaja((s) => s.viewMode);
-  const [view, setView] = useState<ViewMode>(current === "plan" ? "plan" : "3d");
+  // Walking, the picture can be what you see; it stays in Walk (switching to
+  // another view and back would lose where you stand).
+  const [view, setView] = useState<ViewMode>(current);
   const [format, setFormat] = useState<"png" | "jpeg">("png");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -126,7 +128,7 @@ export function ExportImageDialog() {
       const blob = await exportViewImage(view, format);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = `${homeFileName(name).replace(/\.odaja$/, "")} – ${view === "plan" ? "plan" : "3D"}.${format === "png" ? "png" : "jpg"}`;
+      a.download = `${homeFileName(name).replace(/\.odaja$/, "")} – ${view === "plan" ? "plan" : view === "walk" ? "walk" : "3D"}.${format === "png" ? "png" : "jpg"}`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 30000);
       close();
@@ -152,7 +154,8 @@ export function ExportImageDialog() {
             <span>View</span>
             <select value={view} onChange={(e) => setView(e.target.value as ViewMode)}>
               <option value="plan">Plan, with dimensions</option>
-              <option value="3d">3D, as you see it now</option>
+              <option value="3d">{current === "walk" ? "3D, from outside" : "3D, as you see it now"}</option>
+              {current === "walk" && <option value="walk">Walk, as you see it now</option>}
             </select>
           </label>
           <label className="field">

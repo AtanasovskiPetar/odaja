@@ -4,21 +4,17 @@ import { useThree } from "@react-three/fiber";
 import { RectAreaLightUniformsLib } from "three/examples/jsm/lights/RectAreaLightUniformsLib.js";
 import type { Light } from "../model/schema";
 import { M } from "../model/units";
-import { useSky } from "./sky";
 
 RectAreaLightUniformsLib.init();
 
 // Scale lamp output with physical inverse-square falloff (decay = 2) so lamps
-// create natural pools of light instead of flooding distant walls. Because the
-// viewport uses fixed exposure (no auto-exposure), lamps also adapt to daylight:
-// subtle warm accents in full sun/daylight (~28%), ramping smoothly through dusk
-// to full brightness at night.
+// create natural pools of light instead of flooding distant walls. A lamp
+// that's on shines the same at any time of day, with sunlight or without.
 const POINT_EXPOSURE = 0.048;
 const SPOT_EXPOSURE = 0.075;
 const AREA_EXPOSURE = 0.016;
 const POINT_DECAY = 2;
 const SPOT_DECAY = 2;
-const DAYLIGHT_LAMP_SCALE = 0.28;
 const SHADOW_LAMPS = 4;
 
 export function kelvinColor(kelvin: number): THREE.Color {
@@ -50,9 +46,6 @@ export function LampLight({ light }: { light: Light }) {
   const [target] = useState(() => new THREE.Object3D());
   const gl = useThree((s) => s.gl);
   const invalidate = useThree((s) => s.invalidate);
-  const sky = useSky();
-  const daylight = sky ? sky.daylight : 1;
-  const adaptation = DAYLIGHT_LAMP_SCALE + (1 - DAYLIGHT_LAMP_SCALE) * (1 - daylight);
   const color = useMemo(() => kelvinColor(light.kelvin), [light.kelvin]);
   const [x, y, z] = light.at;
   const [tx, ty, tz] = light.target;
@@ -112,7 +105,7 @@ export function LampLight({ light }: { light: Light }) {
     const w = Math.max(0.05, M(sw));
     const d = Math.max(0.05, M(sd));
     const area = Math.max(w * d, 0.01);
-    const intensity = (light.lumens / (Math.PI * area)) * AREA_EXPOSURE * adaptation;
+    const intensity = (light.lumens / (Math.PI * area)) * AREA_EXPOSURE;
     return <rectAreaLight ref={rectRef} position={position} quaternion={areaQuaternion} color={color} intensity={intensity} width={w} height={d} />;
   }
 
@@ -125,11 +118,11 @@ export function LampLight({ light }: { light: Light }) {
     return (
       <>
         <primitive object={target} position={targetPos} />
-        <spotLight ref={setLamp} position={position} target={target} color={color} intensity={candela * SPOT_EXPOSURE * adaptation} angle={half} penumbra={penumbra} decay={SPOT_DECAY} />
+        <spotLight ref={setLamp} position={position} target={target} color={color} intensity={candela * SPOT_EXPOSURE} angle={half} penumbra={penumbra} decay={SPOT_DECAY} />
       </>
     );
   }
-  return <pointLight ref={setLamp} position={position} color={color} intensity={(light.lumens / (4 * Math.PI)) * POINT_EXPOSURE * adaptation} decay={POINT_DECAY} />;
+  return <pointLight ref={setLamp} position={position} color={color} intensity={(light.lumens / (4 * Math.PI)) * POINT_EXPOSURE} decay={POINT_DECAY} />;
 }
 
 // 3D editor visualizer for a selected lamp: shows the exact bulb position

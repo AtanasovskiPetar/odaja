@@ -1,5 +1,6 @@
-// First-person walking: click the view to look around with the mouse (Esc
-// releases it) or drag to look; W A S D / arrow keys to move, Shift to hurry.
+// First-person walking: drag to look, or double-click (or L) to look with the
+// mouse (Esc or L releases it); a click selects what's under it (ObjectsView).
+// W A S D / arrow keys to move, Shift to hurry.
 // You can't walk through walls or tall furniture; door openings are open.
 // Stairs carry you up and down: halfway, the level you're on changes.
 import { useEffect, useMemo, useRef } from "react";
@@ -16,6 +17,15 @@ const LOOK_SPEED = 0.0025; // radians per pixel
 const KEY_TURN = 1.8; // radians per second with Q / E
 const MAX_PITCH = 1.35;
 const NO_STAIRS: LevelStairs = { up: [], down: [], raised: [] };
+const DOUBLE_CLICK_MS = 250;
+
+// A click selects once it's clear it wasn't the first of a double-click,
+// which looks with the mouse instead.
+let pendingSelect: ReturnType<typeof setTimeout> | undefined;
+export function selectSoon(id: string) {
+  clearTimeout(pendingSelect);
+  pendingSelect = setTimeout(() => useOdaja.getState().select(id), DOUBLE_CLICK_MS);
+}
 
 export function WalkControls() {
   const camera = useThree((s) => s.camera);
@@ -77,21 +87,31 @@ export function WalkControls() {
       if (document.pointerLockElement === canvas || dragging) look(e.movementX, e.movementY);
     };
     const onMouseDown = (e: MouseEvent) => {
-      if (e.button !== 0) return;
-      dragging = true;
-      // Ask for pointer lock; if the browser refuses, dragging still works.
+      if (e.button === 0) dragging = true;
+    };
+    // Looking with the mouse, without holding a button (if the browser
+    // refuses, dragging still works). It lets go of the selection.
+    const lockMouse = () => {
+      clearTimeout(pendingSelect);
+      useOdaja.getState().select(null);
       canvas.requestPointerLock?.()?.catch?.(() => {});
     };
     const onMouseUp = () => (dragging = false);
     const isTyping = (e: KeyboardEvent) => e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement;
     const onKeyDown = (e: KeyboardEvent) => {
       if (isTyping(e) || e.metaKey || e.ctrlKey) return;
+      if (e.code === "KeyL" && !e.repeat) {
+        if (document.pointerLockElement === canvas) document.exitPointerLock();
+        else lockMouse();
+        return;
+      }
       keys.current.add(e.code);
       if (e.code.startsWith("Arrow")) e.preventDefault();
     };
     const onKeyUp = (e: KeyboardEvent) => keys.current.delete(e.code);
     const onBlur = () => keys.current.clear();
     canvas.addEventListener("mousedown", onMouseDown);
+    canvas.addEventListener("dblclick", lockMouse);
     window.addEventListener("mousemove", onMouseMove);
     window.addEventListener("mouseup", onMouseUp);
     window.addEventListener("keydown", onKeyDown);
@@ -99,6 +119,7 @@ export function WalkControls() {
     window.addEventListener("blur", onBlur);
     return () => {
       canvas.removeEventListener("mousedown", onMouseDown);
+      canvas.removeEventListener("dblclick", lockMouse);
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
       window.removeEventListener("keydown", onKeyDown);
