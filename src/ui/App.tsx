@@ -7,7 +7,7 @@ import { duplicateParts, mirrorParts, removeParts } from "../model/partOps";
 import { useOdaja, type Tool } from "../store";
 import { platform } from "../platform";
 import { useCloudAuth } from "../cloud/auth";
-import { CloudAccountButton, CloudAuthScreen } from "./cloud/AuthGate";
+import { CloudAccountFooter, CloudAuthScreen } from "./cloud/AuthGate";
 import { Viewport } from "../three/Viewport";
 import { PreparingIndicator } from "../three/render/ShaderGate";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
@@ -356,15 +356,18 @@ function Sidebar() {
   return (
     <aside className="sidebar">
       <header className="brand">
-        <span className="brand-logo">
+        <span className="brand-logo mr-auto">
           <LogoMark />
           <span className="logo">Odaja</span>
         </span>
-        <HomeMenu />
         <UnitToggleButton />
         <ThemeCycleButton />
-        {platform.kind === "cloud" && <CloudAccountButton />}
       </header>
+
+      <div className="shrink-0 border-b border-line bg-sheet px-3 py-1.5 flex items-center gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-wider text-muted shrink-0">Home</span>
+        <HomeMenu />
+      </div>
 
       <ScenesSection />
       {!editingShape && <LevelsSection />}
@@ -448,6 +451,8 @@ function Sidebar() {
       <Inspector />
         </>
       )}
+
+      {platform.kind === "cloud" && <CloudAccountFooter />}
     </aside>
   );
 }

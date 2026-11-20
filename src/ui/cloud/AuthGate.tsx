@@ -135,7 +135,7 @@ export function CloudAuthScreen() {
   );
 }
 
-export function CloudAccountButton() {
+export function CloudAccountFooter() {
   const user = useCloudAuth((s) => s.user);
   const expiresAt = useCloudAuth((s) => s.expiresAt);
   const refresh = useCloudAuth((s) => s.refresh);
@@ -149,7 +149,7 @@ export function CloudAccountButton() {
   const badge = initials(user.name, user.email);
 
   return (
-    <>
+    <div className="shrink-0 border-t border-line bg-sheet px-2.5 py-2">
       <button
         ref={btnRef}
         type="button"
@@ -157,16 +157,21 @@ export function CloudAccountButton() {
         title={`${user.name} (${user.email})`}
         aria-expanded={open}
         aria-haspopup="menu"
-        className={`w-6 h-6 rounded-full border text-[10px] font-semibold inline-flex items-center justify-center p-0 cursor-pointer shrink-0 transition-colors ${
-          open
-            ? "bg-accent text-white border-accent"
-            : "bg-accent-wash text-accent-ink border-accent-line hover:bg-accent hover:text-white hover:border-accent"
+        className={`w-full flex items-center gap-2.5 rounded-[8px] border-0 px-2 py-1.5 text-left cursor-pointer transition-colors ${
+          open ? "bg-well" : "bg-transparent hover:bg-well"
         }`}
       >
-        {badge}
+        <span className="w-7 h-7 rounded-full bg-accent-wash text-accent-ink border border-accent-line text-[11px] font-semibold inline-flex items-center justify-center shrink-0">
+          {badge}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="text-xs font-semibold text-ink truncate leading-tight">{user.name}</div>
+          <div className="text-[11px] text-muted truncate leading-tight mt-0.5">{user.email}</div>
+        </div>
+        <span className="w-1.5 h-1.5 rounded-full bg-ok shrink-0" title="Cloud connected" />
       </button>
 
-      <Popover open={open} onClose={() => setOpen(false)} anchorRef={btnRef} align="end" width={236}>
+      <Popover open={open} onClose={() => setOpen(false)} anchorRef={btnRef} align="start" placement="top" width={248}>
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2.5 px-1">
             <span className="w-8 h-8 rounded-full bg-accent-wash text-accent-ink border border-accent-line text-xs font-semibold inline-flex items-center justify-center shrink-0">
@@ -217,6 +222,6 @@ export function CloudAccountButton() {
           </div>
         </div>
       </Popover>
-    </>
+    </div>
   );
 }

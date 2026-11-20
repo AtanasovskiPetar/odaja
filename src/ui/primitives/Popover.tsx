@@ -8,6 +8,7 @@ export function Popover({
   onClose,
   anchorRef,
   align = "end",
+  placement = "bottom",
   width = 240,
   children,
 }: {
@@ -15,11 +16,12 @@ export function Popover({
   onClose: () => void;
   anchorRef: React.RefObject<HTMLElement | null>;
   align?: "start" | "end";
+  placement?: "bottom" | "top";
   width?: number;
   children: ReactNode;
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = useState<{ top?: number; bottom?: number; left: number } | null>(null);
 
   useLayoutEffect(() => {
     if (!open || !anchorRef.current) return;
@@ -29,8 +31,13 @@ export function Popover({
       const w = Math.min(width, window.innerWidth - pad * 2);
       const rawLeft = align === "end" ? rect.right - w : rect.left;
       const left = Math.max(pad, Math.min(rawLeft, window.innerWidth - w - pad));
-      const top = Math.min(rect.bottom + 6, window.innerHeight - pad - 120);
-      setPos({ top, left });
+      if (placement === "top") {
+        const bottom = Math.max(pad, window.innerHeight - rect.top + 6);
+        setPos({ bottom, left });
+      } else {
+        const top = Math.min(rect.bottom + 6, window.innerHeight - pad - 120);
+        setPos({ top, left });
+      }
     };
     update();
     window.addEventListener("resize", update);
@@ -39,7 +46,7 @@ export function Popover({
       window.removeEventListener("resize", update);
       window.removeEventListener("scroll", update, true);
     };
-  }, [open, anchorRef, align, width]);
+  }, [open, anchorRef, align, placement, width]);
 
   useEffect(() => {
     if (!open) return;
@@ -65,7 +72,7 @@ export function Popover({
     <div
       ref={panelRef}
       role="menu"
-      style={{ top: pos.top, left: pos.left, width: Math.min(width, window.innerWidth - 20) }}
+      style={{ top: pos.top, bottom: pos.bottom, left: pos.left, width: Math.min(width, window.innerWidth - 20) }}
       className="fixed z-50 rounded-[10px] bg-card p-2.5 shadow-float border border-line text-ink"
     >
       {children}
