@@ -256,14 +256,25 @@ export function createCloudApp(deps: CloudAppDeps) {
     return c.json({ ok: true });
   });
 
-  // Redirects binary assets (.glb, textures, plan images) to a short-lived
-  // presigned URL so browsers stream directly from ferdzo/fs or R2/CDN.
+  // Serves binary assets (.glb, textures, plan images).
+  // Defaults to streaming through the API with CORS headers (required for
+  // S3 servers without CORS like local ferdzo/fs). Set S3_PRESIGN_ASSETS=true
+  // on R2/S3 buckets with CORS configured to redirect straight to S3/CDN.
   app.get("/api/v1/projects/:pid/asset", requireAuth, requireProjectAccess("read"), async (c) => {
     const project = c.get("project");
     const rel = safeRelPath(c.req.query("path"));
     if (!rel) return c.json({ error: "Invalid path" }, 400);
-    const signed = await blobs.presignGet(projectKey(project.id, rel), 900);
-    return c.redirect(signed, 302);
+    if (process.env.S3_PRESIGN_ASSETS === "true") {
+      const signed = await blobs.presignGet(projectKey(project.id, rel), 900);
+      return c.redirect(signed, 302);
+    }
+    const obj = await blobs.get(projectKey(project.id, rel));
+    if (!obj) return c.json({ error: "Not found" }, 404);
+    const headers = new Headers();
+    headers.set("Content-Type", obj.contentType ?? contentTypeFor(rel));
+    headers.set("Cache-Control", "private, max-age=300");
+    if (obj.etag) headers.set("ETag", obj.etag);
+    return new Response(obj.body.slice().buffer, { status: 200, headers });
   });
 
   return app;
