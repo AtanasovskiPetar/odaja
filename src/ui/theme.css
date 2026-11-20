@@ -1,0 +1,42 @@
+/* Odaja UI System — Tailwind CSS v4 + warm drafting-table design tokens.
+   Layer order ensures Tailwind utilities always win cleanly over legacy
+   global rules in styles.css while we migrate screens incrementally. */
+@layer theme, base, legacy, components, utilities;
+
+@import "tailwindcss";
+@import "./styles.css" layer(legacy);
+
+@theme {
+  --color-paper: var(--paper);
+  --color-sheet: var(--sheet);
+  --color-card: var(--card);
+  --color-well: var(--well);
+  --color-well-2: var(--well-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-wash: var(--accent-wash);
+  --color-accent-line: var(--accent-line);
+
+  --color-ok: var(--ok);
+  --color-ok-wash: var(--ok-wash);
+  --color-warn: var(--warn);
+  --color-warn-wash: var(--warn-wash);
+  --color-danger: var(--danger);
+  --color-danger-wash: var(--danger-wash);
+
+  --font-serif: var(--serif);
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+
+  --shadow-card: var(--shadow-card);
+  --shadow-float: var(--shadow-float);
+  --shadow-dialog: var(--shadow-dialog);
+}

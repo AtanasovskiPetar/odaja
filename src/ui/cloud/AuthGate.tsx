@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useCloudAuth } from "../../cloud/auth";
 import { useOdaja } from "../../store";
 import { LogoMark } from "../icons";
+import { Button } from "../primitives/Button";
+import { TextField } from "../primitives/Input";
+import { Popover } from "../primitives/Popover";
 
 function initials(name: string, email: string): string {
   const src = (name || email || "?").trim();
@@ -26,7 +29,6 @@ export function CloudAuthScreen() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
 
   const onSubmit = async (e: FormEvent) => {
@@ -44,98 +46,89 @@ export function CloudAuthScreen() {
   };
 
   return (
-    <div className="cloud-auth-page">
-      <div className="cloud-auth-card">
-        <div className="cloud-auth-brand">
+    <div className="min-h-screen flex items-center justify-center p-6 bg-paper text-ink">
+      <div className="w-full max-w-[390px] rounded-[14px] bg-card p-7 shadow-dialog border border-line flex flex-col gap-5">
+        <div className="flex items-center gap-3">
           <LogoMark />
           <div>
-            <h1>Odaja</h1>
-            <p className="muted">Cloud studio for your 3D homes</p>
+            <h1 className="font-serif text-[28px] font-normal leading-none tracking-tight m-0 text-ink">
+              Odaja
+            </h1>
+            <p className="mt-1 mb-0 text-xs text-muted">Cloud studio for your 3D homes</p>
           </div>
         </div>
 
-        <div className="cloud-auth-tabs" role="tablist">
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "signin"}
-            className={mode === "signin" ? "active" : ""}
-            onClick={() => setMode("signin")}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={mode === "signup"}
-            className={mode === "signup" ? "active" : ""}
-            onClick={() => setMode("signup")}
-          >
-            Create account
-          </button>
+        <div className="grid grid-cols-2 gap-1 p-1 rounded-[8px] bg-well" role="tablist">
+          {(["signin", "signup"] as const).map((tab) => {
+            const active = mode === tab;
+            return (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => setMode(tab)}
+                className={`h-7 rounded-[6px] text-xs font-medium border-0 cursor-pointer transition-colors ${
+                  active ? "bg-card text-ink shadow-card" : "bg-transparent text-ink-2 hover:text-ink"
+                }`}
+              >
+                {tab === "signin" ? "Sign in" : "Create account"}
+              </button>
+            );
+          })}
         </div>
 
         {status === "loading" ? (
-          <div className="cloud-auth-loading muted">Checking your session…</div>
+          <div className="py-6 text-center text-xs text-muted">Checking your session…</div>
         ) : (
-          <form className="cloud-auth-form" onSubmit={onSubmit}>
+          <form className="flex flex-col gap-3.5" onSubmit={onSubmit}>
             {mode === "signup" && (
-              <label className="field">
-                <span>Name</span>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Andrej"
-                  autoComplete="name"
-                  required
-                />
-              </label>
-            )}
-            <label className="field">
-              <span>Email</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                autoComplete="email"
+              <TextField
+                label="Name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Andrej"
+                autoComplete="name"
                 required
-                autoFocus
               />
-            </label>
-            <label className="field">
-              <span>Password</span>
-              <div className="cloud-password-wrap">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
-                  autoComplete={mode === "signin" ? "current-password" : "new-password"}
-                  minLength={8}
-                  required
-                />
-                <button
-                  type="button"
-                  className="cloud-password-toggle"
-                  onClick={() => setShowPassword((v) => !v)}
-                  tabIndex={-1}
-                >
-                  {showPassword ? "Hide" : "Show"}
-                </button>
+            )}
+            <TextField
+              label="Email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              autoComplete="email"
+              required
+              autoFocus
+            />
+            <TextField
+              label="Password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
+              autoComplete={mode === "signin" ? "current-password" : "new-password"}
+              minLength={8}
+              required
+            />
+
+            {error && (
+              <div role="alert" className="rounded-[6px] bg-danger-wash px-2.5 py-2 text-xs text-danger">
+                {error}
               </div>
-            </label>
+            )}
 
-            {error && <div className="cloud-auth-error" role="alert">{error}</div>}
-
-            <button type="submit" className="primary cloud-auth-submit" disabled={busy}>
+            <Button type="submit" variant="primary" disabled={busy} className="w-full mt-0.5">
               {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
-            </button>
+            </Button>
           </form>
         )}
 
-        <div className="cloud-auth-footer">
-          <a href="?host=server">Use local folders instead</a>
+        <div className="border-t border-line pt-3 text-center text-xs">
+          <a href="?host=server" className="text-muted hover:text-ink no-underline hover:underline">
+            Use local folders instead
+          </a>
         </div>
       </div>
     </div>
@@ -149,56 +142,48 @@ export function CloudAccountButton() {
   const signOut = useCloudAuth((s) => s.signOut);
   const [open, setOpen] = useState(false);
   const [refreshed, setRefreshed] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("mousedown", onDown);
-    window.addEventListener("keydown", onKey);
-    return () => {
-      window.removeEventListener("mousedown", onDown);
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   if (!user) return null;
   const expiry = formatExpiry(expiresAt);
+  const badge = initials(user.name, user.email);
 
   return (
-    <div className="cloud-account" ref={wrapRef}>
+    <>
       <button
+        ref={btnRef}
         type="button"
-        className={`cloud-avatar-btn${open ? " active" : ""}`}
         onClick={() => setOpen((v) => !v)}
         title={`${user.name} (${user.email})`}
         aria-expanded={open}
         aria-haspopup="menu"
+        className={`w-6 h-6 rounded-full border text-[10px] font-semibold inline-flex items-center justify-center p-0 cursor-pointer shrink-0 transition-colors ${
+          open
+            ? "bg-accent text-white border-accent"
+            : "bg-accent-wash text-accent-ink border-accent-line hover:bg-accent hover:text-white hover:border-accent"
+        }`}
       >
-        {initials(user.name, user.email)}
+        {badge}
       </button>
 
-      {open && (
-        <div className="cloud-user-menu" role="menu">
-          <div className="cloud-user-head">
-            <span className="cloud-avatar-lg">{initials(user.name, user.email)}</span>
-            <div className="cloud-user-meta">
-              <div className="cloud-user-name">{user.name}</div>
-              <div className="cloud-user-email muted">{user.email}</div>
+      <Popover open={open} onClose={() => setOpen(false)} anchorRef={btnRef} align="end" width={236}>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2.5 px-1">
+            <span className="w-8 h-8 rounded-full bg-accent-wash text-accent-ink border border-accent-line text-xs font-semibold inline-flex items-center justify-center shrink-0">
+              {badge}
+            </span>
+            <div className="min-w-0">
+              <div className="text-[12.5px] font-semibold text-ink truncate">{user.name}</div>
+              <div className="text-[11px] text-muted truncate">{user.email}</div>
             </div>
           </div>
 
-          <div className="cloud-user-status">
-            <span className="cloud-status-dot" />
-            <span>Cloud connected{expiry ? ` · until ${expiry}` : ""}</span>
+          <div className="flex items-center gap-1.5 rounded-[6px] bg-well px-2.5 py-1.5 text-[11px] text-ink-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-ok shrink-0" />
+            <span className="truncate">Cloud connected{expiry ? ` · until ${expiry}` : ""}</span>
           </div>
 
-          <div className="cloud-user-actions">
+          <div className="flex flex-col gap-0.5 border-t border-line pt-1.5">
             <button
               type="button"
               role="menuitem"
@@ -207,26 +192,31 @@ export function CloudAccountButton() {
                 setRefreshed(true);
                 setTimeout(() => setRefreshed(false), 1800);
               }}
+              className="w-full text-left border-0 bg-transparent text-ink text-xs px-2 py-1.5 rounded-[6px] hover:bg-well cursor-pointer"
             >
               {refreshed ? "Session refreshed ✓" : "Refresh session"}
             </button>
-            <a href="?host=server" role="menuitem">
+            <a
+              href="?host=server"
+              role="menuitem"
+              className="w-full text-left text-ink text-xs px-2 py-1.5 rounded-[6px] hover:bg-well no-underline block"
+            >
               Switch to local folders
             </a>
             <button
               type="button"
               role="menuitem"
-              className="danger"
               onClick={async () => {
                 setOpen(false);
                 await signOut();
               }}
+              className="w-full text-left border-0 bg-transparent text-danger text-xs px-2 py-1.5 rounded-[6px] hover:bg-danger-wash cursor-pointer"
             >
               Sign out
             </button>
           </div>
         </div>
-      )}
-    </div>
+      </Popover>
+    </>
   );
 }
