@@ -804,8 +804,9 @@ function SelectionGizmoBar() {
   const gizmo = useOdaja((s) => s.objectGizmo);
   const setGizmo = useOdaja((s) => s.setObjectGizmo);
   const object = useOdaja((s) => s.scene?.objects.find((o) => o.id === s.selectedId));
-  if (viewMode !== "3d" || mode !== "furnish" || measuring || editingObjectId || !object || object.locked) return null;
+  // Every hook before the early return: React needs the same hooks each render.
   const selectedLightIndex = useOdaja((s) => s.selectedLightIndex);
+  if (viewMode !== "3d" || mode !== "furnish" || measuring || editingObjectId || !object || object.locked) return null;
   const lights = objectLights(object);
   const activeLight = lights[Math.min(selectedLightIndex, Math.max(0, lights.length - 1))];
   const hasLight = lights.length > 0;
