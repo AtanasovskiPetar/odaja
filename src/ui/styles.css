@@ -3414,6 +3414,7 @@ button.link.danger {
   flex-shrink: 0;
 }
 
+/* The selected object's 3D handles: the same glass and buttons as the toolbar. */
 .gizmo-pill {
   position: absolute;
   left: 50%;
@@ -3422,28 +3423,46 @@ button.link.danger {
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 8px;
-  border-radius: var(--r-l);
-  background: var(--card);
-  border: 1px solid var(--border);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.14);
+  gap: 2px;
+  padding: 4px;
+  background: var(--glass);
+  border-radius: 13px;
+  box-shadow: var(--shadow-float);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
   white-space: nowrap;
+  animation: fade 0.2s ease-out;
 }
 
 .gizmo-pill-name {
   font-size: 12px;
   font-weight: 600;
-  padding: 0 6px 0 4px;
+  padding: 0 8px 0 6px;
   max-width: 150px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .gizmo-pill button {
-  padding: 4px 8px;
-  font-size: 11px;
-  border-radius: var(--r-s);
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  color: var(--ink-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.gizmo-pill button:hover {
+  background: var(--well);
+  color: var(--ink);
+}
+
+.gizmo-pill button.active {
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: 0 0 0 0.5px var(--line-strong), 0 1px 3px rgba(45, 33, 15, 0.12);
 }
 
 /* No z-index: like the structure layer, it covers the plan but stays under
