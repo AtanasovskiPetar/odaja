@@ -1,6 +1,7 @@
 import { useRef, useState } from "react";
 import type { SceneSummary } from "../platform";
 import { useOdaja } from "../store";
+import { IconChevron } from "./icons";
 import { Button } from "./primitives/Button";
 import { Popover } from "./primitives/Popover";
 
@@ -183,6 +184,7 @@ export function ScenesSection() {
   const duplicateScene = useOdaja((s) => s.duplicateScene);
   const renameScene = useOdaja((s) => s.renameScene);
   const deleteScene = useOdaja((s) => s.deleteScene);
+  const [collapsed, setCollapsed] = useState(false);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -190,42 +192,66 @@ export function ScenesSection() {
     setError(null);
     action().catch((err) => setError((err as Error).message));
   };
+  const current = scenes.find((s) => s.path === scenePath);
 
   return (
     <section className="shrink-0 border-b border-line px-3 py-2.5">
-      <div className="flex items-center justify-between gap-2 mb-1.5">
-        <span className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-          Scenes{scenes.length > 1 ? ` (${scenes.length})` : ""}
-        </span>
-        <Button size="sm" onClick={() => run(async () => setRenaming(await newScene()))} className="h-6 px-2 text-[11px]">
+      <div className={`flex items-center justify-between gap-2 ${collapsed ? "" : "mb-1.5"}`}>
+        <button
+          type="button"
+          onClick={() => setCollapsed((v) => !v)}
+          aria-expanded={!collapsed}
+          className="flex items-center gap-1.5 min-w-0 border-0 bg-transparent p-0 text-left cursor-pointer group"
+        >
+          <IconChevron
+            size={12}
+            className={`text-muted group-hover:text-ink shrink-0 transition-transform ${collapsed ? "-rotate-90" : ""}`}
+          />
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted group-hover:text-ink shrink-0">
+            Scenes{scenes.length > 1 ? ` (${scenes.length})` : ""}
+          </span>
+          {collapsed && current && (
+            <span className="text-xs font-medium text-ink truncate">· {current.name}</span>
+          )}
+        </button>
+        <Button
+          size="sm"
+          onClick={() => {
+            setCollapsed(false);
+            run(async () => setRenaming(await newScene()));
+          }}
+          className="h-6 px-2 text-[11px] shrink-0"
+        >
           + New
         </Button>
       </div>
 
-      <ul className="m-0 p-0 flex flex-col gap-0.5 max-h-36 overflow-y-auto">
-        {scenes.map((scene) => (
-          <SceneRow
-            key={scene.path}
-            scene={scene}
-            active={scene.path === scenePath}
-            canDelete={scenes.length > 1}
-            renaming={renaming === scene.path}
-            onOpen={() => run(() => openScene(scene.path))}
-            onStartRename={() => setRenaming(scene.path)}
-            onFinishRename={(name) => {
-              setRenaming(null);
-              if (name && name !== scene.name) run(() => renameScene(scene.path, name));
-            }}
-            onDuplicate={(withWalls) =>
-              run(async () => {
-                if (scene.path !== scenePath) await openScene(scene.path);
-                await duplicateScene(withWalls);
-              })
-            }
-            onDelete={() => run(() => deleteScene(scene.path))}
-          />
-        ))}
-      </ul>
+      {!collapsed && (
+        <ul className="m-0 p-0 flex flex-col gap-0.5 max-h-36 overflow-y-auto">
+          {scenes.map((scene) => (
+            <SceneRow
+              key={scene.path}
+              scene={scene}
+              active={scene.path === scenePath}
+              canDelete={scenes.length > 1}
+              renaming={renaming === scene.path}
+              onOpen={() => run(() => openScene(scene.path))}
+              onStartRename={() => setRenaming(scene.path)}
+              onFinishRename={(name) => {
+                setRenaming(null);
+                if (name && name !== scene.name) run(() => renameScene(scene.path, name));
+              }}
+              onDuplicate={(withWalls) =>
+                run(async () => {
+                  if (scene.path !== scenePath) await openScene(scene.path);
+                  await duplicateScene(withWalls);
+                })
+              }
+              onDelete={() => run(() => deleteScene(scene.path))}
+            />
+          ))}
+        </ul>
+      )}
 
       {error && (
         <div className="mt-1.5 rounded-[6px] bg-danger-wash px-2 py-1 text-[11px] text-danger">
