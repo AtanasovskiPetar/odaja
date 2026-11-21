@@ -84,10 +84,11 @@ export interface Platform {
     write(id: string, json: string): Promise<void>;
     remove(id: string): Promise<void>;
   };
-  // The companion: move a home's folder to the Trash, or forget one opened
-  // from elsewhere. Not the open home.
+  // The companion / cloud: move a home to the Trash (or soft-delete in cloud),
+  // forget one opened from elsewhere, or rename without opening it.
   trashProject?(dir: string): Promise<void>;
   forgetProject?(dir: string): Promise<void>;
+  renameProject?(dir: string, name: string): Promise<void>;
   // Where the AI tools run in the page (the website): their file access, and
   // how they ask the app to show a scene. Absent when tools run on the server.
   localTools?: { files(): AgentFiles | null; openScene(path: string): void };

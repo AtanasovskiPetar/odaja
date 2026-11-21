@@ -350,6 +350,13 @@ export function createCloudPlatform(apiBase: string): Platform {
       if (currentId === id) setOpen(null);
     },
 
+    async renameProject(id, name) {
+      await apiJson(`/api/v1/projects/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      });
+    },
+
     chats: {
       async list() {
         const pid = requireOpen();
