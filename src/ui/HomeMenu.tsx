@@ -2,6 +2,7 @@
 // homes, create a new home, import/export .odaja files, or export an image.
 import { useEffect, useRef, useState } from "react";
 import { useCloudAuth, useCloudSignedIn } from "../cloud/auth";
+import { SAVE_LABELS, useCloudSave, type SaveState } from "../cloud/saveStatus";
 import { platform } from "../platform";
 import { useOdaja } from "../store";
 import { pickHomeFile, requestOpenHome, saveHome } from "./homeFileActions";
@@ -19,6 +20,21 @@ export async function openHomeFromPicker() {
   });
   if (picked) await requestOpenHome(picked);
 }
+
+// A cloud home's save status. "Saving…" shows only when it takes a moment,
+// so quick saves don't flicker.
+function useSaveState(): SaveState {
+  const state = useCloudSave((s) => s.state);
+  const [shown, setShown] = useState(state);
+  useEffect(() => {
+    if (state !== "saving") return setShown(state);
+    const t = setTimeout(() => setShown("saving"), 600);
+    return () => clearTimeout(t);
+  }, [state]);
+  return shown;
+}
+
+const SAVE_TONE: Record<SaveState, string> = { saved: "text-muted", saving: "text-muted", offline: "text-warn", failing: "text-danger" };
 
 async function openOther(dir: string) {
   await useOdaja
@@ -38,6 +54,8 @@ export function HomeMenu() {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const saveState = useSaveState();
+  const saveDetail = useCloudSave((s) => s.detail);
 
   useEffect(() => {
     if (!open) return;
@@ -88,7 +106,7 @@ export function HomeMenu() {
           setOpen(false);
           setRenaming(true);
         }}
-        title={`${web ? (unsaved ? "Changes not saved to a file yet" : "Kept in this browser") : cloud ? "In your account" : (dir ?? "")} · double-click to rename`}
+        title={`${web ? (unsaved ? "Changes not saved to a file yet" : "Kept in this browser") : cloud ? SAVE_LABELS[saveState].title : (dir ?? "")} · double-click to rename`}
         aria-haspopup="menu"
         aria-expanded={open}
         className={`w-full flex items-center justify-between gap-1.5 rounded-[7px] border px-2 py-1 text-left text-xs font-medium text-ink cursor-pointer transition-colors ${
@@ -98,6 +116,11 @@ export function HomeMenu() {
         <span className="truncate">{name}</span>
         <span className="flex items-center gap-1 shrink-0 text-muted">
           {web && unsaved && <span className="w-1.5 h-1.5 rounded-full bg-accent" aria-label="not saved to a file" />}
+          {cloud && (
+            <span role="status" className={`text-[11px] font-normal ${SAVE_TONE[saveState]}`}>
+              {SAVE_LABELS[saveState].label}
+            </span>
+          )}
           <IconChevron size={13} className={`transition-transform ${open ? "rotate-180" : ""}`} />
         </span>
       </button>
@@ -201,6 +224,12 @@ export function HomeMenu() {
           {web && (
             <p className="m-0 mt-1 border-t border-line pt-1.5 px-2 text-[11px] text-muted">
               {unsaved ? "Changes are kept in this browser, not in a file yet." : "Kept in this browser and saved to a file."}
+            </p>
+          )}
+          {cloud && (
+            <p className="m-0 mt-1 border-t border-line pt-1.5 px-2 text-[11px] text-muted">
+              {SAVE_LABELS[saveState].title}
+              {saveState === "failing" && saveDetail ? ` ${saveDetail}` : ""}
             </p>
           )}
         </div>

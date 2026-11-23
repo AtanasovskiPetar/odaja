@@ -35,6 +35,7 @@ const authConfig: AuthConfig = {
   google: oauth(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
   github: oauth(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET),
   checkLeakedPasswords: env.AUTH_CHECK_LEAKED_PASSWORDS === "true",
+  turnstile: env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY ? { siteKey: env.TURNSTILE_SITE_KEY, secretKey: env.TURNSTILE_SECRET_KEY } : undefined,
 };
 
 const app = createCloudApp({

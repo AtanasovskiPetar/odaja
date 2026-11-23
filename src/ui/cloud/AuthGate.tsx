@@ -1,5 +1,6 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useCloudAuth } from "../../cloud/auth";
+import { mountTurnstile, type TurnstileWidget } from "../../cloud/turnstile";
 import { LogoMark } from "../icons";
 import { Button } from "../primitives/Button";
 import { TextField } from "../primitives/Input";
@@ -39,6 +40,33 @@ function SignInForm({ newPasswordToken }: { newPasswordToken: string | null }) {
   const [busy, setBusy] = useState(false);
   const close = () => auth.openSignIn(null);
 
+  // Turnstile, when the server checks for bots: asked right before making
+  // an account or sending an email.
+  const siteKey = methods?.turnstileSiteKey ?? null;
+  const turnstileEl = useRef<HTMLDivElement>(null);
+  const turnstile = useRef<Promise<TurnstileWidget> | null>(null);
+  useEffect(() => {
+    if (!siteKey || !turnstileEl.current) return;
+    const widget = mountTurnstile(turnstileEl.current, siteKey);
+    widget.catch(() => {});
+    turnstile.current = widget;
+    return () => {
+      turnstile.current = null;
+      void widget.then((w) => w.remove()).catch(() => {});
+    };
+  }, [siteKey]);
+  // A token, or null (with the reason shown) when the check didn't pass.
+  const captcha = async (): Promise<string | undefined | null> => {
+    if (!siteKey) return undefined;
+    try {
+      if (!turnstile.current) throw new Error("The check that you're a person isn't ready. Try again.");
+      return await (await turnstile.current).token();
+    } catch (err) {
+      useCloudAuth.setState({ error: (err as Error).message });
+      return null;
+    }
+  };
+
   const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
     try {
@@ -52,9 +80,12 @@ function SignInForm({ newPasswordToken }: { newPasswordToken: string | null }) {
     e.preventDefault();
     void run(async () => {
       if (mode === "signin") await auth.signIn(email.trim(), password);
-      else if (mode === "signup") await auth.signUp(name.trim() || email.split("@")[0] || "Designer", email.trim(), password);
-      else if (mode === "forgot") {
-        if (await auth.requestReset(email.trim())) setMode("sent-reset");
+      else if (mode === "signup") {
+        const token = await captcha();
+        if (token !== null) await auth.signUp(name.trim() || email.split("@")[0] || "Designer", email.trim(), password, token);
+      } else if (mode === "forgot") {
+        const token = await captcha();
+        if (token !== null && (await auth.requestReset(email.trim(), token))) setMode("sent-reset");
       } else if (mode === "new-password" && newPasswordToken) {
         if (await auth.resetPassword(newPasswordToken, password)) setMode("changed");
       }
@@ -64,7 +95,8 @@ function SignInForm({ newPasswordToken }: { newPasswordToken: string | null }) {
   const emailLink = () =>
     run(async () => {
       if (!email.trim()) return useCloudAuth.setState({ error: "Enter your email first." });
-      if (await auth.emailLink(email.trim())) setMode("sent-link");
+      const token = await captcha();
+      if (token !== null && (await auth.emailLink(email.trim(), token))) setMode("sent-link");
     });
 
   const title = { signin: "Sign in", signup: "Create an account", forgot: "Reset your password", "sent-link": "Check your email", "sent-reset": "Check your email", "new-password": "Choose a new password", changed: "Password changed" }[mode];
@@ -163,6 +195,9 @@ function SignInForm({ newPasswordToken }: { newPasswordToken: string | null }) {
             {methods.github && <Button disabled={busy} onClick={() => run(() => auth.social("github"))}>Continue with GitHub</Button>}
           </div>
         )}
+
+        {/* Turnstile's box, shown only when Cloudflare wants a tick. */}
+        {siteKey && <div ref={turnstileEl} className="empty:hidden" />}
       </div>
     </div>
   );

@@ -78,10 +78,21 @@ export function withCloud(local: Platform, cloud: CloudPlatform): Platform {
       await local.createProject(name, room);
       use(local);
     },
+    // Opening a .odaja file while an account home is open adds it to the
+    // account (on the website, the local way would replace the browser's home).
     async importHome(data) {
+      if (active === cloud) return cloud.importHome(data);
       await local.importHome(data);
       use(local);
     },
+    // The furniture library is this computer's, whichever home is open;
+    // placing an item copies it into the open home (cloud.placeLibraryModel).
+    listLibrary: () => local.listLibrary(),
+    newLibraryItem: (name) => local.newLibraryItem(name),
+    writeLibraryFile: (path, data) => local.writeLibraryFile(path, data),
+    libraryFileUrl: (path, version) => local.libraryFileUrl(path, version),
+    deleteLibraryItem: (id) => local.deleteLibraryItem(id),
+    libraryFiles: local.libraryFiles?.bind(local),
     async trashProject(dir) {
       if (dir.startsWith(CLOUD)) await cloud.trashProject!(dir.slice(CLOUD.length));
       else await local.trashProject?.(dir);

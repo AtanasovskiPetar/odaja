@@ -5,11 +5,17 @@ import { formatJson } from "../model/format";
 import { belongsInFile, homeName, packHome, unpackHome } from "../model/homeFile";
 import { chatPath, type LibraryEntry, type Platform, type ProjectList, type SceneSummary, type VersionSummary } from "../platform";
 import { useCloudAuth } from "./auth";
+import { useCloudSave } from "./saveStatus";
 
-// Saving checks the content it replaces: each file's fingerprint (SHA-256,
-// the server's ETag) is remembered when it's read or written, and sent with
-// the next save as If-Match. A refused save (412: changed in another tab, on
-// another device, or by an AI turn) loads the newer file instead and says so.
+// Saving checks the content it replaces. The server's fingerprint (SHA-256,
+// its ETag) of each file is remembered as this tab last heard it (reads,
+// saves, the change stream) and sent with the next save as If-Match. A
+// refused save (412: changed in another tab, on another device, or by the
+// server's tools) loads the newer file instead and says so.
+//
+// Saves of one file go out one at a time, the latest content only, so quick
+// edits never race each other. Without a connection they wait in this tab
+// ("Offline") and go out when it's back; the page asks before closing then.
 async function sha256(bytes: Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -25,11 +31,16 @@ async function bytesOf(data: string | Blob | ArrayBuffer | Uint8Array): Promise<
 const etagHash = (res: Response) => res.headers.get("ETag")?.replace(/^W\//, "").replace(/"/g, "") ?? null;
 
 async function tell(message: string) {
-  const { useOdaja } = await import("../store");
-  useOdaja.getState().setNotice(message);
+  try {
+    const { useOdaja } = await import("../store");
+    useOdaja.getState().setNotice(message);
+  } catch (err) {
+    console.warn(message, err);
+  }
 }
 
 const LAST_CLOUD_PROJECT_KEY = "odaja:cloud:last-project";
+const CHANGED_ELSEWHERE = "This home was changed somewhere else (another tab or device). The newer version is loaded; your last change wasn't saved.";
 
 interface CloudProjectRow {
   id: string;
@@ -38,12 +49,28 @@ interface CloudProjectRow {
   updatedAt: number;
 }
 
+// One file's save waiting to go out: the latest content (null: delete it),
+// and the callers waiting for it.
+interface Pending {
+  pid: string;
+  rel: string;
+  bytes: Uint8Array | null;
+  hash: string | null;
+  waiters: { resolve(): void; reject(err: Error): void }[];
+}
+
+type Outcome = "ok" | "conflict" | "signed-out" | "offline" | "retry" | { refused: string };
+
 export type CloudPlatform = Platform & {
   // Stop following the open home (another home, not in the cloud, is open now).
   closeHome(): void;
 };
 
-export function createCloudPlatform(apiBase: string): CloudPlatform {
+// `library`: the furniture library of this computer (the website's browser
+// storage or the companion's folder). Cloud homes use it as local homes do:
+// placing an item copies its files into the home, so the home is complete
+// on any computer.
+export function createCloudPlatform(apiBase: string, library: () => FileArea | null): CloudPlatform {
   const base = apiBase.replace(/\/+$/, "");
   let currentId: string | null = null;
   try {
@@ -51,10 +78,6 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
   } catch {
     // storage unavailable
   }
-
-  // Fingerprints of the open home's files as this tab last saw them.
-  const hashes = new Map<string, string>();
-  let changes: EventSource | null = null;
 
   const changeListeners: ((path: string) => void)[] = [];
   const openSceneListeners: ((path: string) => void)[] = [];
@@ -65,19 +88,233 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
     return currentId;
   };
 
-  // Changes made elsewhere (another tab, device or the server's tools) arrive
-  // on a stream; this tab reloads files whose content it doesn't have.
+  // --- What the server has: fingerprints per home ---------------------------
+
+  const serverHashes = new Map<string, Map<string, string>>();
+  const known = (pid: string) => {
+    let m = serverHashes.get(pid);
+    if (!m) serverHashes.set(pid, (m = new Map()));
+    return m;
+  };
+  const heard = (pid: string, rel: string, hash: string | null) => (hash ? known(pid).set(rel, hash) : known(pid).delete(rel));
+  // This tab's own saves, so they don't come back on the change stream as
+  // someone else's.
+  const ours = new Set<string>();
+  const echo = (pid: string, rel: string, hash: string | null) => `${pid}\n${rel}\n${hash ?? ""}`;
+
+  // --- Sending saves --------------------------------------------------------
+
+  const slots = new Map<string, { busy: boolean; next: Pending | null }>();
+  const slotKey = (pid: string, rel: string) => `${pid}\n${rel}`;
+  let offline = typeof navigator !== "undefined" && navigator.onLine === false;
+  let failing: string | null = null;
+  let retryTimer: ReturnType<typeof setTimeout> | null = null;
+  let retryDelay = 2000;
+
+  const waiting = () => [...slots.values()].some((s) => s.busy || s.next);
+  const showStatus = () => {
+    const state = offline ? "offline" : failing && waiting() ? "failing" : waiting() ? "saving" : "saved";
+    useCloudSave.setState({ state, detail: state === "failing" ? failing : null });
+  };
+
+  const scheduleRetry = () => {
+    if (retryTimer) return;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      retryAll();
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 30_000);
+  };
+  const retryAll = () => {
+    for (const [key, slot] of slots) if (slot.next && !slot.busy) void pump(key);
+  };
+
+  if (typeof window !== "undefined") {
+    window.addEventListener("online", () => {
+      offline = false;
+      retryDelay = 2000;
+      showStatus();
+      retryAll();
+    });
+    window.addEventListener("offline", () => {
+      offline = true;
+      showStatus();
+    });
+    // Changes not on the server yet would be lost with the tab.
+    window.addEventListener("beforeunload", (e) => {
+      if (waiting()) e.preventDefault();
+    });
+  }
+
+  async function send(op: Pending): Promise<Outcome> {
+    const expected = known(op.pid).get(op.rel);
+    const headers: Record<string, string> = expected ? { "If-Match": `"${expected}"` } : {};
+    // A save that changed nothing has no echo; don't let those pile up.
+    if (ours.size > 500) ours.delete(ours.values().next().value!);
+    ours.add(echo(op.pid, op.rel, op.hash));
+    let res: Response;
+    try {
+      res = await fetch(fileEndpoint(op.pid, op.rel), {
+        method: op.bytes ? "PUT" : "DELETE",
+        credentials: "include",
+        headers,
+        body: op.bytes ? new Blob([op.bytes as BlobPart]) : undefined,
+      });
+    } catch {
+      ours.delete(echo(op.pid, op.rel, op.hash));
+      return "offline";
+    }
+    offline = false;
+    if (res.ok || (res.status === 404 && !op.bytes)) {
+      heard(op.pid, op.rel, op.hash);
+      return "ok";
+    }
+    ours.delete(echo(op.pid, op.rel, op.hash));
+    if (res.status === 412) return "conflict";
+    if (res.status === 401) return "signed-out";
+    // Busy or broken for now: try again. Anything else won't change by trying.
+    if (res.status >= 500 || res.status === 408 || res.status === 429) {
+      failing = `The server answered ${res.status}.`;
+      return "retry";
+    }
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    return { refused: body?.error ?? `The server refused it (${res.status}).` };
+  }
+
+  async function pump(key: string) {
+    const slot = slots.get(key);
+    if (!slot || slot.busy) return;
+    slot.busy = true;
+    showStatus();
+    while (slot.next) {
+      const op = slot.next;
+      slot.next = null;
+      const outcome = await send(op);
+      if (outcome === "ok") {
+        failing = null;
+        retryDelay = 2000;
+        op.waiters.forEach((w) => w.resolve());
+        continue;
+      }
+      if (outcome === "offline" || outcome === "retry") {
+        if (outcome === "offline") offline = true;
+        // Kept to send later; whoever was waiting can carry on.
+        op.waiters.forEach((w) => w.resolve());
+        slot.next ??= { ...op, waiters: [] };
+        scheduleRetry();
+        break;
+      }
+      // Not saved, and nothing queued after it may go out on top of it.
+      const dropped = [op, ...(slot.next ? [slot.next] : [])];
+      slot.next = null;
+      const message =
+        outcome === "conflict" ? `${op.rel} was changed somewhere else` : outcome === "signed-out" ? "Signed out" : `Couldn't save ${op.rel}: ${outcome.refused}`;
+      dropped.forEach((d) => d.waiters.forEach((w) => w.reject(new Error(message))));
+      if (outcome === "conflict") await conflicted(op.pid, op.rel);
+      else if (outcome === "signed-out") {
+        useCloudAuth.getState().handleUnauthorized();
+        await tell("You were signed out, so your last change wasn't saved. Sign in again to keep editing this home.");
+      } else await tell(message);
+    }
+    slot.busy = false;
+    if (!slot.next) slots.delete(key);
+    showStatus();
+  }
+
+  function save(pid: string, rel: string, bytes: Uint8Array | null): Promise<void> {
+    return (async () => {
+      const hash = bytes ? await sha256(bytes) : null;
+      const key = slotKey(pid, rel);
+      let slot = slots.get(key);
+      if (!slot) slots.set(key, (slot = { busy: false, next: null }));
+      // Offline (a save already failed and waits to try again), this one
+      // joins the queue and the caller carries on; it goes out when back.
+      const later = offline && retryTimer !== null;
+      const done = new Promise<void>((resolve, reject) => {
+        const waiter = later ? { resolve() {}, reject() {} } : { resolve, reject };
+        if (later) resolve();
+        if (slot.next) Object.assign(slot.next, { bytes, hash, waiters: [...slot.next.waiters, waiter] });
+        else slot.next = { pid, rel, bytes, hash, waiters: [waiter] };
+      });
+      if (!slot.busy && !later) void pump(key);
+      showStatus();
+      return done;
+    })();
+  }
+
+  // Someone else saved first: keep theirs, load it, and say so.
+  async function conflicted(pid: string, rel: string) {
+    known(pid).delete(rel);
+    if (pid !== currentId) return;
+    announce(rel);
+    await tell(CHANGED_ELSEWHERE);
+  }
+
+  // --- Following changes made elsewhere ---------------------------------------
+
+  let changes: EventSource | null = null;
+
+  // A change from elsewhere: reload it. If this tab has a save of that file
+  // still to send, the other one won (it was first); this one is dropped.
+  function changedElsewhere(pid: string, rel: string, hash: string | null) {
+    const slot = slots.get(slotKey(pid, rel));
+    const pending = slot?.next;
+    if (slot && pending) {
+      slot.next = null;
+      pending.waiters.forEach((w) => w.reject(new Error(`${rel} was changed somewhere else`)));
+      if (!slot.busy) slots.delete(slotKey(pid, rel));
+      showStatus();
+      void tell(CHANGED_ELSEWHERE);
+    }
+    heard(pid, rel, hash);
+    announce(rel);
+  }
+
+  // What the server has now, compared with what this tab heard: after a lost
+  // connection, changes made meanwhile are loaded. The first time (opening
+  // the home) it only learns the files it hasn't read yet.
+  const caughtUp = new Set<string>();
+  async function catchUp(pid: string) {
+    const res = await fetch(`${base}/api/v1/projects/${encodeURIComponent(pid)}/manifest`, { credentials: "include", cache: "no-store" }).catch(() => null);
+    if (!res?.ok || pid !== currentId) return;
+    const { files } = (await res.json()) as { files: Record<string, string> };
+    const mine = known(pid);
+    if (!caughtUp.has(pid)) {
+      caughtUp.add(pid);
+      for (const [rel, hash] of Object.entries(files)) if (!mine.has(rel)) mine.set(rel, hash);
+      return;
+    }
+    for (const [rel, hash] of Object.entries(files)) if (mine.get(rel) !== hash) changedElsewhere(pid, rel, hash);
+    for (const rel of [...mine.keys()]) if (!(rel in files)) changedElsewhere(pid, rel, null);
+  }
+
   const watch = (id: string | null) => {
     changes?.close();
     changes = null;
-    hashes.clear();
+    // Forget other homes, unless they still have saves to send.
+    for (const pid of serverHashes.keys()) {
+      if (pid === id || [...slots.values()].some((s) => s.next?.pid === pid)) continue;
+      serverHashes.delete(pid);
+      caughtUp.delete(pid);
+    }
     if (!id) return;
+    let lost = false;
     changes = new EventSource(`${base}/api/v1/projects/${encodeURIComponent(id)}/events`, { withCredentials: true });
+    changes.addEventListener("open", () => {
+      void catchUp(id);
+      if (lost) {
+        lost = false;
+        retryAll();
+      }
+    });
+    changes.addEventListener("error", () => {
+      lost = true;
+    });
     changes.addEventListener("file-changed", (e) => {
       const { path, hash } = JSON.parse((e as MessageEvent<string>).data) as { path: string; hash: string | null };
-      if (hashes.get(path) === (hash ?? undefined)) return;
-      hashes.delete(path);
-      announce(path);
+      if (ours.delete(echo(id, path, hash))) return;
+      if (known(id).get(path) === (hash ?? undefined)) return;
+      changedElsewhere(id, path, hash);
     });
   };
 
@@ -132,13 +369,10 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
 
   async function read(pid: string, rel: string): Promise<Response | null> {
     const res = await fetch(fileEndpoint(pid, rel), { credentials: "include", cache: "no-store" });
-    if (res.status === 404) {
-      if (pid === currentId) hashes.delete(rel);
-      return null;
-    }
+    if (res.status === 404) return null;
     if (!res.ok) throw new Error(`Failed to read ${rel} (${res.status})`);
-    const hash = etagHash(res);
-    if (pid === currentId && hash) hashes.set(rel, hash);
+    // A save of this file still on its way: the server's copy is older.
+    if (!slots.get(slotKey(pid, rel))?.next) heard(pid, rel, etagHash(res));
     return res;
   }
 
@@ -151,47 +385,8 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
     return res ? new Uint8Array(await res.arrayBuffer()) : null;
   }
 
-  // Someone else saved first: keep theirs, load it, and say so.
-  async function conflicted(pid: string, rel: string) {
-    hashes.delete(rel);
-    if (pid !== currentId) return;
-    announce(rel);
-    await tell("This home was changed somewhere else (another tab or device). The newer version is loaded; your last change wasn't saved.");
-  }
-
-  // Unknown fingerprint (a file this tab never read): saved without a check.
-  const condition = (pid: string, rel: string): Record<string, string> => {
-    const known = pid === currentId ? hashes.get(rel) : undefined;
-    return known ? { "If-Match": `"${known}"` } : {};
-  };
-
-  async function writeRaw(pid: string, rel: string, data: string | Blob | ArrayBuffer | Uint8Array): Promise<void> {
-    const bytes = await bytesOf(data);
-    const headers = condition(pid, rel);
-    // Known before the answer, so this tab's own change doesn't come back as
-    // someone else's on the change stream.
-    const hash = await sha256(bytes);
-    if (pid === currentId) hashes.set(rel, hash);
-    const res = await fetch(fileEndpoint(pid, rel), { method: "PUT", credentials: "include", headers, body: new Blob([bytes as BlobPart]) });
-    if (res.status === 412) {
-      await conflicted(pid, rel);
-      throw new Error(`${rel} was changed somewhere else`);
-    }
-    if (!res.ok) {
-      if (pid === currentId) hashes.delete(rel);
-      throw new Error(`Failed to write ${rel} (${res.status})`);
-    }
-  }
-
-  async function deleteFile(pid: string, rel: string): Promise<void> {
-    const res = await fetch(fileEndpoint(pid, rel), { method: "DELETE", credentials: "include", headers: condition(pid, rel) });
-    if (res.status === 412) {
-      await conflicted(pid, rel);
-      throw new Error(`${rel} was changed somewhere else`);
-    }
-    if (!res.ok && res.status !== 404) throw new Error(`Failed to delete ${rel} (${res.status})`);
-    if (pid === currentId) hashes.delete(rel);
-  }
+  const writeRaw = async (pid: string, rel: string, data: string | Blob | ArrayBuffer | Uint8Array) => save(pid, rel, await bytesOf(data));
+  const deleteFile = (pid: string, rel: string) => save(pid, rel, null);
 
   async function freePath(pid: string, folder: string, name: string, except?: string): Promise<string> {
     const existing = new Set(await listFiles(pid, `${folder}/`));
@@ -202,7 +397,7 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
     }
   }
 
-  // Cloud AgentFiles so in-app AI chat tools work on cloud projects too.
+  // The open home's files, for the AI tools (they run in the page for cloud homes).
   const projectArea: FileArea = {
     read: (rel) => readBytes(requireOpen(), rel),
     readText: (rel) => readText(requireOpen(), rel),
@@ -229,22 +424,20 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
       }
       return [...dirs];
     },
-    exists: async (rel) => (await listFiles(requireOpen(), rel)).includes(rel),
+    exists: async (rel) => (await listFiles(requireOpen(), rel)).some((f) => f === rel || f.startsWith(`${rel}/`)),
   };
 
-  // Phase 1 keeps library empty/minimal on cloud until Phase 2 cloud library.
-  const emptyLibraryArea: FileArea = {
-    read: async () => null,
-    readText: async () => null,
-    write: async () => {
-      throw new Error("Cloud furniture library is coming in Phase 2");
+  const libraryArea = (): FileArea => {
+    const area = library();
+    if (!area) throw new Error("The furniture library isn't available here");
+    return area;
+  };
+  const agentFiles: AgentFiles = {
+    project: projectArea,
+    get library() {
+      return libraryArea();
     },
-    listFiles: async () => [],
-    listDirs: async () => [],
-    exists: async () => false,
   };
-
-  const agentFiles: AgentFiles = { project: projectArea, library: emptyLibraryArea };
 
   return {
     kind: "cloud",
@@ -252,7 +445,6 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
     closeHome() {
       changes?.close();
       changes = null;
-      hashes.clear();
     },
 
     async listProjects(): Promise<ProjectList> {
@@ -365,32 +557,63 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
       return assetEndpoint(currentId, rel);
     },
 
+    // The library itself is this computer's (src/cloud/withCloud.ts sends
+    // listing and editing it to the local host); these copy from it.
+
     async listLibrary(): Promise<{ root: string; items: LibraryEntry[] }> {
-      return { root: "cloud-library", items: [] };
+      return { root: "", items: [] };
     },
-
     async newLibraryItem() {
-      throw new Error("Cloud furniture library is coming in Phase 2");
+      throw new Error("The library is this computer's");
     },
-
     async writeLibraryFile() {
-      throw new Error("Cloud furniture library is coming in Phase 2");
+      throw new Error("The library is this computer's");
     },
-
     libraryFileUrl() {
       return "";
     },
-
     async deleteLibraryItem() {
-      throw new Error("Cloud furniture library is coming in Phase 2");
+      throw new Error("The library is this computer's");
     },
 
-    async placeLibraryModel() {
-      throw new Error("Cloud furniture library is coming in Phase 2");
+    // Copy a library model into the home, named by content so placing the
+    // same item twice reuses the file and edited items don't clash.
+    async placeLibraryModel(id) {
+      const pid = requireOpen();
+      const data = await libraryArea().read(`${id}/model.glb`);
+      if (!data) throw new Error(`"${id}" has no model`);
+      const rel = `assets/models/${id}-${(await sha256(data)).slice(0, 8)}.glb`;
+      if (!(await listFiles(pid, rel)).includes(rel)) await writeRaw(pid, rel, data);
+      return rel;
     },
 
-    async addLibraryMaterial() {
-      throw new Error("Cloud furniture library is coming in Phase 2");
+    // Copy a library material into the home: its texture into
+    // assets/textures/ and the material into project.json under a free name.
+    async addLibraryMaterial(id) {
+      const pid = requireOpen();
+      const text = await libraryArea().readText(`${id}/item.json`);
+      if (text === null) throw new Error(`"${id}" isn't in the library`);
+      const item = JSON.parse(text);
+      if (!item.material) throw new Error(`"${id}" is not a material`);
+      const material = { ...structuredClone(item.material), libraryItem: { id, category: item.category } };
+      if (material.tile?.image) {
+        const image = await libraryArea().read(`${id}/${material.tile.image}`);
+        if (image) {
+          const rel = `assets/textures/${id}${material.tile.image.slice(material.tile.image.lastIndexOf("."))}`;
+          await writeRaw(pid, rel, image);
+          material.tile.image = rel;
+        }
+      }
+      const projectText = await readText(pid, "project.json");
+      if (projectText === null) throw new Error("not found: project.json");
+      const project = JSON.parse(projectText);
+      project.materials ??= {};
+      let name = id;
+      for (let n = 2; project.materials[name] && JSON.stringify(project.materials[name]) !== JSON.stringify(material); n++) name = `${id}-${n}`;
+      project.materials[name] = material;
+      await writeRaw(pid, "project.json", formatJson(project));
+      announce("project.json");
+      return name;
     },
 
     async exportHome(includeChats) {
@@ -424,7 +647,7 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
     },
 
     async markSavedToFile() {
-      // Cloud projects are saved continuously to S3.
+      // Cloud homes are saved as they change.
     },
 
     async trashProject(id) {
@@ -468,7 +691,7 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
     },
 
     reportUiState() {
-      // Phase 2 realtime presence will use this.
+      // Tools for cloud homes run in the page, which knows what it shows.
     },
 
     onOpenSceneRequest(cb) {
@@ -476,7 +699,7 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
     },
 
     onScreenshotRequest() {
-      // Phase 4 remote MCP will route screenshots here.
+      // Screenshots are taken by this page directly (the tools run in it).
     },
 
     versions: {
@@ -491,7 +714,7 @@ export function createCloudPlatform(apiBase: string): CloudPlatform {
         const { changed } = await apiJson<{ changed: string[] }>(`/api/v1/projects/${encodeURIComponent(pid)}/versions/${encodeURIComponent(id)}/restore`, { method: "POST" });
         // The stream would tell us too; reload now rather than wait for it.
         for (const rel of changed) {
-          hashes.delete(rel);
+          known(pid).delete(rel);
           announce(rel);
         }
       },

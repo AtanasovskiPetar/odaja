@@ -7,7 +7,7 @@
 // When a cloud server is configured (VITE_CLOUD_API_URL), signing in adds the
 // account's homes next to the local ones (src/cloud/withCloud.ts): while a
 // cloud home is open, calls go to the cloud host ("cloud").
-import type { AgentFiles } from "./agent/files";
+import type { AgentFiles, FileArea } from "./agent/files";
 import type { HomeSummary } from "./browser/homes";
 import type { StarterRoom } from "./model/defaults";
 import type { LibraryItemDoc, SceneDoc } from "./model/schema";
@@ -81,6 +81,9 @@ export interface Platform {
   placeLibraryModel(id: string): Promise<string>;
   // Add a library material (and its texture) to the open project; returns its name.
   addLibraryMaterial(id: string): Promise<string>;
+  // The local hosts: their furniture library as files, which cloud homes copy
+  // items from (src/cloud/platform.ts).
+  libraryFiles?(): FileArea;
   // The open home as a .odaja file (zip), and whether it has chats to include.
   exportHome(includeChats: boolean): Promise<Blob>;
   homeHasChats(): Promise<boolean>;
@@ -161,6 +164,29 @@ const post = <T>(url: string, body: unknown) =>
 const fileUrl = (path: string) => `/api/file?path=${encodeURIComponent(path)}`;
 const libraryFileUrl = (path: string, version?: number) => `/api/library/file?path=${encodeURIComponent(path)}${version ? `&v=${version}` : ""}`;
 
+// The companion's library folder as files, over /api/library (for cloud
+// homes, which copy items from it in the page). Items are folders named by
+// their id; the files in one are known by name (item.json, model.glb, …).
+async function libraryRead(path: string): Promise<Uint8Array | null> {
+  const res = await fetch(libraryFileUrl(path), { cache: "no-store" });
+  return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+}
+const libraryIds = async () => (await request<{ items: LibraryEntry[] }>("/api/library")).items.map((e) => e.id);
+const serverLibraryFiles: FileArea = {
+  read: libraryRead,
+  readText: async (path) => {
+    const bytes = await libraryRead(path);
+    return bytes && new TextDecoder().decode(bytes);
+  },
+  write: async (path, data) => {
+    await request(libraryFileUrl(path), { method: "PUT", body: typeof data === "string" ? data : new Blob([data as BlobPart]) });
+  },
+  // Only the items can be listed here, not the files inside one.
+  listFiles: async () => [],
+  listDirs: async (dir) => (dir ? [] : libraryIds()),
+  exists: async (path) => (path.includes("/") ? (await libraryRead(path)) !== null : (await libraryIds()).includes(path)),
+};
+
 const serverPlatform: Platform = {
   kind: "server",
   listProjects: () => request("/api/projects"),
@@ -213,6 +239,7 @@ const serverPlatform: Platform = {
   async addLibraryMaterial(id) {
     return (await post<{ name: string }>("/api/library/add-material", { id })).name;
   },
+  libraryFiles: () => serverLibraryFiles,
   async exportHome(includeChats) {
     const res = await fetch(`/api/project/export?chats=${includeChats ? 1 : 0}`, { cache: "no-store" });
     if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `couldn't save (${res.status})`);
@@ -291,7 +318,8 @@ export async function initPlatform(): Promise<void> {
   if (cloudUrl) {
     const [{ useCloudAuth }, { createCloudPlatform }, { withCloud }] = await Promise.all([import("./cloud/auth"), import("./cloud/platform"), import("./cloud/withCloud")]);
     await useCloudAuth.getState().init(cloudUrl);
-    chosen = withCloud(chosen, createCloudPlatform(cloudUrl));
+    const local = chosen;
+    chosen = withCloud(local, createCloudPlatform(cloudUrl, () => local.libraryFiles?.() ?? null));
   }
   host = chosen;
   for (const attach of early.splice(0)) attach(host);

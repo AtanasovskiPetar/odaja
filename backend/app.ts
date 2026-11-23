@@ -59,7 +59,7 @@ export function createCloudApp(deps: CloudAppDeps) {
         if (!origin) return corsOrigins[0] ?? "*";
         return isAllowedOrigin(origin, corsOrigins) ? origin : "";
       },
-      allowHeaders: ["Content-Type", "Authorization", "If-Match", "If-None-Match"],
+      allowHeaders: ["Content-Type", "Authorization", "If-Match", "If-None-Match", "x-captcha-response"],
       exposeHeaders: ["ETag"],
       allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
       credentials: true,
@@ -164,6 +164,13 @@ export function createCloudApp(deps: CloudAppDeps) {
     const prefix = c.req.query("prefix") ?? "";
     if (prefix && !safeRelPath(prefix.replace(/\/+$/, ""))) return c.json({ error: "Invalid prefix" }, 400);
     return c.json({ files: Object.keys(project.manifest).filter((rel) => rel.startsWith(prefix)) });
+  });
+
+  // Every file with its fingerprint: a tab back from a lost connection
+  // compares it with what it has, to load what changed meanwhile.
+  app.get("/api/v1/projects/:pid/manifest", requireAuth, requireProjectAccess("read"), (c) => {
+    const manifest = c.get("project").manifest;
+    return c.json({ files: Object.fromEntries(Object.entries(manifest).map(([rel, e]) => [rel, e.hash])) });
   });
 
   // Content with its fingerprint as the ETag; `If-None-Match` answers 304.

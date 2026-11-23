@@ -12,6 +12,8 @@ export interface SignInMethods {
   resetPassword: boolean;
   google: boolean;
   github: boolean;
+  // Turnstile's public key when the server checks for bots (src/cloud/turnstile.ts).
+  turnstileSiteKey?: string | null;
 }
 
 // Where links from emails and Google/GitHub bring you back: this page.
@@ -28,7 +30,8 @@ interface CloudAuthState {
   init(apiBase: string): Promise<CloudUser | null>;
   refresh(): Promise<CloudUser | null>;
   signIn(email: string, password: string): Promise<boolean>;
-  signUp(name: string, email: string, password: string): Promise<boolean>;
+  // `captcha`: a Turnstile token, when the server asks for one.
+  signUp(name: string, email: string, password: string, captcha?: string): Promise<boolean>;
   signOut(): Promise<void>;
   // What the server offers (password always; the rest when configured).
   methods: SignInMethods | null;
@@ -36,18 +39,18 @@ interface CloudAuthState {
   // (from a reset email's link, with its token).
   signInWindow: null | { mode: "sign-in" } | { mode: "new-password"; token: string };
   openSignIn(w: CloudAuthState["signInWindow"]): void;
-  emailLink(email: string): Promise<boolean>;
+  emailLink(email: string, captcha?: string): Promise<boolean>;
   social(provider: "google" | "github"): Promise<void>;
-  requestReset(email: string): Promise<boolean>;
+  requestReset(email: string, captcha?: string): Promise<boolean>;
   resetPassword(token: string, password: string): Promise<boolean>;
   handleUnauthorized(): void;
 }
 
-async function authFetch(base: string, path: string, body?: unknown) {
+async function authFetch(base: string, path: string, body?: unknown, captcha?: string) {
   const res = await fetch(`${base}/api/v1/auth${path}`, {
     method: body !== undefined ? "POST" : "GET",
     credentials: "include",
-    headers: body !== undefined ? { "Content-Type": "application/json" } : undefined,
+    headers: body !== undefined ? { "Content-Type": "application/json", ...(captcha ? { "x-captcha-response": captcha } : {}) } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
   const text = await res.text();
@@ -108,9 +111,9 @@ export const useCloudAuth = create<CloudAuthState>((set, get) => ({
     return get().refresh();
   },
 
-  async emailLink(email) {
+  async emailLink(email, captcha) {
     set({ error: null });
-    const res = await authFetch(get().apiBase, "/sign-in/magic-link", { email, callbackURL: here() });
+    const res = await authFetch(get().apiBase, "/sign-in/magic-link", { email, callbackURL: here() }, captcha);
     if (!res.ok) set({ error: message(res, "Couldn't send the link.") });
     return res.ok;
   },
@@ -123,10 +126,10 @@ export const useCloudAuth = create<CloudAuthState>((set, get) => ({
     else set({ error: message(res, `Couldn't sign in with ${provider === "google" ? "Google" : "GitHub"}.`) });
   },
 
-  async requestReset(email) {
+  async requestReset(email, captcha) {
     set({ error: null });
     // The email's link comes back here with ?token=…&reset-password.
-    const res = await authFetch(get().apiBase, "/request-password-reset", { email, redirectTo: `${here()}?reset-password` });
+    const res = await authFetch(get().apiBase, "/request-password-reset", { email, redirectTo: `${here()}?reset-password` }, captcha);
     if (!res.ok) set({ error: message(res, "Couldn't send the email.") });
     return res.ok;
   },
@@ -171,10 +174,10 @@ export const useCloudAuth = create<CloudAuthState>((set, get) => ({
     return Boolean(user);
   },
 
-  async signUp(name, email, password) {
+  async signUp(name, email, password, captcha) {
     const { apiBase } = get();
     set({ error: null });
-    const res = await authFetch(apiBase, "/sign-up/email", { name, email, password });
+    const res = await authFetch(apiBase, "/sign-up/email", { name, email, password }, captcha);
     if (!res.ok) {
       set({ error: String(res.json?.message ?? res.json?.error ?? "Could not create account.") });
       return false;

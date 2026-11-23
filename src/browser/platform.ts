@@ -388,6 +388,8 @@ export function createBrowserPlatform(): Platform {
       remove: (id) => opfs.remove(inHome(chatPath(id))),
     },
 
+    libraryFiles: () => agentFiles.library,
+
     localTools: {
       files: () => (open ? agentFiles : null),
       openScene: (path) => openSceneListeners.forEach((cb) => cb(path)),

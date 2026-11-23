@@ -47,7 +47,7 @@ part (accounts and cloud homes for one person) is being built on the
 - **Version history:** a version is a saved list of paths and contents, so it costs only the files that changed. Versions are recorded automatically every few minutes of editing, **before each AI reply** ("Before: Furnish the living room"), before a restore, plus named versions ("Option A"). A History panel to look at and restore any of them. Old versions are thinned (all of the last day, hourly for a week, daily after that); how far back is kept depends on the plan. Content no version uses any more is cleaned up.
 - **One person editing, with a safety check:** every save says which content it replaces (`If-Match` with the file's fingerprint). If another tab, device or AI turn saved first, the save is refused, nothing is lost, and the app reloads the newer file and says so. Open tabs are told about changes and reload them.
 - **`.odaja` files stay** for export, backup and moving homes between the website, the companion and other accounts.
-- **Visitors without an account** keep working in browser storage, as today. After signing in: "Move this home to your account".
+- **Visitors without an account** keep working in browser storage, as today. After signing in: "Copy to your account" (the browser's copy stays until they delete it, so nothing is lost if something goes wrong).
 
 **Sharing**
 - **What:** a whole home, or **one scene** (one layout option).
@@ -220,11 +220,12 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Early-supporter page live.
 - Done when: the domain is registered, the host is chosen, the licence is changed, and each spike works or has a replacement. Measurements and pricing notes from this phase are kept outside the repo.
 
-**1. Accounts and cloud homes, one person** (started on `feat/cloud-backend`)
+**1. Accounts and cloud homes, one person** (done on `feat/cloud-backend`; what was checked is in [cloud-platform.md](cloud-platform.md))
 - The server: Hono, Postgres with Drizzle, S3 storage by content hash, `compose.yml` for development.
 - Better Auth: email and password, email links, Google and GitHub, each on when configured; email verification and password reset when email is set up; rate limits; Turnstile on sign-up.
-- Signing in from the app, with no login wall: cloud homes in the home list next to local ones; new cloud home; "Move this home to your account"; `.odaja` import and export for cloud homes.
-- Saving with `If-Match`, versions (automatic, before AI, named, restore), the History panel, live reload between tabs, the Saved / Saving / Offline status.
+- Signing in from the app, with no login wall: cloud homes in the home list next to local ones; new cloud home; "Copy to your account"; `.odaja` import and export for cloud homes.
+- The furniture library stays the computer's (browser storage or the companion's folder); placing an item copies its files into the home, so a cloud home is complete everywhere. A library kept in the account comes with teams (the team library).
+- Saving with `If-Match`, versions (automatic, before AI, named, restore), the History panel, live reload between tabs, the Saved / Saving / Offline status (changes wait in the tab while offline and go out when it's back).
 - Thinning old versions and cleaning up unused content.
 - Done when: a home edited on one computer is there on another, a second tab can't overwrite it silently, any version can be restored, and the website without an account behaves exactly as before.
 

@@ -19,11 +19,17 @@ This document captures what has been built so far for Odaja's cloud platform, ho
   - email and password, always (a self-hosted server may have nothing else); minimum 8 characters; optional leaked-password check (`AUTH_CHECK_LEAKED_PASSWORDS`);
   - email links and password resets, with Resend (`RESEND_API_KEY`, `EMAIL_FROM`; `backend/email.ts`); in development without it the links are written to the backend's log; email verification when email is set up;
   - Google and GitHub (`GOOGLE_CLIENT_ID`/`SECRET`, `GITHUB_CLIENT_ID`/`SECRET`);
-  - rate limits on (Better Auth's, stricter for sign-in and sign-up). Turnstile is still to do.
+  - rate limits on (Better Auth's, stricter for sign-in and sign-up);
+  - Cloudflare Turnstile (`TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET_KEY`): making an account, asking for a sign-in link and asking for a password reset need a Turnstile token (Better Auth's `captcha` plugin, header `x-captcha-response`). The sign-in window loads the widget (`src/cloud/turnstile.ts`), invisible unless Cloudflare wants a tick. Password sign-in and Google/GitHub don't ask. For development, Cloudflare's test keys always pass (`.env.example`).
 - **Frontend integration (`src/cloud/platform.ts`, `src/cloud/withCloud.ts`, `src/platform.ts`)**:
   - Implements Odaja's existing `Platform` interface (`kind: "cloud"`), leaving local companion (`server/`) and browser OPFS (`src/browser/`) untouched.
   - **The cloud is an account, not another app**: with `VITE_CLOUD_API_URL` set (at build time), `withCloud()` wraps the local host. The app opens as always (no login wall); signing in (the sidebar's account button, or the welcome) adds the account's homes to the same lists, marked `cloud:<id>`. Opening a home picks where its files live; signing out goes back to the local home. New homes can go to the account; "Copy to your account" copies the open local home.
-  - The client remembers each file's hash, sends it with every save, and reloads on `412` or on a change event. History (home menu → History…) lists, names and restores versions; the chat keeps a version before each AI reply.
+  - **Saving (`src/cloud/platform.ts`)**: the client remembers each file's hash as the server last told it (reads, saves, change events) and sends it with every save. Saves of one file go out one at a time, only the latest content, so quick edits never race each other (25 quick edits: 2 requests). A `412`, or a change event for a file with a save still waiting, means someone else was first: theirs is loaded and the app says so.
+  - **Saved / Saving… / Offline / Not saved** (`src/cloud/saveStatus.ts`) next to the home's name. Without a connection, changes wait in the tab and go out when it's back (retrying with backoff, on the browser's `online` event, and when the change stream reconnects); closing the tab then asks first. After a lost connection the tab compares `GET /projects/:pid/manifest` with what it has and loads what changed meanwhile. A refused save (a 4xx other than 408/429) isn't retried; the app says why.
+  - **The furniture library is the computer's**: in an account home, the library is still the website's (browser storage) or the companion's folder (`Platform.libraryFiles()`). Placing an item copies its model or texture into the home (`assets/…`), so the home is complete on any computer; the AI tools see the same library. A library kept in the account is for later.
+  - **`.odaja` files**: exporting an account home packs its files; opening a file while an account home is open makes a new home in the account (it never replaces the browser's home).
+  - History (home menu → History…) lists, names and restores versions; the chat keeps a version before each AI reply.
+  - **The website's Content Security Policy** (`scripts/webBuild.ts`): a build with `VITE_CLOUD_API_URL` also allows that server (API, images, models) and Turnstile's script and frame; without it the policy is as before.
 ---
 
 ## 2. Files Added / Changed So Far
@@ -41,8 +47,8 @@ This document captures what has been built so far for Odaja's cloud platform, ho
 | `backend/homes.ts` | Saving with `If-Match`, versions, restore, thinning, cleaning up unused content (tests in `homes.test.ts`) |
 | `backend/events.ts` | Change events for open tabs |
 | `backend/email.ts` | Resend, or the log without it |
-| `backend/auth.ts` | `better-auth` config: sign-in methods by configuration, rolling 30-day sessions, rate limits, dev localhost `trustedOrigins` |
-| `backend/app.ts` | Hono API (`/api/v1/health`, `/config`, `/auth/*`, `GET/POST/PATCH/DELETE /projects`, `GET /files`, `GET/PUT/DELETE /file` with `If-Match`, `GET /asset` (304s, opt-in `S3_PRESIGN_ASSETS=true`), `GET /events`, `GET/POST /versions`, `POST /versions/:vid/restore`) |
+| `backend/auth.ts` | `better-auth` config: sign-in methods by configuration, Turnstile, rolling 30-day sessions, rate limits, dev localhost `trustedOrigins` |
+| `backend/app.ts` | Hono API (`/api/v1/health`, `/config`, `/auth/*`, `GET/POST/PATCH/DELETE /projects`, `GET /files`, `GET /manifest` (every file's hash), `GET/PUT/DELETE /file` with `If-Match`, `GET /asset` (304s, opt-in `S3_PRESIGN_ASSETS=true`), `GET /events`, `GET/POST /versions`, `POST /versions/:vid/restore`) |
 | `backend/entries/bun.ts` | `Bun.serve` entrypoint (`:8787`) and the hourly tidying |
 
 ### Frontend Cloud & UI System
@@ -51,7 +57,9 @@ This document captures what has been built so far for Odaja's cloud platform, ho
 | `src/platform.ts` | `kind: "cloud"`, `versions` and `cloud` on the interface; the cloud only when `VITE_CLOUD_API_URL` is set |
 | `src/cloud/withCloud.ts` | Local homes and the account's homes side by side |
 | `src/cloud/auth.ts` | `useCloudAuth` Zustand store with background session refresh |
-| `src/cloud/platform.ts` | Cloud `Platform` implementation (projects, scenes, shells, files, chats, `.odaja` zip import/export, sample flat, in-app AI tools) |
+| `src/cloud/platform.ts` | Cloud `Platform` implementation (projects, scenes, shells, files, chats, `.odaja` zip import/export, sample flat, in-app AI tools): saving one file at a time with `If-Match`, waiting offline, catching up after a lost connection, copying library items in |
+| `src/cloud/saveStatus.ts` | The save status shown next to the home's name |
+| `src/cloud/turnstile.ts` | Loading and running the Turnstile widget |
 | `src/ui/theme.css` | Tailwind CSS v4 entry + `@layer legacy` isolation + Odaja `@theme` tokens |
 | `src/ui/primitives/Button.tsx` | Reusable `default` / `primary` / `ghost` / `danger` button |
 | `src/ui/primitives/Input.tsx` | Labeled `TextField` with password Show/Hide toggle |
@@ -84,20 +92,21 @@ bun run dev
 
 ---
 
-## 4. Next Up — Better Projects & Scenes Management
+## 4. Phase 1: done
 
-### Projects Dashboard (`All Homes` view)
-- Full Tailwind v4 modal/screen reachable from the sidebar **Home** bar (`All homes…`):
-  - Search & sort projects (recently updated, name).
-  - Project cards/rows with **Open**, inline **Rename**, **Duplicate**, **Export `.odaja`**, and **Delete** (with confirmation).
-  - Top-level **+ New home** and **Import `.odaja`** buttons.
+What phase 1 of [cloud-plan.md](cloud-plan.md) asks for is built and was checked end to end (Postgres and `ferdzo/fs` in Docker, the website and the companion, a production build with its Content Security Policy):
 
-### Scenes Panel Refresh
-- Migrate `ScenesSection` to Tailwind v4 + portal `Popover`:
-  - Clean scene rows with active indicator, custom-walls badge (when using `shells/*.json`), and a `···` portal menu for **Rename**, **Duplicate (same walls)**, **Duplicate (own walls)**, and **Delete** — eliminating clipped inline buttons.
+- signing up through Turnstile, password sign-in, signing out back to the local home;
+- copying a home to the account, "Saved" next to its name, 25 quick edits saved in order without a false conflict;
+- the server stopped: "Offline", edits kept, saved by themselves when it was back;
+- another device saving while this tab's save waited: theirs loaded, this tab said so, nothing overwritten;
+- History: naming, restoring, editing after a restore;
+- library items placed in an account home from the website's and the companion's library, and seen by the AI tools;
+- exporting an account home and opening the file as a new account home;
+- the website without an account: as before (no status, the browser's library, the "not saved to a file" dot).
 
 ---
 
 ## 5. Next
 
-See the phases in [cloud-plan.md](cloud-plan.md). Still open for phase 1: Turnstile on sign-up, the Saved / Saving / Offline status, the cloud furniture library, and Postgres `LISTEN/NOTIFY` for change events once there's more than one server. Then: tools on the server for cloud homes (`ctx.files()` over the content store), the AI proxy with credits, sharing (viewer links, Make a copy), payments, remote MCP, teams. Real-time editing comes later, when people ask for it.
+See the phases in [cloud-plan.md](cloud-plan.md). Phase 2 (deployed) needs Postgres `LISTEN/NOTIFY` for change events once there's more than one server. Then: tools on the server for cloud homes (`ctx.files()` over the content store), the AI proxy with credits, sharing (viewer links, Make a copy), payments, remote MCP, teams. Real-time editing comes later, when people ask for it.

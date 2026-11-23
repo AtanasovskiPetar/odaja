@@ -1,10 +1,12 @@
 // Signing in (docs/cloud-plan.md, "Signing in"): email and password always
 // (a self-hosted server may have nothing else); email links, Google and GitHub
 // when they're configured. Without an email service, links and password
-// resets are written to the server's log (development only).
+// resets are written to the server's log (development only). With Turnstile
+// keys, everything that makes an account or sends an email asks for a
+// Turnstile token first (header x-captcha-response).
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { haveIBeenPwned, magicLink } from "better-auth/plugins";
+import { captcha, haveIBeenPwned, magicLink } from "better-auth/plugins";
 import type { CloudDb } from "./db/index";
 import * as schema from "./db/schema";
 import type { Mailer } from "./email";
@@ -24,7 +26,13 @@ export interface AuthConfig {
   // Refuse passwords known from data breaches (asks the Have I Been Pwned
   // range API with the first 5 characters of the password's SHA-1 only).
   checkLeakedPasswords?: boolean;
+  // Cloudflare Turnstile (https://developers.cloudflare.com/turnstile/).
+  turnstile?: { siteKey: string; secretKey: string };
 }
+
+// What makes an account or sends an email: guarded by Turnstile when it's on.
+// Password sign-in isn't (rate limits cover it), nor Google and GitHub.
+export const TURNSTILE_ENDPOINTS = ["/sign-up/email", "/sign-in/magic-link", "/request-password-reset"];
 
 export interface SignInMethods {
   password: true;
@@ -32,6 +40,8 @@ export interface SignInMethods {
   resetPassword: boolean;
   google: boolean;
   github: boolean;
+  // The public site key when Turnstile is on.
+  turnstileSiteKey: string | null;
 }
 
 const dev = process.env.NODE_ENV !== "production";
@@ -39,7 +49,14 @@ const dev = process.env.NODE_ENV !== "production";
 export function signInMethods(cfg: AuthConfig): SignInMethods {
   // Links in the log are only useful to whoever reads the log: development.
   const email = cfg.mailer.configured || dev;
-  return { password: true, emailLink: email, resetPassword: email, google: Boolean(cfg.google), github: Boolean(cfg.github) };
+  return {
+    password: true,
+    emailLink: email,
+    resetPassword: email,
+    google: Boolean(cfg.google),
+    github: Boolean(cfg.github),
+    turnstileSiteKey: cfg.turnstile?.siteKey ?? null,
+  };
 }
 
 export function createAuth(db: CloudDb, cfg: AuthConfig) {
@@ -106,6 +123,7 @@ export function createAuth(db: CloudDb, cfg: AuthConfig) {
             }),
           ]
         : []),
+      ...(cfg.turnstile ? [captcha({ provider: "cloudflare-turnstile", secretKey: cfg.turnstile.secretKey, endpoints: TURNSTILE_ENDPOINTS })] : []),
       ...(cfg.checkLeakedPasswords ? [haveIBeenPwned({ customPasswordCompromisedMessage: "This password has appeared in a data breach. Please choose another." })] : []),
     ],
     // On in development too, so it's tried before it matters. Better Auth's

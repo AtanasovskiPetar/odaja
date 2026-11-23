@@ -624,7 +624,8 @@ html.theme-changing * {
   color: var(--ink);
 }
 
-.add-button.active {
+.add-button.active,
+.add-button.active:hover:not(:disabled) {
   border-color: var(--ink);
   background: var(--ink);
   color: var(--sheet);
