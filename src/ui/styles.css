@@ -2042,6 +2042,15 @@ button.link.danger {
   border-top: 1px solid var(--line);
 }
 
+.welcome-more .account-homes {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.welcome-more .account-homes > span {
+  font-size: 11px;
+  color: var(--muted);
+}
 .welcome-more .open-file {
   margin-bottom: 10px;
 }

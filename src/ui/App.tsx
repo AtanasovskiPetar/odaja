@@ -6,8 +6,8 @@ import { objectLights, type SceneObject } from "../model/schema";
 import { duplicateParts, mirrorParts, removeParts } from "../model/partOps";
 import { useOdaja, type Tool } from "../store";
 import { platform } from "../platform";
-import { useCloudAuth } from "../cloud/auth";
-import { CloudAccountFooter, CloudAuthScreen } from "./cloud/AuthGate";
+import { CloudAccountFooter, SignInWindow } from "./cloud/AuthGate";
+import { HistoryDialog } from "./cloud/HistoryDialog";
 import { Viewport } from "../three/Viewport";
 import { PreparingIndicator } from "../three/render/ShaderGate";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
@@ -452,7 +452,7 @@ function Sidebar() {
         </>
       )}
 
-      {platform.kind === "cloud" && <CloudAccountFooter />}
+      {platform.cloud && <CloudAccountFooter />}
     </aside>
   );
 }
@@ -951,6 +951,7 @@ function Dialogs() {
   if (dialog?.kind === "new-home") return <NewHomeDialog />;
   if (dialog?.kind === "open-folder") return <OpenFolderDialog />;
   if (dialog?.kind === "manage-homes") return <ManageHomesDialog />;
+  if (dialog?.kind === "history") return <HistoryDialog />;
   if (dialog?.kind === "add-to-library") return <AddToLibraryDialog items={dialog.items} />;
   return null;
 }
@@ -994,17 +995,21 @@ export function App() {
   const presenting = useOdaja((s) => s.presenting);
   const editingStructure = useOdaja((s) => s.mode === "structure" && s.viewMode === "plan");
   const measuring3D = useOdaja((s) => s.measuring && s.viewMode === "3d");
-  const cloudAuthStatus = useCloudAuth((s) => s.status);
-  const needsCloudAuth = platform.kind === "cloud" && cloudAuthStatus !== "signed-in";
   useEffect(() => {
-    if (!needsCloudAuth) load();
-  }, [load, needsCloudAuth]);
+    load();
+  }, [load]);
   useShortcuts();
 
-  if (needsCloudAuth) return <CloudAuthScreen />;
   if (status === "loading") return null;
-  if (status === "start") return <Welcome />;
+  if (status === "start") return (
+    <>
+      <Welcome />
+      <SignInWindow />
+    </>
+  );
   return (
+    <>
+    <SignInWindow />
     <div className={`app${presenting ? " presenting" : ""}`}>
       {!presenting && <Sidebar />}
       <main className={`viewport ${drop.over ? "drop-over" : ""}`} {...drop.handlers}>
@@ -1042,5 +1047,6 @@ export function App() {
       {!presenting && chatOpen && <ChatPanel />}
       {!presenting && <Dialogs />}
     </div>
+    </>
   );
 }

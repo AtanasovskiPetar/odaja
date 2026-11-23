@@ -1,6 +1,7 @@
 // The home's name in the sidebar opens the home menu: switch homes, manage all
 // homes, create a new home, import/export .odaja files, or export an image.
 import { useEffect, useRef, useState } from "react";
+import { useCloudAuth, useCloudSignedIn } from "../cloud/auth";
 import { platform } from "../platform";
 import { useOdaja } from "../store";
 import { pickHomeFile, requestOpenHome, saveHome } from "./homeFileActions";
@@ -31,6 +32,8 @@ export function HomeMenu() {
   const dir = useOdaja((s) => s.projectDir);
   const unsaved = useOdaja((s) => s.unsavedToFile);
   const projects = useOdaja((s) => s.projects);
+  const browserHome = useOdaja((s) => s.homes?.current ?? null);
+  const signedIn = useCloudSignedIn();
   const others = projects.filter((p) => p.dir !== dir).slice(0, 5);
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -47,6 +50,16 @@ export function HomeMenu() {
   };
   const web = platform.kind === "browser";
   const cloud = platform.kind === "cloud";
+  // The website keeps one home; with an account there are others to list.
+  const listsHomes = !web || signedIn;
+  const copyToAccount = async () => {
+    if (!platform.cloud?.signedIn()) return useCloudAuth.getState().openSignIn({ mode: "sign-in" });
+    await useOdaja
+      .getState()
+      .copyHomeToCloud()
+      .then(() => useOdaja.getState().setNotice("The home is in your account now. The copy you had stays where it was."))
+      .catch((err) => useOdaja.getState().setNotice(`Couldn't copy it: ${(err as Error).message}`));
+  };
 
   if (renaming) {
     return (
@@ -75,7 +88,7 @@ export function HomeMenu() {
           setOpen(false);
           setRenaming(true);
         }}
-        title={`${web ? (unsaved ? "Changes not saved to a file yet" : "Kept in this browser") : cloud ? "Cloud project" : (dir ?? "")} · double-click to rename`}
+        title={`${web ? (unsaved ? "Changes not saved to a file yet" : "Kept in this browser") : cloud ? "In your account" : (dir ?? "")} · double-click to rename`}
         aria-haspopup="menu"
         aria-expanded={open}
         className={`w-full flex items-center justify-between gap-1.5 rounded-[7px] border px-2 py-1 text-left text-xs font-medium text-ink cursor-pointer transition-colors ${
@@ -91,7 +104,7 @@ export function HomeMenu() {
 
       <Popover open={open} onClose={() => setOpen(false)} anchorRef={btnRef} align="start" width={248}>
         <div className="flex flex-col gap-0.5">
-          {!web && (
+          {listsHomes && (
             <button
               type="button"
               role="menuitem"
@@ -115,7 +128,7 @@ export function HomeMenu() {
             <kbd className="text-[10px] text-muted font-sans">{key("O")}</kbd>
           </button>
 
-          {!web && others.length > 0 && (
+          {listsHomes && (others.length > 0 || (cloud && browserHome)) && (
             <>
               <div className="mt-1.5 mb-0.5 px-2 text-[10px] font-semibold uppercase tracking-wider text-muted">
                 Recent homes
@@ -126,12 +139,19 @@ export function HomeMenu() {
                   role="menuitem"
                   key={p.dir}
                   onClick={run(() => openOther(p.dir))}
-                  title={cloud ? p.name : p.dir}
+                  title={p.cloud ? `${p.name} (in your account)` : p.dir}
                   className={itemClass}
                 >
                   <span className="truncate">{p.name}</span>
+                  {p.cloud && <span className="text-[10px] text-muted">account</span>}
                 </button>
               ))}
+              {cloud && browserHome && (
+                <button type="button" role="menuitem" onClick={run(() => openOther("current"))} className={itemClass}>
+                  <span className="truncate">{browserHome.name}</span>
+                  <span className="text-[10px] text-muted">this browser</span>
+                </button>
+              )}
             </>
           )}
 
@@ -151,6 +171,16 @@ export function HomeMenu() {
           <button type="button" role="menuitem" onClick={run(() => setRenaming(true))} className={itemClass}>
             <span>Rename home…</span>
           </button>
+          {platform.versions && (
+            <button type="button" role="menuitem" onClick={run(() => useOdaja.getState().openDialog({ kind: "history" }))} className={itemClass}>
+              <span>History…</span>
+            </button>
+          )}
+          {platform.cloud && !cloud && (
+            <button type="button" role="menuitem" onClick={run(copyToAccount)} className={itemClass}>
+              <span>Copy to your account</span>
+            </button>
+          )}
           <button type="button" role="menuitem" onClick={run(() => saveHome())} className={itemClass}>
             <span>Export .odaja file</span>
             <kbd className="text-[10px] text-muted font-sans">{key("S")}</kbd>

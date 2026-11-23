@@ -4,6 +4,7 @@
 // replaces the one in the browser, so the dialog asks first.
 import { useState, type FormEvent } from "react";
 import { readSettings } from "../agent/chat/settings";
+import { useCloudSignedIn } from "../cloud/auth";
 import { platform } from "../platform";
 import { useOdaja } from "../store";
 import { useChat } from "./chat/chatStore";
@@ -110,8 +111,12 @@ export function NewHomeForm({ initial, onDone, onCancel }: { initial: Start; onD
   const applyProject = useOdaja((s) => s.applyProject);
   const root = useOdaja((s) => s.projectsRoot);
   const sampleCopied = useOdaja((s) => s.sampleCopied);
+  // Signed in to the cloud: the new home can go to the account instead.
+  const canCloud = useCloudSignedIn();
+  const [inCloud, setInCloud] = useState(canCloud);
+  const toCloud = canCloud && inCloud;
   // On the website a new home replaces the open one: ask first if that loses changes.
-  const replacing = useOdaja((s) => platform.kind === "browser" && s.status === "project");
+  const replacing = useOdaja((s) => !toCloud && platform.kind === "browser" && s.status === "project");
   const losesChanges = useOdaja((s) => replacing && s.unsavedToFile);
   const startDraft = useChat((s) => s.startDraft);
   const [start, setStart] = useState<Start>(initial);
@@ -142,7 +147,7 @@ export function NewHomeForm({ initial, onDone, onCancel }: { initial: Start; onD
         await openSample(freshSample);
       } else {
         const room = { width: Number(width), depth: Number(depth), height: Number(height) };
-        await createProject(name, start === "room" ? room : undefined);
+        await createProject(name, start === "room" ? room : undefined, toCloud);
         if (start === "plan" && plan) {
           const { underlay, blob } = await savePlanFile(plan);
           applyProject((doc) => ({ ...doc, underlay }));
@@ -193,6 +198,16 @@ export function NewHomeForm({ initial, onDone, onCancel }: { initial: Start; onD
         {option("plan", <PlanGlyph />, "From a floor plan", "A photo or PDF of the plan. It sits underneath, for you or the chat to draw the walls over it.")}
         {option("empty", <BlankGlyph />, "A blank sheet", "No walls yet. Draw them yourself, or describe them to the chat.")}
       </div>
+
+      {start !== "sample" && canCloud && (
+        <div className="field">
+          <span>Keep it</span>
+          <div className="flex gap-1 p-1 rounded-[8px] bg-well">
+            <button type="button" className={`h-7 flex-1 rounded-[6px] text-xs font-medium border-0 cursor-pointer ${toCloud ? "bg-card text-ink shadow-card" : "bg-transparent text-ink-2 hover:text-ink"}`} onClick={() => setInCloud(true)}>In your account</button>
+            <button type="button" className={`h-7 flex-1 rounded-[6px] text-xs font-medium border-0 cursor-pointer ${!toCloud ? "bg-card text-ink shadow-card" : "bg-transparent text-ink-2 hover:text-ink"}`} onClick={() => setInCloud(false)}>{web ? "In this browser" : "In a folder"}</button>
+          </div>
+        </div>
+      )}
 
       {start !== "sample" && (
         <label className="field">

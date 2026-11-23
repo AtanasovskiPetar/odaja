@@ -1,6 +1,5 @@
 import { useRef, useState, type FormEvent } from "react";
 import { useCloudAuth } from "../../cloud/auth";
-import { useOdaja } from "../../store";
 import { LogoMark } from "../icons";
 import { Button } from "../primitives/Button";
 import { TextField } from "../primitives/Input";
@@ -20,116 +19,150 @@ function formatExpiry(iso: string | null): string | null {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-export function CloudAuthScreen() {
-  const status = useCloudAuth((s) => s.status);
-  const error = useCloudAuth((s) => s.error);
-  const signIn = useCloudAuth((s) => s.signIn);
-  const signUp = useCloudAuth((s) => s.signUp);
-  const [mode, setMode] = useState<"signin" | "signup">("signin");
+// The sign-in window, opened from the sidebar's account button (or when a
+// session runs out). Nothing in the app needs it: local homes work without.
+export function SignInWindow() {
+  const win = useCloudAuth((s) => s.signInWindow);
+  if (!win) return null;
+  return <SignInForm key={win.mode} newPasswordToken={win.mode === "new-password" ? win.token : null} />;
+}
+
+type Mode = "signin" | "signup" | "forgot" | "sent-link" | "sent-reset" | "new-password" | "changed";
+
+function SignInForm({ newPasswordToken }: { newPasswordToken: string | null }) {
+  const auth = useCloudAuth();
+  const methods = auth.methods;
+  const [mode, setMode] = useState<Mode>(newPasswordToken ? "new-password" : "signin");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const close = () => auth.openSignIn(null);
 
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault();
+  const run = async (action: () => Promise<unknown>) => {
     setBusy(true);
     try {
-      const ok =
-        mode === "signin"
-          ? await signIn(email.trim(), password)
-          : await signUp(name.trim() || email.split("@")[0] || "Designer", email.trim(), password);
-      if (ok) await useOdaja.getState().load();
+      await action();
     } finally {
       setBusy(false);
     }
   };
 
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      if (mode === "signin") await auth.signIn(email.trim(), password);
+      else if (mode === "signup") await auth.signUp(name.trim() || email.split("@")[0] || "Designer", email.trim(), password);
+      else if (mode === "forgot") {
+        if (await auth.requestReset(email.trim())) setMode("sent-reset");
+      } else if (mode === "new-password" && newPasswordToken) {
+        if (await auth.resetPassword(newPasswordToken, password)) setMode("changed");
+      }
+    });
+  };
+
+  const emailLink = () =>
+    run(async () => {
+      if (!email.trim()) return useCloudAuth.setState({ error: "Enter your email first." });
+      if (await auth.emailLink(email.trim())) setMode("sent-link");
+    });
+
+  const title = { signin: "Sign in", signup: "Create an account", forgot: "Reset your password", "sent-link": "Check your email", "sent-reset": "Check your email", "new-password": "Choose a new password", changed: "Password changed" }[mode];
+
   return (
-    <div className="min-h-screen flex items-center justify-center p-6 bg-paper text-ink">
-      <div className="w-full max-w-[390px] rounded-[14px] bg-card p-7 shadow-dialog border border-line flex flex-col gap-5">
-        <div className="flex items-center gap-3">
-          <LogoMark />
-          <div>
-            <h1 className="font-serif text-[28px] font-normal leading-none tracking-tight m-0 text-ink">
-              Odaja
-            </h1>
-            <p className="mt-1 mb-0 text-xs text-muted">Cloud studio for your 3D homes</p>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 backdrop-blur-[2px] p-4" onMouseDown={(e) => e.target === e.currentTarget && close()}>
+      <div role="dialog" aria-label={title} className="w-full max-w-[390px] rounded-[14px] bg-card p-7 shadow-dialog border border-line flex flex-col gap-5 text-ink">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <LogoMark />
+            <div>
+              <h1 className="font-serif text-[26px] font-normal leading-none tracking-tight m-0 text-ink">{title}</h1>
+              <p className="mt-1 mb-0 text-xs text-muted">Your homes in your Odaja account, on any computer.</p>
+            </div>
           </div>
+          <button type="button" onClick={close} aria-label="Close" className="border-0 bg-transparent text-muted hover:text-ink cursor-pointer text-lg leading-none">×</button>
         </div>
 
-        <div className="grid grid-cols-2 gap-1 p-1 rounded-[8px] bg-well" role="tablist">
-          {(["signin", "signup"] as const).map((tab) => {
-            const active = mode === tab;
-            return (
+        {(mode === "signin" || mode === "signup") && (
+          <div className="grid grid-cols-2 gap-1 p-1 rounded-[8px] bg-well" role="tablist">
+            {(["signin", "signup"] as const).map((tab) => (
               <button
                 key={tab}
                 type="button"
                 role="tab"
-                aria-selected={active}
-                onClick={() => setMode(tab)}
-                className={`h-7 rounded-[6px] text-xs font-medium border-0 cursor-pointer transition-colors ${
-                  active ? "bg-card text-ink shadow-card" : "bg-transparent text-ink-2 hover:text-ink"
-                }`}
+                aria-selected={mode === tab}
+                onClick={() => (setMode(tab), useCloudAuth.setState({ error: null }))}
+                className={`h-7 rounded-[6px] text-xs font-medium border-0 cursor-pointer transition-colors ${mode === tab ? "bg-card text-ink shadow-card" : "bg-transparent text-ink-2 hover:text-ink"}`}
               >
                 {tab === "signin" ? "Sign in" : "Create account"}
               </button>
-            );
-          })}
-        </div>
+            ))}
+          </div>
+        )}
 
-        {status === "loading" ? (
-          <div className="py-6 text-center text-xs text-muted">Checking your session…</div>
+        {mode === "sent-link" || mode === "sent-reset" ? (
+          <p className="m-0 text-xs text-ink-2 leading-relaxed">
+            {mode === "sent-link" ? "We sent a sign-in link" : "We sent a link to choose a new password"} to <strong>{email}</strong>. Open it on this computer; you can close this window.
+          </p>
+        ) : mode === "changed" ? (
+          <>
+            <p className="m-0 text-xs text-ink-2">Your new password is set. Sign in with it.</p>
+            <Button variant="primary" onClick={() => setMode("signin")}>Sign in</Button>
+          </>
         ) : (
           <form className="flex flex-col gap-3.5" onSubmit={onSubmit}>
-            {mode === "signup" && (
+            {mode === "signup" && <TextField label="Name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Andrej" autoComplete="name" required />}
+            {mode !== "new-password" && (
+              <TextField label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" autoComplete="email" required autoFocus />
+            )}
+            {mode !== "forgot" && (
               <TextField
-                label="Name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Andrej"
-                autoComplete="name"
+                label={mode === "new-password" ? "New password" : "Password"}
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder={mode === "signin" ? "Your password" : "At least 8 characters"}
+                autoComplete={mode === "signin" ? "current-password" : "new-password"}
+                minLength={8}
                 required
+                autoFocus={mode === "new-password"}
               />
             )}
-            <TextField
-              label="Email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              autoComplete="email"
-              required
-              autoFocus
-            />
-            <TextField
-              label="Password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder={mode === "signup" ? "At least 8 characters" : "Your password"}
-              autoComplete={mode === "signin" ? "current-password" : "new-password"}
-              minLength={8}
-              required
-            />
 
-            {error && (
+            {auth.error && (
               <div role="alert" className="rounded-[6px] bg-danger-wash px-2.5 py-2 text-xs text-danger">
-                {error}
+                {auth.error}
               </div>
             )}
 
             <Button type="submit" variant="primary" disabled={busy} className="w-full mt-0.5">
-              {busy ? "Please wait…" : mode === "signin" ? "Sign in" : "Create account"}
+              {busy ? "Please wait…" : { signin: "Sign in", signup: "Create account", forgot: "Email me a link", "new-password": "Set the password" }[mode as "signin"]}
             </Button>
+
+            {mode === "signin" && methods?.resetPassword && (
+              <button type="button" onClick={() => setMode("forgot")} className="self-center border-0 bg-transparent text-[11px] text-muted hover:text-ink cursor-pointer">
+                Forgot your password?
+              </button>
+            )}
+            {mode === "forgot" && (
+              <button type="button" onClick={() => setMode("signin")} className="self-center border-0 bg-transparent text-[11px] text-muted hover:text-ink cursor-pointer">
+                Back to sign in
+              </button>
+            )}
           </form>
         )}
 
-        <div className="border-t border-line pt-3 text-center text-xs">
-          <a href="?host=server" className="text-muted hover:text-ink no-underline hover:underline">
-            Use local folders instead
-          </a>
-        </div>
+        {(mode === "signin" || mode === "signup") && (methods?.emailLink || methods?.google || methods?.github) && (
+          <div className="flex flex-col gap-2 border-t border-line pt-4">
+            {methods.emailLink && (
+              <Button disabled={busy} onClick={emailLink}>
+                Email me a sign-in link
+              </Button>
+            )}
+            {methods.google && <Button disabled={busy} onClick={() => run(() => auth.social("google"))}>Continue with Google</Button>}
+            {methods.github && <Button disabled={busy} onClick={() => run(() => auth.social("github"))}>Continue with GitHub</Button>}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -144,7 +177,23 @@ export function CloudAccountFooter() {
   const [refreshed, setRefreshed] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
 
-  if (!user) return null;
+  if (!user) {
+    return (
+      <div className="shrink-0 border-t border-line bg-sheet px-2.5 py-2">
+        <button
+          type="button"
+          onClick={() => useCloudAuth.getState().openSignIn({ mode: "sign-in" })}
+          className="w-full flex items-center gap-2.5 rounded-[8px] border-0 px-2 py-1.5 text-left cursor-pointer bg-transparent hover:bg-well"
+        >
+          <span className="w-7 h-7 rounded-full bg-well border border-line text-muted text-[13px] inline-flex items-center justify-center shrink-0">☁</span>
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-semibold text-ink leading-tight">Sign in</div>
+            <div className="text-[11px] text-muted truncate leading-tight mt-0.5">Keep homes in your account</div>
+          </div>
+        </button>
+      </div>
+    );
+  }
   const expiry = formatExpiry(expiresAt);
   const badge = initials(user.name, user.email);
 
@@ -201,13 +250,6 @@ export function CloudAccountFooter() {
             >
               {refreshed ? "Session refreshed ✓" : "Refresh session"}
             </button>
-            <a
-              href="?host=server"
-              role="menuitem"
-              className="w-full text-left text-ink text-xs px-2 py-1.5 rounded-[6px] hover:bg-well no-underline block"
-            >
-              Switch to local folders
-            </a>
             <button
               type="button"
               role="menuitem"

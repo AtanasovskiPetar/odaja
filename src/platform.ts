@@ -1,9 +1,12 @@
-// Everything the app needs from the host environment. Two hosts:
+// Everything the app needs from the host environment. Two local hosts:
 //  - "server": Odaja's backend (server/api.ts) over /api, served by Vite in
 //    development and by server/main.ts as the companion: project folders on disk.
 //  - "browser": the website, where the home and library live in the browser's
 //    private file system (src/browser/).
 // initPlatform() picks one at startup; `platform` passes every call to it.
+// When a cloud server is configured (VITE_CLOUD_API_URL), signing in adds the
+// account's homes next to the local ones (src/cloud/withCloud.ts): while a
+// cloud home is open, calls go to the cloud host ("cloud").
 import type { AgentFiles } from "./agent/files";
 import type { HomeSummary } from "./browser/homes";
 import type { StarterRoom } from "./model/defaults";
@@ -16,6 +19,15 @@ export interface ProjectSummary {
   // In the projects folder (Documents/Odaja), so it can go to the Trash;
   // a folder opened from elsewhere can only be removed from the list.
   inProjectsFolder?: boolean;
+  // In the signed-in cloud account.
+  cloud?: boolean;
+}
+
+export interface VersionSummary {
+  id: string;
+  reason: "autosave" | "named" | "before-ai" | "before-restore";
+  label: string | null;
+  createdAt: number;
 }
 
 export interface SceneSummary {
@@ -98,6 +110,20 @@ export interface Platform {
   // Requests from the server: open a scene, take a screenshot.
   onOpenSceneRequest(callback: (path: string) => void): void;
   onScreenshotRequest(callback: (view: "plan" | "3d", level?: string) => Promise<{ data: string; mimeType: string }>): void;
+  // The open home's history (cloud homes).
+  versions?: {
+    list(): Promise<VersionSummary[]>;
+    create(label: string, reason?: "named" | "before-ai"): Promise<void>;
+    // Make a version current again; the app reloads what changed.
+    restore(id: string): Promise<void>;
+  };
+  // With a cloud server configured: the signed-in account's homes.
+  cloud?: {
+    signedIn(): boolean;
+    createProject(name: string, room?: StarterRoom): Promise<void>;
+    // Copy the open home into the account and open the copy there.
+    copyOpenHome(): Promise<void>;
+  };
 }
 
 // Where a conversation is kept in a home.
@@ -247,54 +273,27 @@ let host: Platform | null = null;
 // Listeners registered before the host is known (the store does this as it loads).
 const early: ((p: Platform) => void)[] = [];
 
-// Host priority:
-// 1. Explicit `?host=cloud | server | browser`
-// 2. Cloud backend if `VITE_CLOUD_API_URL` is configured OR local cloud backend
-//    (`http://localhost:8787/api/v1/health`) responds (default for platform dev)
-// 3. Companion / Vite local server (`/api/projects`)
-// 4. Browser OPFS website fallback
+// The local host: the companion's (or Vite's) /api when it answers, else the
+// browser. `?host=browser` tries the website's host in development. A cloud
+// server (VITE_CLOUD_API_URL, set when building) adds its homes next to it.
 export async function initPlatform(): Promise<void> {
   if (host) return;
-  const params = new URLSearchParams(location.search);
-  const hostParam = params.get("host");
-  const envCloudUrl = (import.meta.env.VITE_CLOUD_API_URL as string | undefined)?.trim();
-
-  let cloudUrl: string | null = null;
-  if (hostParam === "cloud") {
-    cloudUrl = envCloudUrl || "http://localhost:8787";
-  } else if (hostParam !== "browser" && hostParam !== "server") {
-    if (envCloudUrl) {
-      cloudUrl = envCloudUrl;
-    } else if (location.hostname === "localhost" || location.hostname === "127.0.0.1") {
-      try {
-        const res = await fetch("http://localhost:8787/api/v1/health", { cache: "no-store" });
-        if (res.ok) cloudUrl = "http://localhost:8787";
-      } catch {
-        // Cloud backend not running locally: fall through to companion/browser.
-      }
-    }
-  }
-
-  if (cloudUrl) {
-    const [{ useCloudAuth }, { createCloudPlatform }] = await Promise.all([
-      import("./cloud/auth"),
-      import("./cloud/platform"),
-    ]);
-    await useCloudAuth.getState().init(cloudUrl);
-    host = createCloudPlatform(cloudUrl);
-    for (const attach of early.splice(0)) attach(host);
-    return;
-  }
-
+  const forceBrowser = new URLSearchParams(location.search).get("host") === "browser";
   let server = false;
-  const forceBrowser = hostParam === "browser";
   if (!forceBrowser) try {
     const res = await fetch("/api/projects", { cache: "no-store" });
     server = res.ok && (res.headers.get("Content-Type") ?? "").includes("application/json");
   } catch {
     // Not reachable: the website.
   }
-  host = server ? serverPlatform : (await import("./browser/platform")).createBrowserPlatform();
+  let chosen: Platform = server ? serverPlatform : (await import("./browser/platform")).createBrowserPlatform();
+  const cloudUrl = (import.meta.env.VITE_CLOUD_API_URL as string | undefined)?.trim();
+  if (cloudUrl) {
+    const [{ useCloudAuth }, { createCloudPlatform }, { withCloud }] = await Promise.all([import("./cloud/auth"), import("./cloud/platform"), import("./cloud/withCloud")]);
+    await useCloudAuth.getState().init(cloudUrl);
+    chosen = withCloud(chosen, createCloudPlatform(cloudUrl));
+  }
+  host = chosen;
   for (const attach of early.splice(0)) attach(host);
 }
 

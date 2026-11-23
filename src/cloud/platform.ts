@@ -3,8 +3,31 @@ import { sampleFiles } from "../browser/sample";
 import { slugify, type StarterRoom } from "../model/defaults";
 import { formatJson } from "../model/format";
 import { belongsInFile, homeName, packHome, unpackHome } from "../model/homeFile";
-import { chatPath, type LibraryEntry, type Platform, type ProjectList, type SceneSummary } from "../platform";
+import { chatPath, type LibraryEntry, type Platform, type ProjectList, type SceneSummary, type VersionSummary } from "../platform";
 import { useCloudAuth } from "./auth";
+
+// Saving checks the content it replaces: each file's fingerprint (SHA-256,
+// the server's ETag) is remembered when it's read or written, and sent with
+// the next save as If-Match. A refused save (412: changed in another tab, on
+// another device, or by an AI turn) loads the newer file instead and says so.
+async function sha256(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
+  return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function bytesOf(data: string | Blob | ArrayBuffer | Uint8Array): Promise<Uint8Array> {
+  if (typeof data === "string") return new TextEncoder().encode(data);
+  if (data instanceof Uint8Array) return data;
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  return new Uint8Array(await data.arrayBuffer());
+}
+
+const etagHash = (res: Response) => res.headers.get("ETag")?.replace(/^W\//, "").replace(/"/g, "") ?? null;
+
+async function tell(message: string) {
+  const { useOdaja } = await import("../store");
+  useOdaja.getState().setNotice(message);
+}
 
 const LAST_CLOUD_PROJECT_KEY = "odaja:cloud:last-project";
 
@@ -15,7 +38,12 @@ interface CloudProjectRow {
   updatedAt: number;
 }
 
-export function createCloudPlatform(apiBase: string): Platform {
+export type CloudPlatform = Platform & {
+  // Stop following the open home (another home, not in the cloud, is open now).
+  closeHome(): void;
+};
+
+export function createCloudPlatform(apiBase: string): CloudPlatform {
   const base = apiBase.replace(/\/+$/, "");
   let currentId: string | null = null;
   try {
@@ -23,6 +51,10 @@ export function createCloudPlatform(apiBase: string): Platform {
   } catch {
     // storage unavailable
   }
+
+  // Fingerprints of the open home's files as this tab last saw them.
+  const hashes = new Map<string, string>();
+  let changes: EventSource | null = null;
 
   const changeListeners: ((path: string) => void)[] = [];
   const openSceneListeners: ((path: string) => void)[] = [];
@@ -33,7 +65,24 @@ export function createCloudPlatform(apiBase: string): Platform {
     return currentId;
   };
 
+  // Changes made elsewhere (another tab, device or the server's tools) arrive
+  // on a stream; this tab reloads files whose content it doesn't have.
+  const watch = (id: string | null) => {
+    changes?.close();
+    changes = null;
+    hashes.clear();
+    if (!id) return;
+    changes = new EventSource(`${base}/api/v1/projects/${encodeURIComponent(id)}/events`, { withCredentials: true });
+    changes.addEventListener("file-changed", (e) => {
+      const { path, hash } = JSON.parse((e as MessageEvent<string>).data) as { path: string; hash: string | null };
+      if (hashes.get(path) === (hash ?? undefined)) return;
+      hashes.delete(path);
+      announce(path);
+    });
+  };
+
   const setOpen = (id: string | null) => {
+    if (id !== currentId || !changes) watch(id);
     currentId = id;
     try {
       if (id) localStorage.setItem(LAST_CLOUD_PROJECT_KEY, id);
@@ -81,36 +130,67 @@ export function createCloudPlatform(apiBase: string): Platform {
     return res.files;
   }
 
-  async function readText(pid: string, rel: string): Promise<string | null> {
+  async function read(pid: string, rel: string): Promise<Response | null> {
     const res = await fetch(fileEndpoint(pid, rel), { credentials: "include", cache: "no-store" });
-    if (res.status === 404) return null;
+    if (res.status === 404) {
+      if (pid === currentId) hashes.delete(rel);
+      return null;
+    }
     if (!res.ok) throw new Error(`Failed to read ${rel} (${res.status})`);
-    return res.text();
+    const hash = etagHash(res);
+    if (pid === currentId && hash) hashes.set(rel, hash);
+    return res;
+  }
+
+  async function readText(pid: string, rel: string): Promise<string | null> {
+    return (await read(pid, rel))?.text() ?? null;
   }
 
   async function readBytes(pid: string, rel: string): Promise<Uint8Array | null> {
-    const res = await fetch(fileEndpoint(pid, rel), { credentials: "include", cache: "no-store" });
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`Failed to read ${rel} (${res.status})`);
-    return new Uint8Array(await res.arrayBuffer());
+    const res = await read(pid, rel);
+    return res ? new Uint8Array(await res.arrayBuffer()) : null;
   }
 
+  // Someone else saved first: keep theirs, load it, and say so.
+  async function conflicted(pid: string, rel: string) {
+    hashes.delete(rel);
+    if (pid !== currentId) return;
+    announce(rel);
+    await tell("This home was changed somewhere else (another tab or device). The newer version is loaded; your last change wasn't saved.");
+  }
+
+  // Unknown fingerprint (a file this tab never read): saved without a check.
+  const condition = (pid: string, rel: string): Record<string, string> => {
+    const known = pid === currentId ? hashes.get(rel) : undefined;
+    return known ? { "If-Match": `"${known}"` } : {};
+  };
+
   async function writeRaw(pid: string, rel: string, data: string | Blob | ArrayBuffer | Uint8Array): Promise<void> {
-    const body: BodyInit = data instanceof Uint8Array ? new Blob([data as BlobPart]) : data;
-    const res = await fetch(fileEndpoint(pid, rel), {
-      method: "PUT",
-      credentials: "include",
-      body,
-    });
-    if (!res.ok) throw new Error(`Failed to write ${rel} (${res.status})`);
+    const bytes = await bytesOf(data);
+    const headers = condition(pid, rel);
+    // Known before the answer, so this tab's own change doesn't come back as
+    // someone else's on the change stream.
+    const hash = await sha256(bytes);
+    if (pid === currentId) hashes.set(rel, hash);
+    const res = await fetch(fileEndpoint(pid, rel), { method: "PUT", credentials: "include", headers, body: new Blob([bytes as BlobPart]) });
+    if (res.status === 412) {
+      await conflicted(pid, rel);
+      throw new Error(`${rel} was changed somewhere else`);
+    }
+    if (!res.ok) {
+      if (pid === currentId) hashes.delete(rel);
+      throw new Error(`Failed to write ${rel} (${res.status})`);
+    }
   }
 
   async function deleteFile(pid: string, rel: string): Promise<void> {
-    const res = await fetch(fileEndpoint(pid, rel), {
-      method: "DELETE",
-      credentials: "include",
-    });
+    const res = await fetch(fileEndpoint(pid, rel), { method: "DELETE", credentials: "include", headers: condition(pid, rel) });
+    if (res.status === 412) {
+      await conflicted(pid, rel);
+      throw new Error(`${rel} was changed somewhere else`);
+    }
     if (!res.ok && res.status !== 404) throw new Error(`Failed to delete ${rel} (${res.status})`);
+    if (pid === currentId) hashes.delete(rel);
   }
 
   async function freePath(pid: string, folder: string, name: string, except?: string): Promise<string> {
@@ -149,7 +229,7 @@ export function createCloudPlatform(apiBase: string): Platform {
       }
       return [...dirs];
     },
-    exists: async (rel) => (await readBytes(requireOpen(), rel)) !== null,
+    exists: async (rel) => (await listFiles(requireOpen(), rel)).includes(rel),
   };
 
   // Phase 1 keeps library empty/minimal on cloud until Phase 2 cloud library.
@@ -169,13 +249,15 @@ export function createCloudPlatform(apiBase: string): Platform {
   return {
     kind: "cloud",
 
+    closeHome() {
+      changes?.close();
+      changes = null;
+      hashes.clear();
+    },
+
     async listProjects(): Promise<ProjectList> {
       const { projects } = await apiJson<{ projects: CloudProjectRow[] }>("/api/v1/projects");
-      if (currentId && !projects.some((p) => p.id === currentId)) {
-        setOpen(projects[0]?.id ?? null);
-      } else if (!currentId && projects.length > 0) {
-        setOpen(projects[0]!.id);
-      }
+      if (currentId && !projects.some((p) => p.id === currentId)) setOpen(null);
       return {
         root: "cloud",
         current: currentId,
@@ -395,6 +477,24 @@ export function createCloudPlatform(apiBase: string): Platform {
 
     onScreenshotRequest() {
       // Phase 4 remote MCP will route screenshots here.
+    },
+
+    versions: {
+      async list() {
+        return (await apiJson<{ versions: VersionSummary[] }>(`/api/v1/projects/${encodeURIComponent(requireOpen())}/versions`)).versions;
+      },
+      async create(label, reason = "named") {
+        await apiJson(`/api/v1/projects/${encodeURIComponent(requireOpen())}/versions`, { method: "POST", body: JSON.stringify({ label, reason }) });
+      },
+      async restore(id) {
+        const pid = requireOpen();
+        const { changed } = await apiJson<{ changed: string[] }>(`/api/v1/projects/${encodeURIComponent(pid)}/versions/${encodeURIComponent(id)}/restore`, { method: "POST" });
+        // The stream would tell us too; reload now rather than wait for it.
+        for (const rel of changed) {
+          hashes.delete(rel);
+          announce(rel);
+        }
+      },
     },
   };
 }

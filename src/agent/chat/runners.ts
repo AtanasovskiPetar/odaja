@@ -5,6 +5,7 @@
 // Requests go straight from the browser to the provider with the user's own
 // key. Tools run in the page (website) or on the companion (src/agent/client.ts).
 import Anthropic from "@anthropic-ai/sdk";
+import { platform } from "../../platform";
 import { dynamicTool, jsonSchema, stepCountIs, streamText, type LanguageModel, type ModelMessage, type ToolSet } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
@@ -78,6 +79,10 @@ export async function runTurn(conv: Conversation, input: UserInput, ctx: RunCont
   // Switching between kinds of connection: carry the conversation over as text.
   const earlier = conv.state.family && conv.state.family !== family ? transcript(conv.turns.slice(0, -1)) : "";
   if (conv.state.family !== family) conv.state = { family };
+  // Cloud homes: keep the home as it is now, so the whole reply can be undone
+  // from History.
+  const summary = input.text.trim().replace(/\s+/g, " ");
+  await platform.versions?.create(`Before: ${summary.length > 60 ? `${summary.slice(0, 57)}…` : summary || "an AI reply"}`, "before-ai").catch(() => {});
   try {
     if (family === "anthropic") await runAnthropic(conv, input, c, earlier);
     else if (family === "claude-code") await runClaudeCode(conv, input, c, earlier);

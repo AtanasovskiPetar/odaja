@@ -131,7 +131,7 @@ function HomeCard({
               </div>
             )}
             <div className="mt-0.5 text-[11px] text-muted truncate" title={cloud ? home.dir : tildePath(home.dir)}>
-              {cloud ? `Updated ${timeAgo(home.modified)}` : `${tildePath(home.dir)} · ${timeAgo(home.modified)}`}
+              {cloud ? `In your account · ${timeAgo(home.modified)}` : `${tildePath(home.dir)} · ${timeAgo(home.modified)}`}
             </div>
           </div>
 
@@ -166,7 +166,8 @@ export function ManageHomesDialog() {
   const [sort, setSort] = useState<"recent" | "name">("recent");
   const [error, setError] = useState<string | null>(null);
   const close = () => useOdaja.getState().openDialog(null);
-  const cloud = platform.kind === "cloud";
+  const cloud = projects.length > 0 && projects.every((p) => p.cloud);
+  const someCloud = projects.some((p) => p.cloud);
 
   useEffect(() => {
     useOdaja.getState().refreshProjects().catch(() => {});
@@ -195,8 +196,8 @@ export function ManageHomesDialog() {
             <h2 className="font-serif text-2xl font-normal leading-none m-0 text-ink">Your homes</h2>
             <p className="mt-1.5 mb-0 text-xs text-muted">
               {cloud
-                ? "Synced to your Odaja Cloud account."
-                : `Stored in ${tildePath(root)}. Deleting moves a home to the Trash.`}
+                ? "In your Odaja account."
+                : `Stored in ${tildePath(root)}${someCloud ? ", and in your account" : ""}. Deleting moves a home to the Trash.`}
             </p>
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -252,7 +253,7 @@ export function ManageHomesDialog() {
           ) : (
             <ul className="m-0 p-0 flex flex-col gap-2">
               {visible.map((p) => (
-                <HomeCard key={p.dir} home={p} open={p.dir === current} cloud={cloud} onError={setError} />
+                <HomeCard key={p.dir} home={p} open={p.dir === current} cloud={p.cloud ?? false} onError={setError} />
               ))}
             </ul>
           )}

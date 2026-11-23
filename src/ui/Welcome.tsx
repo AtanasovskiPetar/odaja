@@ -4,6 +4,7 @@
 // home menu (HomeMenu.tsx).
 import { useEffect, useState } from "react";
 import { storageNotice, type StorageNotice } from "../browser/keeping";
+import { useCloudAuth, useCloudSignedIn } from "../cloud/auth";
 import { platform } from "../platform";
 import { useOdaja } from "../store";
 import { openHome, pickHomeFile } from "./homeFileActions";
@@ -135,10 +136,36 @@ export function Welcome() {
             Open a home file (.odaja)…
           </button>
           {platform.kind === "server" && <OpenFolderForm />}
+          {platform.cloud && <AccountHomes />}
           {error && <div className="inline-error">{error}</div>}
         </div>
         <StorageNote />
       </div>
+    </div>
+  );
+}
+
+// With a cloud server: sign in, or open one of the account's homes.
+function AccountHomes() {
+  const signedIn = useCloudSignedIn();
+  const homes = useOdaja((s) => s.projects).filter((p) => p.cloud);
+  const openProject = useOdaja((s) => s.openProject);
+  if (!signedIn) {
+    return (
+      <button className="open-file" onClick={() => useCloudAuth.getState().openSignIn({ mode: "sign-in" })}>
+        Sign in to open the homes in your account…
+      </button>
+    );
+  }
+  if (homes.length === 0) return null;
+  return (
+    <div className="account-homes">
+      <span>In your account</span>
+      {homes.slice(0, 6).map((h) => (
+        <button key={h.dir} className="open-file" onClick={() => openProject(h.dir)}>
+          {h.name}
+        </button>
+      ))}
     </div>
   );
 }

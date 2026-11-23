@@ -6,6 +6,19 @@ export interface CloudUser {
   name: string;
 }
 
+export interface SignInMethods {
+  password: boolean;
+  emailLink: boolean;
+  resetPassword: boolean;
+  google: boolean;
+  github: boolean;
+}
+
+// Where links from emails and Google/GitHub bring you back: this page.
+const here = () => location.origin + location.pathname;
+
+const message = (res: { json: Record<string, unknown> | null }, fallback: string) => String(res.json?.message ?? res.json?.error ?? fallback);
+
 interface CloudAuthState {
   apiBase: string;
   status: "idle" | "loading" | "signed-out" | "signed-in";
@@ -17,6 +30,16 @@ interface CloudAuthState {
   signIn(email: string, password: string): Promise<boolean>;
   signUp(name: string, email: string, password: string): Promise<boolean>;
   signOut(): Promise<void>;
+  // What the server offers (password always; the rest when configured).
+  methods: SignInMethods | null;
+  // The sign-in window: closed, signing in, or choosing a new password
+  // (from a reset email's link, with its token).
+  signInWindow: null | { mode: "sign-in" } | { mode: "new-password"; token: string };
+  openSignIn(w: CloudAuthState["signInWindow"]): void;
+  emailLink(email: string): Promise<boolean>;
+  social(provider: "google" | "github"): Promise<void>;
+  requestReset(email: string): Promise<boolean>;
+  resetPassword(token: string, password: string): Promise<boolean>;
   handleUnauthorized(): void;
 }
 
@@ -63,12 +86,56 @@ export const useCloudAuth = create<CloudAuthState>((set, get) => ({
   user: null,
   expiresAt: null,
   error: null,
+  methods: null,
+  signInWindow: null,
+  openSignIn: (w) => set({ signInWindow: w, error: null }),
 
   async init(apiBase) {
     const clean = apiBase.replace(/\/+$/, "");
     set({ apiBase: clean, status: "loading", error: null });
     attachRefreshListeners();
+    // Back from a password-reset email: choose the new password.
+    const params = new URLSearchParams(location.search);
+    const token = params.get("token");
+    if (params.has("reset-password") && token) {
+      history.replaceState(null, "", here());
+      set({ signInWindow: { mode: "new-password", token } });
+    }
+    fetch(`${clean}/api/v1/config`, { cache: "no-store" })
+      .then((r) => r.json())
+      .then((c: { signIn?: SignInMethods }) => set({ methods: c.signIn ?? null }))
+      .catch(() => {});
     return get().refresh();
+  },
+
+  async emailLink(email) {
+    set({ error: null });
+    const res = await authFetch(get().apiBase, "/sign-in/magic-link", { email, callbackURL: here() });
+    if (!res.ok) set({ error: message(res, "Couldn't send the link.") });
+    return res.ok;
+  },
+
+  async social(provider) {
+    set({ error: null });
+    const res = await authFetch(get().apiBase, "/sign-in/social", { provider, callbackURL: here() });
+    const url = res.json?.url;
+    if (res.ok && typeof url === "string") location.href = url;
+    else set({ error: message(res, `Couldn't sign in with ${provider === "google" ? "Google" : "GitHub"}.`) });
+  },
+
+  async requestReset(email) {
+    set({ error: null });
+    // The email's link comes back here with ?token=…&reset-password.
+    const res = await authFetch(get().apiBase, "/request-password-reset", { email, redirectTo: `${here()}?reset-password` });
+    if (!res.ok) set({ error: message(res, "Couldn't send the email.") });
+    return res.ok;
+  },
+
+  async resetPassword(token, password) {
+    set({ error: null });
+    const res = await authFetch(get().apiBase, "/reset-password", { token, newPassword: password });
+    if (!res.ok) set({ error: message(res, "Couldn't change the password. The link may have expired.") });
+    return res.ok;
   },
 
   async refresh() {
@@ -100,6 +167,7 @@ export const useCloudAuth = create<CloudAuthState>((set, get) => ({
       return false;
     }
     const user = await get().refresh();
+    if (user) set({ signInWindow: null });
     return Boolean(user);
   },
 
@@ -112,6 +180,7 @@ export const useCloudAuth = create<CloudAuthState>((set, get) => ({
       return false;
     }
     const user = await get().refresh();
+    if (user) set({ signInWindow: null });
     return Boolean(user);
   },
 
@@ -122,6 +191,9 @@ export const useCloudAuth = create<CloudAuthState>((set, get) => ({
   },
 
   handleUnauthorized() {
-    set({ user: null, expiresAt: null, status: "signed-out", error: "Your session expired. Please sign in again." });
+    set({ user: null, expiresAt: null, status: "signed-out", signInWindow: { mode: "sign-in" }, error: "Your session expired. Please sign in again." });
   },
 }));
+
+// Signed in to a cloud server (false when none is configured).
+export const useCloudSignedIn = () => useCloudAuth((s) => s.status === "signed-in");

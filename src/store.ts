@@ -73,6 +73,8 @@ export type Dialog =
   | { kind: "open-folder" }
   // The companion's list of homes: open, delete (to the Trash), forget.
   | { kind: "manage-homes" }
+  // A cloud home's versions: look, name the current state, restore.
+  | { kind: "history" }
   // After opening a home: its library items you don't have yet.
   | { kind: "add-to-library"; items: MissingItem[] }
   | null;
@@ -174,7 +176,10 @@ interface OdajaState {
   openHomeFile(data: Uint8Array): Promise<void>;
   setUnsavedToFile(unsaved: boolean): void;
   openProject(dir: string): Promise<void>;
-  createProject(name: string, room?: StarterRoom): Promise<void>;
+  // `inCloud`: in the signed-in account rather than here.
+  createProject(name: string, room?: StarterRoom, inCloud?: boolean): Promise<void>;
+  // Copy the open home into the cloud account and open it there.
+  copyHomeToCloud(): Promise<void>;
   openScene(path: string): Promise<void>;
   newScene(): Promise<string>;
   duplicateScene(withWalls?: boolean): Promise<string | null>;
@@ -528,12 +533,21 @@ export const useOdaja = create<OdajaState>((set, get) => {
       set({ unsavedToFile: unsaved });
     },
 
-    async createProject(name, room) {
-      await platform.createProject(name, room);
+    async createProject(name, room, inCloud) {
+      if (inCloud && platform.cloud) await platform.cloud.createProject(name, room);
+      else await platform.createProject(name, room);
       set({ unsavedToFile: false });
       await loadProject();
       // A new project starts in the plan view, where its size is visible.
       get().setViewMode("plan");
+    },
+
+    async copyHomeToCloud() {
+      if (!platform.cloud) return;
+      await platform.cloud.copyOpenHome();
+      set({ unsavedToFile: false });
+      await loadProject();
+      await get().refreshProjects();
     },
 
     async openScene(path) {

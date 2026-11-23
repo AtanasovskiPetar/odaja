@@ -10,7 +10,11 @@ export interface BlobStore {
   get(key: string): Promise<BlobObject | null>;
   put(key: string, body: Uint8Array | string, opts?: { contentType?: string }): Promise<{ etag?: string }>;
   del(key: string): Promise<void>;
+  // Whether an object exists (HEAD), without downloading it.
+  has(key: string): Promise<boolean>;
   list(prefix: string): Promise<string[]>;
+  // The same with each object's last change, for cleaning up.
+  listDetailed(prefix: string): Promise<{ key: string; lastModified: number }[]>;
   presignGet(key: string, expiresInSec?: number): Promise<string>;
   ensureBucket(): Promise<void>;
 }
@@ -41,13 +45,18 @@ function decodeXml(s: string): string {
     .replace(/&apos;/g, "'");
 }
 
-function parseListKeys(xml: string): { keys: string[]; nextToken?: string } {
-  const keys: string[] = [];
-  const keyRe = /<Key>([^<]+)<\/Key>/g;
+function parseList(xml: string): { objects: { key: string; lastModified: number }[]; nextToken?: string } {
+  const objects: { key: string; lastModified: number }[] = [];
+  const contentsRe = /<Contents>([\s\S]*?)<\/Contents>/g;
   let m: RegExpExecArray | null;
-  while ((m = keyRe.exec(xml))) keys.push(decodeXml(m[1]!));
+  while ((m = contentsRe.exec(xml))) {
+    const key = /<Key>([^<]+)<\/Key>/.exec(m[1]!)?.[1];
+    if (!key) continue;
+    const modified = /<LastModified>([^<]+)<\/LastModified>/.exec(m[1]!)?.[1];
+    objects.push({ key: decodeXml(key), lastModified: modified ? Date.parse(modified) : 0 });
+  }
   const next = /<NextContinuationToken>([^<]+)<\/NextContinuationToken>/.exec(xml)?.[1];
-  return { keys, nextToken: next ? decodeXml(next) : undefined };
+  return { objects, nextToken: next ? decodeXml(next) : undefined };
 }
 
 // Single S3-compatible BlobStore using Web Standards (aws4fetch).
@@ -66,7 +75,7 @@ export function createS3BlobStore(cfg: S3Config): BlobStore {
 
   const objectUrl = (base: string, key: string) => `${base}/${bucket}/${encodeKey(key)}`;
 
-  return {
+  const store: BlobStore = {
     async ensureBucket() {
       const url = `${endpoint}/${bucket}`;
       const head = await aws.fetch(url, { method: "HEAD" });
@@ -108,8 +117,19 @@ export function createS3BlobStore(cfg: S3Config): BlobStore {
       if (!res.ok && res.status !== 404) throw new Error(`S3 DELETE ${key} failed: ${res.status}`);
     },
 
+    async has(key) {
+      const res = await aws.fetch(objectUrl(endpoint, key), { method: "HEAD" });
+      if (res.status === 404) return false;
+      if (!res.ok) throw new Error(`S3 HEAD ${key} failed: ${res.status}`);
+      return true;
+    },
+
     async list(prefix) {
-      const all: string[] = [];
+      return (await store.listDetailed(prefix)).map((o) => o.key);
+    },
+
+    async listDetailed(prefix) {
+      const all: { key: string; lastModified: number }[] = [];
       let token: string | undefined;
       for (;;) {
         const params = new URLSearchParams({ "list-type": "2", prefix });
@@ -117,8 +137,8 @@ export function createS3BlobStore(cfg: S3Config): BlobStore {
         const res = await aws.fetch(`${endpoint}/${bucket}?${params.toString()}`, { method: "GET" });
         if (res.status === 404) return [];
         if (!res.ok) throw new Error(`S3 LIST ${prefix} failed: ${res.status}`);
-        const { keys, nextToken } = parseListKeys(await res.text());
-        all.push(...keys);
+        const { objects, nextToken } = parseList(await res.text());
+        all.push(...objects);
         if (!nextToken) break;
         token = nextToken;
       }
@@ -135,4 +155,5 @@ export function createS3BlobStore(cfg: S3Config): BlobStore {
       return signed.url;
     },
   };
+  return store;
 }

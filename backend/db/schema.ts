@@ -1,4 +1,4 @@
-import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
 // --- better-auth core tables ------------------------------------------------
 
@@ -53,8 +53,19 @@ export const verification = pgTable("verification", {
 });
 
 // --- Odaja projects ---------------------------------------------------------
-// Project files live in S3 under `projects/<id>/<relativePath>`, so moving a
-// project to a team later never requires moving or renaming S3 objects.
+// A home's files are stored by content: each content once, under its SHA-256
+// (`blobs/<hash>`, see storage/content.ts), and the home is a manifest saying
+// which content each path has. A version is a saved manifest, so it costs only
+// the files that changed, and restoring one copies nothing.
+
+export interface ManifestEntry {
+  hash: string;
+  size: number;
+  type: string;
+  // Stored gzip-compressed (JSON and other text).
+  gz?: boolean;
+}
+export type Manifest = Record<string, ManifestEntry>;
 
 export const projects = pgTable(
   "projects",
@@ -64,6 +75,7 @@ export const projects = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
+    manifest: jsonb("manifest").$type<Manifest>().notNull().default({}),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
     deletedAt: timestamp("deleted_at"),
@@ -72,3 +84,23 @@ export const projects = pgTable(
 );
 
 export type ProjectRow = typeof projects.$inferSelect;
+
+export type VersionReason = "autosave" | "named" | "before-ai" | "before-restore";
+
+export const versions = pgTable(
+  "versions",
+  {
+    id: text("id").primaryKey(),
+    projectId: text("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    manifest: jsonb("manifest").$type<Manifest>().notNull(),
+    reason: text("reason").$type<VersionReason>().notNull(),
+    label: text("label"),
+    authorId: text("author_id").references(() => user.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (table) => [index("versions_project_idx").on(table.projectId, table.createdAt)],
+);
+
+export type VersionRow = typeof versions.$inferSelect;

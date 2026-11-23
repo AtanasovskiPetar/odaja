@@ -26,12 +26,16 @@ bun run package:server                         # build/odaja: the companion as o
 bun run release [macos-arm64 …]                # the same for every platform, in release/
 bun run typecheck
 bun run format-project <dir>                   # reformat a project's JSON the way the app saves it
+docker compose up -d && bun run db:push        # the cloud server's Postgres and S3 (see docs/cloud-platform.md)
+bun run backend:dev                            # the cloud server (:8787); VITE_CLOUD_API_URL in .env makes the app offer signing in
+bun test backend                               # the cloud server's tests
 ```
 
 In development the app runs at http://localhost:5173; `bun run start` serves the
 built app and the same backend from `server/main.ts`: the **companion** that
 power users install as the `odaja` program (real project folders, MCP, Claude Code in the chat). The plan
-for the website version is in [docs/web-plan.md](docs/web-plan.md). The furniture library is
+for the website version is in [docs/web-plan.md](docs/web-plan.md); the plan for accounts, cloud homes,
+real-time editing, teams and paid plans (not built yet) is [docs/cloud-plan.md](docs/cloud-plan.md). The furniture library is
 `~/Documents/Odaja/Library` (`$ODAJA_HOME/Library`), served under `/api/library`.
 `public/draco/` holds the Draco decoder for compressed glTF files. Recently opened projects are remembered
 in `~/.odaja/state.json` (or `$ODAJA_HOME/.odaja-state.json`). The app opens the last one; the home menu lists the others
@@ -174,6 +178,7 @@ there, or it's refused. The policy isn't applied in development.
 | `server/serve.ts` | Standalone web server: the built app (`dist/`) plus `server/api.ts` on 127.0.0.1 only, Host check against DNS rebinding, port 5180 or a free one, announced in `~/.odaja/server.json` (`server/discovery.ts`) |
 | `server/env.ts` | Whether the server runs as the packaged binary |
 | `scripts/package-server.ts` | `bun run package:server [bun-target]`: compiles the companion into one file, `build/odaja`, embedding `dist/`, the format docs and the sample flat through a generated entry |
+| `backend/`, `src/cloud/`, `src/ui/cloud/` | The cloud server (not released yet; [docs/cloud-platform.md](docs/cloud-platform.md)): Hono + Postgres (Drizzle) + S3, Better Auth. Files stored by content hash with a manifest per home (`homes.ts`): saves checked with `If-Match`, versions and restore, change events for open tabs. In the app, `withCloud.ts` lists the signed-in account's homes next to local ones (no login wall), `platform.ts` is the cloud host, `AuthGate.tsx` the sign-in window, `HistoryDialog.tsx` a home's history |
 | `src/model/defaults.ts` | Starting content for new projects (materials, the rectangular-room shell) and scenes |
 | `examples/sample-flat/` | The sample flat: offered in the welcome and "New home…" as a copy, and the fixture for development |
 
