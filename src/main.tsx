@@ -6,7 +6,7 @@ import { captureView } from "./three/capture";
 import { App } from "./ui/App";
 import "@fontsource/instrument-serif/400.css";
 import "@fontsource/instrument-serif/400-italic.css";
-import "./ui/styles.css";
+import "./ui/theme.css";
 import "./ui/themePref";
 
 // Expose the store and the AI tools in development, for debugging and tests.

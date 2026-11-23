@@ -6,3 +6,4 @@ dist
 .odaja/
 build
 release
+.env

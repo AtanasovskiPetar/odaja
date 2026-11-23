@@ -15,5 +15,7 @@
     "noEmit": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "server", "mcp", "vite.config.ts"]
+  "include": ["src", "server", "backend", "mcp", "vite.config.ts"],
+  // Bun's tests (bun test) bring their own types.
+  "exclude": ["**/*.test.ts"]
 }

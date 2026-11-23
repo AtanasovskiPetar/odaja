@@ -1,10 +1,13 @@
-// Everything the app needs from the host environment. Two hosts:
+// Everything the app needs from the host environment. Two local hosts:
 //  - "server": Odaja's backend (server/api.ts) over /api, served by Vite in
 //    development and by server/main.ts as the companion: project folders on disk.
 //  - "browser": the website, where the home and library live in the browser's
 //    private file system (src/browser/).
 // initPlatform() picks one at startup; `platform` passes every call to it.
-import type { AgentFiles } from "./agent/files";
+// When a cloud server is configured (VITE_CLOUD_API_URL), signing in adds the
+// account's homes next to the local ones (src/cloud/withCloud.ts): while a
+// cloud home is open, calls go to the cloud host ("cloud").
+import type { AgentFiles, FileArea } from "./agent/files";
 import type { HomeSummary } from "./browser/homes";
 import type { StarterRoom } from "./model/defaults";
 import type { LibraryItemDoc, SceneDoc } from "./model/schema";
@@ -16,6 +19,15 @@ export interface ProjectSummary {
   // In the projects folder (Documents/Odaja), so it can go to the Trash;
   // a folder opened from elsewhere can only be removed from the list.
   inProjectsFolder?: boolean;
+  // In the signed-in cloud account.
+  cloud?: boolean;
+}
+
+export interface VersionSummary {
+  id: string;
+  reason: "autosave" | "named" | "before-ai" | "before-restore";
+  label: string | null;
+  createdAt: number;
 }
 
 export interface SceneSummary {
@@ -44,7 +56,7 @@ export interface ProjectList {
 }
 
 export interface Platform {
-  kind: "server" | "browser";
+  kind: "server" | "browser" | "cloud";
   listProjects(): Promise<ProjectList>;
   openProject(dir: string): Promise<void>;
   // Opens the user's copy of the sample flat, making it (or remaking it when fresh).
@@ -69,6 +81,9 @@ export interface Platform {
   placeLibraryModel(id: string): Promise<string>;
   // Add a library material (and its texture) to the open project; returns its name.
   addLibraryMaterial(id: string): Promise<string>;
+  // The local hosts: their furniture library as files, which cloud homes copy
+  // items from (src/cloud/platform.ts).
+  libraryFiles?(): FileArea;
   // The open home as a .odaja file (zip), and whether it has chats to include.
   exportHome(includeChats: boolean): Promise<Blob>;
   homeHasChats(): Promise<boolean>;
@@ -84,10 +99,11 @@ export interface Platform {
     write(id: string, json: string): Promise<void>;
     remove(id: string): Promise<void>;
   };
-  // The companion: move a home's folder to the Trash, or forget one opened
-  // from elsewhere. Not the open home.
+  // The companion / cloud: move a home to the Trash (or soft-delete in cloud),
+  // forget one opened from elsewhere, or rename without opening it.
   trashProject?(dir: string): Promise<void>;
   forgetProject?(dir: string): Promise<void>;
+  renameProject?(dir: string, name: string): Promise<void>;
   // Where the AI tools run in the page (the website): their file access, and
   // how they ask the app to show a scene. Absent when tools run on the server.
   localTools?: { files(): AgentFiles | null; openScene(path: string): void };
@@ -97,6 +113,20 @@ export interface Platform {
   // Requests from the server: open a scene, take a screenshot.
   onOpenSceneRequest(callback: (path: string) => void): void;
   onScreenshotRequest(callback: (view: "plan" | "3d", level?: string) => Promise<{ data: string; mimeType: string }>): void;
+  // The open home's history (cloud homes).
+  versions?: {
+    list(): Promise<VersionSummary[]>;
+    create(label: string, reason?: "named" | "before-ai"): Promise<void>;
+    // Make a version current again; the app reloads what changed.
+    restore(id: string): Promise<void>;
+  };
+  // With a cloud server configured: the signed-in account's homes.
+  cloud?: {
+    signedIn(): boolean;
+    createProject(name: string, room?: StarterRoom): Promise<void>;
+    // Copy the open home into the account and open the copy there.
+    copyOpenHome(): Promise<void>;
+  };
 }
 
 // Where a conversation is kept in a home.
@@ -133,6 +163,29 @@ const post = <T>(url: string, body: unknown) =>
 
 const fileUrl = (path: string) => `/api/file?path=${encodeURIComponent(path)}`;
 const libraryFileUrl = (path: string, version?: number) => `/api/library/file?path=${encodeURIComponent(path)}${version ? `&v=${version}` : ""}`;
+
+// The companion's library folder as files, over /api/library (for cloud
+// homes, which copy items from it in the page). Items are folders named by
+// their id; the files in one are known by name (item.json, model.glb, …).
+async function libraryRead(path: string): Promise<Uint8Array | null> {
+  const res = await fetch(libraryFileUrl(path), { cache: "no-store" });
+  return res.ok ? new Uint8Array(await res.arrayBuffer()) : null;
+}
+const libraryIds = async () => (await request<{ items: LibraryEntry[] }>("/api/library")).items.map((e) => e.id);
+const serverLibraryFiles: FileArea = {
+  read: libraryRead,
+  readText: async (path) => {
+    const bytes = await libraryRead(path);
+    return bytes && new TextDecoder().decode(bytes);
+  },
+  write: async (path, data) => {
+    await request(libraryFileUrl(path), { method: "PUT", body: typeof data === "string" ? data : new Blob([data as BlobPart]) });
+  },
+  // Only the items can be listed here, not the files inside one.
+  listFiles: async () => [],
+  listDirs: async (dir) => (dir ? [] : libraryIds()),
+  exists: async (path) => (path.includes("/") ? (await libraryRead(path)) !== null : (await libraryIds()).includes(path)),
+};
 
 const serverPlatform: Platform = {
   kind: "server",
@@ -186,6 +239,7 @@ const serverPlatform: Platform = {
   async addLibraryMaterial(id) {
     return (await post<{ name: string }>("/api/library/add-material", { id })).name;
   },
+  libraryFiles: () => serverLibraryFiles,
   async exportHome(includeChats) {
     const res = await fetch(`/api/project/export?chats=${includeChats ? 1 : 0}`, { cache: "no-store" });
     if (!res.ok) throw new Error((await res.json().catch(() => null))?.error ?? `couldn't save (${res.status})`);
@@ -246,21 +300,28 @@ let host: Platform | null = null;
 // Listeners registered before the host is known (the store does this as it loads).
 const early: ((p: Platform) => void)[] = [];
 
-// Development and the companion answer /api/projects with JSON; the website
-// (static files) doesn't.
-// `?host=browser` forces the website host even with a server present (to
-// develop and test website features with `bun run dev`).
+// The local host: the companion's (or Vite's) /api when it answers, else the
+// browser. `?host=browser` tries the website's host in development. A cloud
+// server (VITE_CLOUD_API_URL, set when building) adds its homes next to it.
 export async function initPlatform(): Promise<void> {
   if (host) return;
-  let server = false;
   const forceBrowser = new URLSearchParams(location.search).get("host") === "browser";
+  let server = false;
   if (!forceBrowser) try {
     const res = await fetch("/api/projects", { cache: "no-store" });
     server = res.ok && (res.headers.get("Content-Type") ?? "").includes("application/json");
   } catch {
     // Not reachable: the website.
   }
-  host = server ? serverPlatform : (await import("./browser/platform")).createBrowserPlatform();
+  let chosen: Platform = server ? serverPlatform : (await import("./browser/platform")).createBrowserPlatform();
+  const cloudUrl = (import.meta.env.VITE_CLOUD_API_URL as string | undefined)?.trim();
+  if (cloudUrl) {
+    const [{ useCloudAuth }, { createCloudPlatform }, { withCloud }] = await Promise.all([import("./cloud/auth"), import("./cloud/platform"), import("./cloud/withCloud")]);
+    await useCloudAuth.getState().init(cloudUrl);
+    const local = chosen;
+    chosen = withCloud(local, createCloudPlatform(cloudUrl, () => local.libraryFiles?.() ?? null));
+  }
+  host = chosen;
   for (const attach of early.splice(0)) attach(host);
 }
 

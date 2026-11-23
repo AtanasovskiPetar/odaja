@@ -142,7 +142,9 @@ bun run typecheck
 
 [AGENTS.md](AGENTS.md) describes how the code is laid out and how to run it in
 other ways. [docs/project-format.md](docs/project-format.md) is the home file
-format, and [docs/web-plan.md](docs/web-plan.md) is how the website came to be.
+format, and [docs/web-plan.md](docs/web-plan.md) is how the website came to be;
+[docs/cloud-plan.md](docs/cloud-plan.md) is the plan for accounts, cloud homes,
+editing together, teams and paid plans.
 Every push to `master` publishes the website. A version tag (`v0.1.0`, matching
 `package.json`) builds the companion and publishes a release.
 

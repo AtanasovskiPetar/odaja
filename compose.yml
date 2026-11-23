@@ -1,0 +1,32 @@
+services:
+  postgres:
+    image: postgres:19-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-odaja}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-odaja_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-odaja}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-odaja} -d ${POSTGRES_DB:-odaja}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  fs:
+    image: ghcr.io/ferdzo/fs:latest
+    restart: unless-stopped
+    environment:
+      FS_ROOT_USER: ${S3_ACCESS_KEY_ID:-odaja_access_key}
+      FS_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-odaja_secret_key}
+    ports:
+      - "${S3_PORT:-2600}:2600"
+    volumes:
+      - fs_data:/var/lib/fs
+
+volumes:
+  pg_data:
+  fs_data:
