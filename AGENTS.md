@@ -190,5 +190,12 @@ there, or it's refused. The policy isn't applied in development.
 - Edits made outside the app (agents, editors) are pushed onto the undo stack,
   so the user can undo them in the app.
 - Stack: Bun, Vite, React 19, React Three Fiber + drei, Zustand, Zod 4,
-  TypeScript. Odaja is heading for a local-first website plus the optional
+  Tailwind CSS 4, TypeScript. Odaja is heading for a local-first website plus the optional
   companion; there is no desktop (Tauri) app.
+- Styling: new UI is written in **Tailwind**, built from the components in
+  `src/ui/primitives/` (Button, Input, Popover) and the colour names in
+  `src/ui/theme.css`, which map to the variables in `styles.css` (light and dark).
+  `styles.css` is the older way: it's loaded as a lower layer, so Tailwind's
+  classes win, and screens move off it when they're reworked (a full move is
+  planned). Tailwind resets the browser's own button and list styles, so every
+  button needs styles of its own. Use only colour variables that exist in `styles.css`.
