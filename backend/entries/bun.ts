@@ -9,7 +9,13 @@ import { createS3BlobStore } from "../storage/s3";
 const env = process.env;
 const port = Number(env.PORT ?? 8787);
 const databaseUrl = env.DATABASE_URL ?? "postgres://odaja:odaja_dev_password@localhost:5432/odaja";
-const authSecret = env.BETTER_AUTH_SECRET ?? "dev-only-change-me-to-a-long-random-secret-string";
+// The development secret is public (it's in this file): sessions signed with
+// it could be forged, so a production server doesn't start without its own.
+const DEV_SECRET = "dev-only-change-me-to-a-long-random-secret-string";
+if (env.NODE_ENV === "production" && (!env.BETTER_AUTH_SECRET || env.BETTER_AUTH_SECRET.length < 32 || env.BETTER_AUTH_SECRET === DEV_SECRET)) {
+  throw new Error("BETTER_AUTH_SECRET must be set to your own random string of 32 characters or more in production");
+}
+const authSecret = env.BETTER_AUTH_SECRET ?? DEV_SECRET;
 const authUrl = env.BETTER_AUTH_URL ?? `http://localhost:${port}`;
 const corsOrigins = (env.CORS_ORIGIN ?? "http://localhost:5173")
   .split(",")

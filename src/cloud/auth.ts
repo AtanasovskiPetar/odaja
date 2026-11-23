@@ -156,6 +156,9 @@ export const useCloudAuth = create<CloudAuthState>((set, get) => ({
       });
       return user;
     } catch {
+      // No connection: that says nothing about the session. Signed in stays
+      // signed in (an account home keeps its changes until it's back).
+      if (get().status === "signed-in") return get().user;
       set({ user: null, expiresAt: null, status: "signed-out" });
       return null;
     }

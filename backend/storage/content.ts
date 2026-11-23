@@ -35,12 +35,18 @@ async function pipe(bytes: Uint8Array, stream: CompressionStream | Decompression
 
 export const blobKey = (entry: Pick<ManifestEntry, "hash" | "gz">) => `blobs/${entry.hash}${entry.gz ? ".gz" : ""}`;
 
+// Content stored this recently is never cleaned up (collectGarbage in homes.ts).
+export const FRESH_MS = 24 * 3_600_000;
+
 // Stores the content (if it isn't stored yet) and returns its manifest entry.
+// Content stored over an hour ago is written again: it may be unused and about
+// to be cleaned up, and writing it makes it fresh.
 export async function putContent(blobs: BlobStore, rel: string, bytes: Uint8Array): Promise<ManifestEntry> {
   const entry: ManifestEntry = { hash: await sha256(bytes), size: bytes.byteLength, type: contentTypeFor(rel) };
   if (TEXT.test(rel)) entry.gz = true;
   const key = blobKey(entry);
-  if (!(await blobs.has(key))) {
+  const stored = await blobs.modified(key);
+  if (stored === null || Date.now() - stored > 3_600_000) {
     const body = entry.gz ? await pipe(bytes, new CompressionStream("gzip")) : bytes;
     await blobs.put(key, body, { contentType: entry.gz ? "application/gzip" : entry.type });
   }

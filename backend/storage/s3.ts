@@ -10,8 +10,8 @@ export interface BlobStore {
   get(key: string): Promise<BlobObject | null>;
   put(key: string, body: Uint8Array | string, opts?: { contentType?: string }): Promise<{ etag?: string }>;
   del(key: string): Promise<void>;
-  // Whether an object exists (HEAD), without downloading it.
-  has(key: string): Promise<boolean>;
+  // When an object was last written (HEAD), or null when there's none.
+  modified(key: string): Promise<number | null>;
   list(prefix: string): Promise<string[]>;
   // The same with each object's last change, for cleaning up.
   listDetailed(prefix: string): Promise<{ key: string; lastModified: number }[]>;
@@ -117,11 +117,11 @@ export function createS3BlobStore(cfg: S3Config): BlobStore {
       if (!res.ok && res.status !== 404) throw new Error(`S3 DELETE ${key} failed: ${res.status}`);
     },
 
-    async has(key) {
+    async modified(key) {
       const res = await aws.fetch(objectUrl(endpoint, key), { method: "HEAD" });
-      if (res.status === 404) return false;
+      if (res.status === 404) return null;
       if (!res.ok) throw new Error(`S3 HEAD ${key} failed: ${res.status}`);
-      return true;
+      return Date.parse(res.headers.get("Last-Modified") ?? "") || 0;
     },
 
     async list(prefix) {

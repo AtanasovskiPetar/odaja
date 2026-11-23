@@ -6,7 +6,7 @@
 import { and, desc, eq, inArray, lt } from "drizzle-orm";
 import type { CloudDb } from "./db/index";
 import { projects, versions, type Manifest, type ManifestEntry, type VersionReason, type VersionRow } from "./db/schema";
-import { blobKey, putContent } from "./storage/content";
+import { blobKey, FRESH_MS, putContent } from "./storage/content";
 import type { BlobStore } from "./storage/s3";
 
 export const AUTOSAVE_EVERY_MS = 5 * 60_000;
@@ -168,7 +168,8 @@ export async function thinVersions(db: CloudDb, now = Date.now(), keepDays?: num
 }
 
 // Delete stored content that no home and no version uses any more. Content
-// stored in the last day is left alone: a save may be about to use it.
+// stored in the last day is left alone: a save may be about to use it (a save
+// that reuses older content writes it again first, see putContent).
 export async function collectGarbage(db: CloudDb, blobs: BlobStore, now = Date.now()) {
   const used = new Set<string>();
   const add = (m: Manifest) => Object.values(m).forEach((e) => used.add(blobKey(e)));
@@ -176,7 +177,10 @@ export async function collectGarbage(db: CloudDb, blobs: BlobStore, now = Date.n
   for (const row of await db.select({ manifest: versions.manifest }).from(versions)) add(row.manifest);
   let deleted = 0;
   for (const obj of await blobs.listDetailed("blobs/")) {
-    if (used.has(obj.key) || now - obj.lastModified < DAY) continue;
+    if (used.has(obj.key) || now - obj.lastModified < FRESH_MS) continue;
+    // Written again since the listing (a save reusing it): keep it.
+    const modified = await blobs.modified(obj.key);
+    if (modified === null || Date.now() - modified < FRESH_MS) continue;
     await blobs.del(obj.key);
     deleted++;
   }

@@ -146,6 +146,25 @@ export function createCloudApp(deps: CloudAppDeps) {
     const body = (await c.req.json().catch(() => ({}))) as { name?: string };
     const name = String(body.name ?? "").trim();
     if (!name) return c.json({ error: "Name is required" }, 400);
+    // The name lives in project.json (the app shows that one); the list's
+    // name follows it when it's saved.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const [row] = await db.select({ manifest: projects.manifest }).from(projects).where(eq(projects.id, project.id));
+      const entry = row?.manifest["project.json"];
+      const bytes = entry && (await getContent(blobs, entry));
+      if (!entry || !bytes) break;
+      let doc: Record<string, unknown>;
+      try {
+        doc = JSON.parse(new TextDecoder().decode(bytes));
+      } catch {
+        break;
+      }
+      const res = await homes.save(project.id, "project.json", new TextEncoder().encode(formatJson({ ...doc, name })), entry.hash, c.get("user").id, { name });
+      if (res.ok) {
+        if (res.changed) events.publish(project.id, { path: "project.json", hash: res.entry!.hash });
+        break;
+      }
+    }
     const now = new Date();
     await db.update(projects).set({ name, updatedAt: now }).where(eq(projects.id, project.id));
     return c.json({ id: project.id, name, updatedAt: now.getTime() });
@@ -180,7 +199,15 @@ export function createCloudApp(deps: CloudAppDeps) {
     if (!rel) return c.json({ error: "Invalid path" }, 400);
     const entry = project.manifest[rel];
     if (!entry) return c.json({ error: "Not found" }, 404);
-    const headers = new Headers({ ETag: etagOf(entry.hash), "Cache-Control": cache, "Content-Type": entry.type });
+    const headers = new Headers({
+      ETag: etagOf(entry.hash),
+      "Cache-Control": cache,
+      "Content-Type": entry.type,
+      // A home's files are data, never pages: an SVG (or anything) opened
+      // directly can't run scripts on this server's address.
+      "X-Content-Type-Options": "nosniff",
+      "Content-Security-Policy": "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+    });
     if (parseEtag(c.req.header("If-None-Match")) === entry.hash) return new Response(null, { status: 304, headers });
     const body = await getContent(blobs, entry);
     if (!body) return c.json({ error: "Content missing" }, 500);
