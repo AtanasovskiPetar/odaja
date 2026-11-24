@@ -17,7 +17,9 @@ page, the admin view) are built; how they work and how to run them:
 built without a cloud server, so it behaves as before. **Next is phase 0**
 (domain, host, licence, the payment and AI-cost spikes): the model for the
 free allowance, the credit rate and the allowances themselves come from its
-measurements, and deploying (phase 2) depends on its choices.
+measurements, and deploying (phase 2) depends on its choices. Phase 4 (sharing,
+view only) needs nothing outside and can be built before it; others editing a
+home waits for real-time editing.
 
 ## What we agreed
 
@@ -64,17 +66,17 @@ measurements, and deploying (phase 2) depends on its choices.
 **Sharing**
 - **What:** a whole home, or **one scene** (one layout option).
 - **With whom:** people by email (an invite if they have no account yet), or **anyone with the link**, with no login needed to view. Links can have an expiry date and a password, and can be turned off.
-- **First, viewing:** a viewer can look around in plan, 3D and Walk, try sunlight and lamps (nothing saved), and, if allowed, **Make a copy** into their own account.
-- **Then, editing someone else's home:** one person at a time per file, with the same `If-Match` check as above; whoever saves second reloads. Real-time editing replaces this later.
-- **A scene share** gets only what the scene needs: its shell, materials, library items and assets. Never the other scenes. **Walls are read-only for scene editors**, because a wall belongs to every scene of the home; editing walls needs the whole home.
-- **AI chats are private per person**, whatever is shared.
-- **AI in a shared home:** whoever writes the prompt pays, with their own credits or key.
+- **Viewing only, for now:** a viewer can look around in plan, 3D and Walk, try sunlight and lamps (nothing saved), and, if allowed, **Make a copy** into their own account, to change as they like.
+- **Others editing your home comes with real-time editing** (below), not before. The `If-Match` check keeps one person's work safe across their own tabs and devices, but between people a refused save loses a change: the tab reloads the other version, the change isn't in history, and undoing it overwrites the other person's. It's per file, so moving a sofa and a lamp in the same scene at about the same time already clash. Losing someone's work silently isn't acceptable, so there are no editor shares until changes merge.
+- **A scene share** gets only what the scene needs: its shell, materials, library items and assets. Never the other scenes. (When editing comes: walls are read-only for scene editors, because a wall belongs to every scene of the home.)
+- **AI chats are private per person**, whatever is shared. **AI in a shared home** (with editing): whoever writes the prompt pays, with their own credits or key.
 - Comments (pinned to objects, walls or a spot) come later.
 
 **Teams**
 - **Workspaces:** every user has a personal workspace; a team is a separate workspace. A switcher at the top of the home list.
 - **Team homes belong to the team**, not to whoever made them, and stay when someone leaves. Homes can move between personal and team workspaces.
 - **Every member sees every team home** by default. **Folders** (per client) organise them; **restricted folders or homes** are visible only to chosen members (admins always see everything); a member can keep a **private draft** until it's ready.
+- **Members edit the same homes, so teams need real-time editing first** (see Sharing): phase 7 comes after it.
 - **Sharing is for people outside the team.** An outside editor joins as a **guest**.
 - **Roles:** owner, admin, editor, viewer. **Only editors pay** (a seat); viewers and commenters are free, so teams invite clients freely.
 - **Billing per editor seat**, no fixed limit, with a minimum of 2 seats, prorated when seats change.
@@ -83,7 +85,7 @@ measurements, and deploying (phase 2) depends on its choices.
 - Team management and billing live on the website only.
 
 **Later: editing together in real time**
-- Not part of the first versions. Nothing above stands in its way: homes are already files with versions, and saving whole files can later give way to live changes.
+- Not part of the first versions, and **the condition for anyone else editing your homes**: editor shares and teams wait for it (see Sharing). Nothing built so far stands in its way: homes are already files with versions, and saving whole files can later give way to live changes. Built when people ask for working together.
 - When it comes: **server-authoritative sync** in the style of Figma and tldraw, not a CRDT. One coordinator per home orders and validates changes; clients apply their own changes at once; last write wins per property; the server can refuse invalid geometry and changes the person isn't allowed to make.
 - **Presence** (cursors and selections on the plan, avatars, a figure where each person stands in Walk), **undo of only your own changes**, short disconnects queued and resent.
 - What it needs first: stable ids for every record list that lacks them (walls, openings, objects…), record patches diffed from today's operations, and validation in the server. See "Real-time editing (later)" below.
@@ -98,7 +100,7 @@ measurements, and deploying (phase 2) depends on its choices.
 | Cloud homes | a few | unlimited | unlimited, owned by the team |
 | Version history | short | long | long |
 | Share as viewer, Make a copy | ✓ | ✓ | ✓ |
-| Others editing your homes | – | ✓ | ✓ |
+| Others editing your homes (with real-time editing) | – | ✓ | ✓ |
 | Link passwords and expiry | – | ✓ | ✓ |
 | Folders, restricted access, team library | – | – | ✓ |
 
@@ -260,10 +262,12 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Done when: a new visitor goes from a prompt to a built home in one flow on the free allowance, the cost of every reply is recorded, nobody can spend past their ceiling (tested with parallel requests), and an AI turn can be undone from history.
 - Left for later: Turnstile on the first free AI use (sign-up already has it; see Security); the real model, prices and allowances from phase 0's measurements; checking the whole flow against the real API (it was checked with a stand-in that streams like it).
 
-**4. Sharing**
-- Viewer links that open without an account; Make a copy; whole home or one scene; expiry, password, allow copy.
-- Shares by email (with invites); editors, with the `If-Match` check; walls read-only for scene editors; "Shared with me" in the home list; emails on sharing.
-- Done when: a viewer link opens with no account, a copy is independent of the original, a scene editor can't change walls, and two editors saving the same file never lose each other's work silently.
+**4. Sharing, view only**
+- Viewer links that open without an account; Make a copy; whole home or one scene; expiry, password, allow copy; turning a link off.
+- Shares by email (with invites), as viewers; "Shared with me" in the home list; emails on sharing.
+- The one access check in the server (see Data model), with two levels for now: owner and viewer.
+- No editor shares: those come with real-time editing (see Sharing, and "Later").
+- Done when: a viewer link opens with no account, a viewer can't change anything (every write route refuses them), a copy is independent of the original, and a scene share shows nothing of the other scenes.
 
 **4b. Usage and admin** (built; see [cloud-platform.md](cloud-platform.md) §5b. Before payments, since bought credits need the split below, and before free credits are offered to the public)
 - Free and bought credits kept apart on the account and in the ledger, free ones spent first (see "Credits" above); existing balances count as free.
@@ -285,7 +289,7 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Remote MCP: `/mcp` on the cloud server with OAuth, so Claude, ChatGPT and others can edit cloud homes with no tab open.
 - Done when: Claude Code furnishes a cloud home from the companion while it's open on the website, claude.ai changes a cloud home through remote MCP, and a local home keeps working with no account and no network.
 
-**7. Teams**
+**7. Teams** (after real-time editing: members edit the same homes)
 - Better Auth organizations: team workspaces, invitations, roles; the workspace switcher.
 - Folders, restricted folders and homes, private drafts; moving homes between workspaces; guests.
 - Seat billing in Paddle (minimum 2, prorated), pooled credits with per-member limits, the team library.
@@ -301,7 +305,7 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Done when: the checklist above is complete on production and the early supporters are invited.
 
 **Later**
-- Editing together in real time (see above), with presence.
+- Editing together in real time (see above), with presence. It's what editor shares and teams wait for.
 - Comments pinned to objects, walls or a spot, with email notifications.
 - A headless renderer for screenshots without an open tab.
 - Quote and quantity PDFs, high-resolution renders (Pro).
