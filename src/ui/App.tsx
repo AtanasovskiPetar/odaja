@@ -7,7 +7,9 @@ import { duplicateParts, mirrorParts, removeParts } from "../model/partOps";
 import { useOdaja, type Tool } from "../store";
 import { platform } from "../platform";
 import { CloudAccountFooter, SignInWindow } from "./cloud/AuthGate";
+import { AdminDialog } from "./cloud/AdminDialog";
 import { HistoryDialog } from "./cloud/HistoryDialog";
+import { UsageDialog } from "./cloud/UsageDialog";
 import { Viewport } from "../three/Viewport";
 import { PreparingIndicator } from "../three/render/ShaderGate";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
@@ -953,6 +955,8 @@ function Dialogs() {
   if (dialog?.kind === "open-folder") return <OpenFolderDialog />;
   if (dialog?.kind === "manage-homes") return <ManageHomesDialog />;
   if (dialog?.kind === "history") return <HistoryDialog />;
+  if (dialog?.kind === "usage") return <UsageDialog />;
+  if (dialog?.kind === "admin") return <AdminDialog />;
   if (dialog?.kind === "add-to-library") return <AddToLibraryDialog items={dialog.items} />;
   return null;
 }

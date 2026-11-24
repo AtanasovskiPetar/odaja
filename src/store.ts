@@ -75,6 +75,9 @@ export type Dialog =
   | { kind: "manage-homes" }
   // A cloud home's versions: look, name the current state, restore.
   | { kind: "history" }
+  // What Odaja's AI cost the account (Usage), and every account's (admins).
+  | { kind: "usage" }
+  | { kind: "admin" }
   // After opening a home: its library items you don't have yet.
   | { kind: "add-to-library"; items: MissingItem[] }
   | null;

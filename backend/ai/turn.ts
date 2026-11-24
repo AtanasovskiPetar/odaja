@@ -190,6 +190,7 @@ export async function runHostedTurn(deps: TurnDeps, input: TurnInput, emit: (e: 
 
   let total = NONE;
   let charged = 0;
+  let chargedBought = 0;
   let balance: number | null = null;
   let steps = 0;
   let outcome = "done";
@@ -258,8 +259,9 @@ export async function runHostedTurn(deps: TurnDeps, input: TurnInput, emit: (e: 
         if (!message) used = { ...used, output: Math.max(used.output, Math.ceil(outputChars / 3)) };
         total = plus(total, used);
         const cost = chargeFor(cfg, model, costUsd(model.price, used));
-        const settled = await credits.settle(input.userId, hold.held, cost, { project: input.projectId, model: model.id, step: steps });
+        const settled = await credits.settle(input.userId, hold, cost, { project: input.projectId, model: model.id, step: steps });
         charged += settled.charged;
+        chargedBought += settled.chargedBought;
         balance = settled.balance;
       }
       if (!message) break;
@@ -316,6 +318,7 @@ export async function runHostedTurn(deps: TurnDeps, input: TurnInput, emit: (e: 
         cacheWriteTokens: total.cacheWrite,
         costMicroUsd: Math.round(costUsd(model.price, total) * 1_000_000),
         charged,
+        chargedBought,
         outcome,
       })
       .catch((e) => console.warn("[odaja-cloud] couldn't record AI usage:", (e as Error).message));
