@@ -68,6 +68,8 @@ export type Dialog =
   // Opening a .odaja file over the home in the browser (asks first).
   | { kind: "open-home"; file: File; handle?: FileSystemFileHandle }
   | { kind: "export-image" }
+  // The website: how to install the companion.
+  | { kind: "install" }
   // A new home (the home menu), and opening a project folder (companion).
   | { kind: "new-home" }
   | { kind: "open-folder" }

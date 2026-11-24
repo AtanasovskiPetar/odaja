@@ -1,5 +1,6 @@
 // The home's name in the sidebar opens the home menu: a new home, open a
-// .odaja file, save to one, export an image. On the website a dot marks
+// .odaja file, save to one, export an image (and, on the website, how to
+// install Odaja on the computer). On the website a dot marks
 // changes not yet saved to a file; in the companion the menu lists the other
 // homes (folders) and opens any folder. Double-click the name (or "Rename…")
 // to rename the home: its name in project.json, undoably; the folder keeps its name.
@@ -127,6 +128,14 @@ export function HomeMenu() {
           <button role="menuitem" onClick={run(() => useOdaja.getState().openDialog({ kind: "export-image" }))}>
             Export image…
           </button>
+          {web && (
+            <>
+              <div className="menu-sep" />
+              <button role="menuitem" onClick={run(() => useOdaja.getState().openDialog({ kind: "install" }))}>
+                Install on your computer…
+              </button>
+            </>
+          )}
           {web && <p className="menu-note">{unsaved ? "Changes are kept in this browser, but not in a file yet." : "Kept in this browser and saved to a file."}</p>}
         </div>
       )}
