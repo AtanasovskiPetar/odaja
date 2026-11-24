@@ -1,6 +1,6 @@
 # Odaja Cloud Platform — Progress & Architecture
 
-On `master` since [#10](https://github.com/AtanasovskiPetar/odaja/pull/10) (built on the `feat/cloud-backend` branch). Not deployed: the website is built without `VITE_CLOUD_API_URL`, so it has no cloud.
+On the **`cloud` branch**, not `master`, until it's ready to launch: `master` stays what's shipped (v0.8.7 when the cloud work moved here). New phases branch off `cloud` and their pull requests go into `cloud`; merge `master` into `cloud` now and then. Not deployed: nothing is built with `VITE_CLOUD_API_URL` yet.
 
 This document captures what has been built so far for Odaja's cloud platform, how to run it locally, and the next steps. The decisions behind it (and the phases) are in [cloud-plan.md](cloud-plan.md).
 

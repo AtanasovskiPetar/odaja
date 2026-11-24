@@ -8,9 +8,12 @@ people ask for it.
 
 This builds on the local-first website in [web-plan.md](web-plan.md).
 
-**Where we are:** phase 1 (accounts and cloud homes for one person) is built and
-on `master` ([#10](https://github.com/AtanasovskiPetar/odaja/pull/10)), and
-phase 3 (Odaja's own AI with credits, the tools on the server, the
+**Where we are:** the cloud work lives on the **`cloud` branch** until it's
+ready to launch; `master` is what's shipped (the website and companion
+releases). Each phase branches off `cloud` and its pull request goes into
+`cloud`; `master` is merged into `cloud` now and then, so the final merge stays
+small. Phase 1 (accounts and cloud homes for one person,
+[#10](https://github.com/AtanasovskiPetar/odaja/pull/10)), phase 3 (Odaja's own AI with credits, the tools on the server, the
 prompt-first start) and phase 4b (free and bought credits apart, the Usage
 page, the admin view) are built; how they work and how to run them:
 [cloud-platform.md](cloud-platform.md). Nothing is deployed: the website is
@@ -234,7 +237,7 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Early-supporter page live.
 - Done when: the domain is registered, the host is chosen, the licence is changed, and each spike works or has a replacement. Measurements and pricing notes from this phase are kept outside the repo.
 
-**1. Accounts and cloud homes, one person** (done, on `master`; what was checked is in [cloud-platform.md](cloud-platform.md))
+**1. Accounts and cloud homes, one person** (done, on `cloud`; what was checked is in [cloud-platform.md](cloud-platform.md))
 - The server: Hono, Postgres with Drizzle, S3 storage by content hash, `compose.yml` for development.
 - Better Auth: email and password, email links, Google and GitHub, each on when configured; email verification and password reset when email is set up; rate limits; Turnstile on sign-up.
 - Signing in from the app, with no login wall: cloud homes in the home list next to local ones; new cloud home; "Copy to your account"; `.odaja` import and export for cloud homes.
@@ -249,7 +252,7 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Database migrations: development uses `bun run db:push`; staging and production apply generated migrations (`bun run db:generate`), checked in and run on deploy.
 - Ready for more than one server process: change events through Postgres `LISTEN/NOTIFY` (today they're in memory, so tabs only hear saves made through the same process), and thinning versions and cleaning up unused content as a job that runs once (today each process runs it hourly). The AI's per-account rate limits and screenshot answers are in memory too, and a starting server gives back every credit hold (they belong to replies that were running in it); with several processes, the limits move to Postgres, screenshot answers reach the process running the reply, and holds are released per process.
 - An upload size limit on saving files (today only Bun's default), before the server is public.
-- GitHub Actions: test, then deploy to staging on `master`, to production on a release tag.
+- GitHub Actions: test, then deploy to staging on pushes to `cloud` (to `master` once it's merged), to production on a release tag.
 - Sentry and PostHog, with no cookies before consent.
 - Done when: a deploy goes through staging to production, and the website runs from the new domain.
 
