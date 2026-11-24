@@ -11,7 +11,8 @@ This builds on the local-first website in [web-plan.md](web-plan.md).
 **Where we are:** phase 1 (accounts and cloud homes for one person) is built and
 on `master` ([#10](https://github.com/AtanasovskiPetar/odaja/pull/10)), and
 phase 3 (Odaja's own AI with credits, the tools on the server, the
-prompt-first start) is built; how both work and how to run them:
+prompt-first start) and phase 4b (free and bought credits apart, the Usage
+page, the admin view) are built; how they work and how to run them:
 [cloud-platform.md](cloud-platform.md). Nothing is deployed: the website is
 built without a cloud server, so it behaves as before. **Next is phase 0**
 (domain, host, licence, the payment and AI-cost spikes): the model for the
@@ -264,7 +265,7 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Shares by email (with invites); editors, with the `If-Match` check; walls read-only for scene editors; "Shared with me" in the home list; emails on sharing.
 - Done when: a viewer link opens with no account, a copy is independent of the original, a scene editor can't change walls, and two editors saving the same file never lose each other's work silently.
 
-**4b. Usage and admin** (its own phase, built when it suits; before payments, since bought credits need the split below, and before free credits are offered to the public)
+**4b. Usage and admin** (built; see [cloud-platform.md](cloud-platform.md) §5b. Before payments, since bought credits need the split below, and before free credits are offered to the public)
 - Free and bought credits kept apart on the account and in the ledger, free ones spent first (see "Credits" above); existing balances count as free.
 - The Usage page for users (`GET /api/v1/ai/usage`): the balance by kind, every reply with its date, home, model and credits, what was added and the balance after each, this month's totals.
 - The admin role (`ADMIN_EMAILS`, checked on the server for every admin route) and the admin usage view: spend, our real cost and prompts per account, by day and month; the most expensive accounts and replies; free credits given; granting credits.

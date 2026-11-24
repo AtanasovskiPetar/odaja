@@ -19,6 +19,8 @@ export interface AiStatus {
   // When more credits come (the monthly allowance, or the ceiling starting again; ms).
   nextAllowance: number | null;
   topUpUrl: string | null;
+  // This account may open the admin view (the server checks every admin route).
+  admin?: boolean;
 }
 
 interface CloudAiState {

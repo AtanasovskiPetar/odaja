@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { formatCredits, useCloudAi } from "../../cloud/ai";
 import { useCloudAuth } from "../../cloud/auth";
 import { mountTurnstile, type TurnstileWidget } from "../../cloud/turnstile";
+import { useOdaja } from "../../store";
 import { LogoMark } from "../icons";
 import { Button } from "../primitives/Button";
 import { TextField } from "../primitives/Input";
@@ -203,6 +205,8 @@ function SignInForm({ newPasswordToken }: { newPasswordToken: string | null }) {
   );
 }
 
+const MENU_ITEM = "w-full text-left border-0 bg-transparent text-ink text-xs px-2 py-1.5 rounded-[6px] hover:bg-well cursor-pointer";
+
 export function CloudAccountFooter() {
   const user = useCloudAuth((s) => s.user);
   const expiresAt = useCloudAuth((s) => s.expiresAt);
@@ -211,6 +215,11 @@ export function CloudAccountFooter() {
   const [open, setOpen] = useState(false);
   const [refreshed, setRefreshed] = useState(false);
   const btnRef = useRef<HTMLButtonElement>(null);
+  const aiStatus = useCloudAi((s) => s.status);
+  const show = (kind: "usage" | "admin") => {
+    setOpen(false);
+    useOdaja.getState().openDialog({ kind });
+  };
 
   if (!user) {
     return (
@@ -273,6 +282,16 @@ export function CloudAccountFooter() {
           </div>
 
           <div className="flex flex-col gap-0.5 border-t border-line pt-1.5">
+            {aiStatus && (
+              <button type="button" role="menuitem" onClick={() => show("usage")} className={MENU_ITEM}>
+                Usage <span className="text-muted">· {formatCredits(aiStatus.balance)} credits</span>
+              </button>
+            )}
+            {aiStatus?.admin && (
+              <button type="button" role="menuitem" onClick={() => show("admin")} className={MENU_ITEM}>
+                Admin
+              </button>
+            )}
             <button
               type="button"
               role="menuitem"
@@ -281,7 +300,7 @@ export function CloudAccountFooter() {
                 setRefreshed(true);
                 setTimeout(() => setRefreshed(false), 1800);
               }}
-              className="w-full text-left border-0 bg-transparent text-ink text-xs px-2 py-1.5 rounded-[6px] hover:bg-well cursor-pointer"
+              className={MENU_ITEM}
             >
               {refreshed ? "Session refreshed ✓" : "Refresh session"}
             </button>

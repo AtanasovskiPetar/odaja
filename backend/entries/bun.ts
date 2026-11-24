@@ -5,6 +5,7 @@ import { aiConfigFrom } from "../ai/config";
 import { createCredits } from "../ai/credits";
 import { createAiLimits } from "../ai/limits";
 import { createScreenshots } from "../ai/turn";
+import { createUsage } from "../ai/usage";
 import { createCloudApp, type CloudAi } from "../app";
 import { createAuth, signInMethods, type AuthConfig, type OAuthApp } from "../auth";
 import { createDb } from "../db/index";
@@ -65,12 +66,22 @@ if (aiConfig.enabled) {
     limits: createAiLimits(aiConfig),
     screenshots: createScreenshots(),
     client: new Anthropic({ apiKey: aiConfig.apiKey, baseURL: aiConfig.baseURL }),
+    usage: createUsage(db, aiConfig),
   };
   credits
     .releaseHolds()
     .then((n) => n && console.log(`[odaja-cloud] gave back credits held by ${n} replies that were running when the server stopped`))
     .catch((err) => console.warn("[odaja-cloud] couldn't release held credits:", (err as Error).message));
   console.log(`[odaja-cloud] AI on: ${aiConfig.models.map((m) => `${m.id} (${m.model})`).join(", ")}`);
+}
+
+// The admin view's accounts (backend/app.ts checks every admin route).
+const adminEmails = (env.ADMIN_EMAILS ?? "")
+  .split(",")
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean);
+if (adminEmails.length && !mailer.configured) {
+  console.warn("[odaja-cloud] ADMIN_EMAILS without email: admin addresses can't be confirmed, so create those accounts yourself before anyone else can");
 }
 
 const app = createCloudApp({
@@ -82,6 +93,7 @@ const app = createCloudApp({
   events: createHomeEvents(),
   corsOrigins,
   ai,
+  admins: { emails: adminEmails, needVerifiedEmail: mailer.configured },
 });
 
 blobs.ensureBucket().catch((err) => {

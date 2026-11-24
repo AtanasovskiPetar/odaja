@@ -5,6 +5,9 @@
 //     balance to `held` (the step's output limit is sized to what's there);
 //   - after it, `settle` charges what it really cost (never more than was
 //     held) and gives the rest back, with a line in the ledger.
+// Credits are free (starter, monthly, grants) or bought (top-ups), kept apart
+// on the account and in the ledger. Free ones are spent first, so a hold and a
+// charge each say how much of them was bought.
 // Amounts are millicredits (see backend/ai/config.ts).
 import { eq, sql } from "drizzle-orm";
 import type { CloudDb } from "../db/index";
@@ -25,7 +28,19 @@ export interface CreditStatus {
   available: number;
   // What limits it: the balance, or the monthly ceiling.
   limitedBy: "balance" | "ceiling";
+  // The balance by kind (not counting what running replies hold).
+  free: number;
+  bought: number;
 }
+
+// What a step set aside, and how much of it was bought credits.
+export interface Hold {
+  held: number;
+  heldBought: number;
+}
+
+// Top-ups are bought credits; everything else given is free.
+const isBought = (reason: CreditReason) => reason === "top-up";
 
 // The account's row, locked until the transaction ends (made the first time).
 async function lock(tx: Tx, userId: string): Promise<Account> {
@@ -45,36 +60,38 @@ async function write(tx: Tx, userId: string, set: Partial<Account>) {
     .where(eq(creditAccounts.userId, userId));
 }
 
-async function log(tx: Tx, userId: string, change: number, balanceAfter: number, reason: CreditReason, detail?: Record<string, unknown>) {
-  await tx.insert(creditLedger).values({ id: newId(), userId, change, balanceAfter, reason, detail: detail ?? null });
+async function log(tx: Tx, userId: string, change: number, bought: number, balanceAfter: number, reason: CreditReason, detail?: Record<string, unknown>) {
+  await tx.insert(creditLedger).values({ id: newId(), userId, change, bought, balanceAfter, reason, detail: detail ?? null });
 }
 
 export function createCredits(db: CloudDb, cfg: AiConfig, clock: () => Date = () => new Date()) {
   const spentThisMonth = (a: Account, month: string) => (a.spentMonth === month ? a.spent : 0);
   // What can be spent now, and whether the balance or the ceiling limits it.
   function spendable(a: Account): CreditStatus {
-    if (cfg.monthlyCeiling === null) return { available: Math.max(0, a.balance), limitedBy: "balance" };
+    const kinds = { free: Math.max(0, a.balance - a.bought), bought: Math.max(0, a.bought) };
+    if (cfg.monthlyCeiling === null) return { available: Math.max(0, a.balance), limitedBy: "balance", ...kinds };
     const left = Math.max(0, toMilli(cfg.monthlyCeiling) - spentThisMonth(a, monthOf(clock())) - a.held);
-    return left < a.balance ? { available: left, limitedBy: "ceiling" } : { available: Math.max(0, a.balance), limitedBy: "balance" };
+    return left < a.balance ? { available: left, limitedBy: "ceiling", ...kinds } : { available: Math.max(0, a.balance), limitedBy: "balance", ...kinds };
   }
 
   // Allowances due: the starter credits once (when the account may have
   // them), and the monthly allowance at the start of each month. The monthly
-  // one tops the balance up to the allowance; it doesn't pile up.
+  // one tops the free credits up to the allowance; it doesn't pile up, and
+  // bought credits don't make it smaller.
   async function allowances(tx: Tx, a: Account, eligible: boolean): Promise<Account> {
     const month = monthOf(clock());
     let account = a;
     if (eligible && !account.starterGranted && cfg.starterCredits > 0) {
       const balance = account.balance + toMilli(cfg.starterCredits);
       await write(tx, account.userId, { balance, starterGranted: true });
-      await log(tx, account.userId, toMilli(cfg.starterCredits), balance, "starter");
+      await log(tx, account.userId, toMilli(cfg.starterCredits), 0, balance, "starter");
       account = { ...account, balance, starterGranted: true };
     }
     if (eligible && cfg.monthlyCredits > 0 && account.allowanceMonth !== month) {
-      const topUp = Math.max(0, toMilli(cfg.monthlyCredits) - account.balance);
+      const topUp = Math.max(0, toMilli(cfg.monthlyCredits) - (account.balance - account.bought));
       const balance = account.balance + topUp;
       await write(tx, account.userId, { balance, allowanceMonth: month });
-      if (topUp > 0) await log(tx, account.userId, topUp, balance, "monthly", { month });
+      if (topUp > 0) await log(tx, account.userId, topUp, 0, balance, "monthly", { month });
       account = { ...account, balance, allowanceMonth: month };
     }
     return account;
@@ -87,42 +104,53 @@ export function createCredits(db: CloudDb, cfg: AiConfig, clock: () => Date = ()
     },
 
     // Set aside what a step may cost: `decide` gets what can be spent now and
-    // says how much to hold (0: not enough, nothing is held).
-    async reserve(userId: string, eligible: boolean, decide: (available: number) => number): Promise<CreditStatus & { held: number }> {
+    // says how much to hold (0: not enough, nothing is held). Free credits
+    // are held first, then bought ones.
+    async reserve(userId: string, eligible: boolean, decide: (available: number) => number): Promise<CreditStatus & Hold> {
       return db.transaction(async (tx) => {
         const a = await allowances(tx, await lock(tx, userId), eligible);
-        const { available, limitedBy } = spendable(a);
-        const held = Math.min(available, Math.max(0, Math.floor(decide(available))));
-        if (held > 0) await write(tx, userId, { balance: a.balance - held, held: a.held + held });
-        return { held, available, limitedBy };
+        const status = spendable(a);
+        const held = Math.min(status.available, Math.max(0, Math.floor(decide(status.available))));
+        const heldBought = Math.max(0, held - status.free);
+        if (held > 0) await write(tx, userId, { balance: a.balance - held, bought: a.bought - heldBought, held: a.held + held, heldBought: a.heldBought + heldBought });
+        return { ...status, held, heldBought };
       });
     },
 
-    // Charge what a step cost (at most what was held) and give the rest back.
-    async settle(userId: string, held: number, cost: number, detail: Record<string, unknown>): Promise<{ charged: number; balance: number }> {
+    // Charge what a step cost (at most what was held), from its free credits
+    // first, and give the rest back to where it came from.
+    async settle(userId: string, hold: Hold, cost: number, detail: Record<string, unknown>): Promise<{ charged: number; chargedBought: number; balance: number }> {
       return db.transaction(async (tx) => {
         const a = await lock(tx, userId);
         const month = monthOf(clock());
-        const charged = Math.max(0, Math.min(Math.ceil(cost), held));
-        const balance = a.balance + held - charged;
+        const charged = Math.max(0, Math.min(Math.ceil(cost), hold.held));
+        const chargedBought = Math.max(0, charged - (hold.held - hold.heldBought));
+        const balance = a.balance + hold.held - charged;
         await write(tx, userId, {
           balance,
-          held: Math.max(0, a.held - held),
+          bought: a.bought + hold.heldBought - chargedBought,
+          held: Math.max(0, a.held - hold.held),
+          heldBought: Math.max(0, a.heldBought - hold.heldBought),
           spentMonth: month,
           spent: spentThisMonth(a, month) + charged,
         });
-        if (charged > 0) await log(tx, userId, -charged, balance, "ai", detail);
-        return { charged, balance };
+        if (charged > 0) await log(tx, userId, -charged, -chargedBought, balance, "ai", detail);
+        return { charged, chargedBought, balance };
       });
     },
 
-    // Add credits by hand (early supporters, support) or for a purchase.
+    // Add credits by hand (early supporters, support: free) or for a
+    // purchase (a top-up: bought). A negative amount takes back at most what
+    // that kind has. Returns the balance after.
     async grant(userId: string, credits: number, reason: CreditReason, detail?: Record<string, unknown>): Promise<number> {
       return db.transaction(async (tx) => {
         const a = await lock(tx, userId);
-        const balance = a.balance + toMilli(credits);
-        await write(tx, userId, { balance });
-        await log(tx, userId, toMilli(credits), balance, reason, detail);
+        const bought = isBought(reason);
+        const change = Math.max(toMilli(credits), -(bought ? a.bought : Math.max(0, a.balance - a.bought)));
+        if (change === 0) return a.balance;
+        const balance = a.balance + change;
+        await write(tx, userId, { balance, ...(bought ? { bought: a.bought + change } : {}) });
+        await log(tx, userId, change, bought ? change : 0, balance, reason, detail);
         return balance;
       });
     },
@@ -133,7 +161,12 @@ export function createCredits(db: CloudDb, cfg: AiConfig, clock: () => Date = ()
     async releaseHolds(): Promise<number> {
       const rows = await db
         .update(creditAccounts)
-        .set({ balance: sql`${creditAccounts.balance} + ${creditAccounts.held}`, held: 0 })
+        .set({
+          balance: sql`${creditAccounts.balance} + ${creditAccounts.held}`,
+          bought: sql`${creditAccounts.bought} + ${creditAccounts.heldBought}`,
+          held: 0,
+          heldBought: 0,
+        })
         .where(sql`${creditAccounts.held} > 0`)
         .returning({ userId: creditAccounts.userId });
       return rows.length;

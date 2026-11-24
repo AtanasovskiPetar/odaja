@@ -12,10 +12,11 @@ import { affordableOutput, defaultModel, type AiConfig } from "./ai/config";
 import { nextMonthStart, type CreditStatus, type Credits } from "./ai/credits";
 import { homeArea } from "./ai/homeFiles";
 import type { AiLimits } from "./ai/limits";
+import type { Usage } from "./ai/usage";
 import { baseTokens, estimateTokens, MIN_STEP_OUTPUT, runHostedTurn, type ImageInput, type Message, type Screenshots, type TurnEvent } from "./ai/turn";
 import type { CloudAuth, SignInMethods } from "./auth";
 import type { CloudDb } from "./db/index";
-import { projects, type ProjectRow, type VersionReason } from "./db/schema";
+import { projects, user as users, type ProjectRow, type VersionReason } from "./db/schema";
 import type { HomeEvents } from "./events";
 import { newId, type Expected, type Homes } from "./homes";
 import { blobKey, etagOf, getContent, parseEtag } from "./storage/content";
@@ -31,6 +32,9 @@ export interface CloudAppDeps {
   corsOrigins: string[];
   // AI on our key (backend/ai/); without it the server offers none.
   ai?: CloudAi;
+  // Who sees the admin view (ADMIN_EMAILS): these addresses, confirmed when
+  // the server can send email (so nobody signs up as one to get in).
+  admins?: { emails: string[]; needVerifiedEmail: boolean };
 }
 
 export interface CloudAi {
@@ -39,6 +43,7 @@ export interface CloudAi {
   limits: AiLimits;
   screenshots: Screenshots;
   client: Anthropic;
+  usage: Usage;
 }
 
 // Largest AI request: the conversation so far with its photos and screenshots.
@@ -89,7 +94,7 @@ export function isAllowedOrigin(origin: string, corsOrigins: string[]): boolean 
 }
 
 export function createCloudApp(deps: CloudAppDeps) {
-  const { db, blobs, auth, signInMethods, homes, events, corsOrigins, ai } = deps;
+  const { db, blobs, auth, signInMethods, homes, events, corsOrigins, ai, admins } = deps;
   const app = new Hono<AppEnv>();
 
   app.use("*", logger());
@@ -377,7 +382,57 @@ export function createCloudApp(deps: CloudAppDeps) {
     if (!ai?.cfg.enabled) return c.json({ enabled: false });
     const user = c.get("user");
     const status = await ai.credits.status(user.id, eligible(user));
-    return c.json({ enabled: true, balance: credits(status.available), needsVerifiedEmail: !eligible(user), ...moreCredits(ai.cfg, status.limitedBy) });
+    return c.json({
+      enabled: true,
+      balance: credits(status.available),
+      needsVerifiedEmail: !eligible(user),
+      ...moreCredits(ai.cfg, status.limitedBy),
+      ...(isAdmin(user) ? { admin: true } : {}),
+    });
+  });
+
+  // The Usage page: the balance by kind, this month, every reply with its
+  // cost, and what was added. `before` (ms) pages back through older replies.
+  app.get("/api/v1/ai/usage", requireAuth, async (c) => {
+    if (!ai) return c.json({ error: "This server has no AI of its own" }, 404);
+    const user = c.get("user");
+    const before = Number(c.req.query("before")) || undefined;
+    const [status, usage] = await Promise.all([ai.credits.status(user.id, eligible(user)), ai.usage.forUser(user.id, { before })]);
+    return c.json({ balance: { available: status.available / 1000, free: status.free / 1000, bought: status.bought / 1000 }, ...usage });
+  });
+
+  // --- Admin (ADMIN_EMAILS): every route checks on its own ---------------
+
+  const isAdmin = (user: AppVariables["user"]) =>
+    Boolean(admins?.emails.includes(user.email.toLowerCase()) && (!admins.needVerifiedEmail || user.emailVerified));
+  // Not found, rather than forbidden: the routes don't say they exist.
+  const requireAdmin: MiddlewareHandler<AppEnv> = async (c, next) => {
+    if (!ai || !isAdmin(c.get("user"))) return c.json({ error: "Not found" }, 404);
+    await next();
+  };
+
+  app.get("/api/v1/admin/usage", requireAuth, requireAdmin, async (c) => {
+    const period = c.req.query("period") === "30-days" ? "30-days" : "month";
+    return c.json(await ai!.usage.overview(period));
+  });
+
+  app.get("/api/v1/admin/accounts/:id", requireAuth, requireAdmin, async (c) => {
+    const account = await ai!.usage.account(c.req.param("id"));
+    return account ? c.json(account) : c.json({ error: "No such account" }, 404);
+  });
+
+  // Give credits by hand (free ones; a negative amount takes back).
+  app.post("/api/v1/admin/grant", requireAuth, requireAdmin, async (c) => {
+    const body = (await c.req.json().catch(() => null)) as { email?: unknown; credits?: unknown; note?: unknown } | null;
+    const amount = Number(body?.credits);
+    if (typeof body?.email !== "string" || !Number.isFinite(amount) || amount === 0 || Math.abs(amount) > 1_000_000) {
+      return c.json({ error: "Give an email address and a number of credits." }, 400);
+    }
+    const [account] = await db.select({ id: users.id }).from(users).where(eq(users.email, body.email.trim().toLowerCase()));
+    if (!account) return c.json({ error: `No account with the email ${body.email.trim()}.` }, 404);
+    const note = typeof body.note === "string" && body.note.trim() ? body.note.trim().slice(0, 200) : undefined;
+    const balance = await ai!.credits.grant(account.id, amount, "grant", { ...(note ? { note } : {}), by: c.get("user").email });
+    return c.json({ ok: true, id: account.id, balance: balance / 1000 });
   });
 
   // Stop the account's running reply: it settles what was used and still

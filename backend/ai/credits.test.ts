@@ -43,7 +43,7 @@ describe.skipIf(!db)("credits", () => {
     const id = await newUser();
     expect((await credits.status(id, true)).available).toBe(20 * MILLI);
     const r = await credits.reserve(id, true, () => 15 * MILLI);
-    await credits.settle(id, r.held, 15 * MILLI, {});
+    await credits.settle(id, r, 15 * MILLI, {});
     expect((await credits.status(id, true)).available).toBe(5 * MILLI);
     now = new Date(Date.UTC(2026, 11, 1));
     expect((await credits.status(id, true)).available).toBe(20 * MILLI);
@@ -58,7 +58,7 @@ describe.skipIf(!db)("credits", () => {
     const holds = await Promise.all(Array.from({ length: 25 }, () => credits.reserve(id, true, (available) => (available >= MILLI ? MILLI : 0))));
     expect(holds.filter((h) => h.held > 0)).toHaveLength(10);
     // Each charged more than it held: charged only what it held.
-    await Promise.all(holds.filter((h) => h.held).map((h) => credits.settle(id, h.held, 2 * MILLI, {})));
+    await Promise.all(holds.filter((h) => h.held).map((h) => credits.settle(id, h, 2 * MILLI, {})));
     const [account] = await db!.select().from(creditAccounts).where(eq(creditAccounts.userId, id));
     expect(account).toMatchObject({ balance: 0, held: 0, spent: 10 * MILLI });
     const lines = await ledger(id);
@@ -71,7 +71,7 @@ describe.skipIf(!db)("credits", () => {
     await credits.grant(id, 10, "grant");
     const r = await credits.reserve(id, true, () => 4 * MILLI);
     expect((await credits.status(id, true)).available).toBe(6 * MILLI);
-    expect(await credits.settle(id, r.held, 250, {})).toEqual({ charged: 250, balance: 10 * MILLI - 250 });
+    expect(await credits.settle(id, r, 250, {})).toEqual({ charged: 250, chargedBought: 0, balance: 10 * MILLI - 250 });
   });
 
   test("the monthly ceiling caps spending whatever the balance", async () => {
@@ -82,7 +82,7 @@ describe.skipIf(!db)("credits", () => {
     expect(first).toMatchObject({ held: 5 * MILLI, limitedBy: "ceiling" });
     // Held counts against the ceiling until it's settled.
     expect((await credits.reserve(id, true, (a) => a)).held).toBe(0);
-    await credits.settle(id, first.held, 3 * MILLI, {});
+    await credits.settle(id, first, 3 * MILLI, {});
     expect((await credits.reserve(id, true, (a) => a)).held).toBe(2 * MILLI);
   });
 
@@ -94,5 +94,47 @@ describe.skipIf(!db)("credits", () => {
     expect(await credits.releaseHolds()).toBeGreaterThanOrEqual(1);
     const [account] = await db!.select().from(creditAccounts).where(eq(creditAccounts.userId, id));
     expect(account).toMatchObject({ balance: 10 * MILLI, held: 0 });
+  });
+
+  test("free credits are spent first, and what's given back goes back where it came from", async () => {
+    const credits = createCredits(db!, config({}));
+    const id = await newUser();
+    await credits.grant(id, 3, "grant");
+    await credits.grant(id, 10, "top-up", { payment: "test" });
+    expect(await credits.status(id, true)).toMatchObject({ available: 13 * MILLI, free: 3 * MILLI, bought: 10 * MILLI });
+    // Holds 5: the 3 free ones and 2 bought; uses 4: 3 free and 1 bought.
+    const r = await credits.reserve(id, true, () => 5 * MILLI);
+    expect(r).toMatchObject({ held: 5 * MILLI, heldBought: 2 * MILLI });
+    expect(await credits.settle(id, r, 4 * MILLI, {})).toEqual({ charged: 4 * MILLI, chargedBought: MILLI, balance: 9 * MILLI });
+    expect(await credits.status(id, true)).toMatchObject({ free: 0, bought: 9 * MILLI });
+    const charge = (await ledger(id)).find((l) => l.reason === "ai")!;
+    expect(charge).toMatchObject({ change: -4 * MILLI, bought: -MILLI, balanceAfter: 9 * MILLI });
+  });
+
+  test("the monthly allowance tops up free credits only; bought ones don't count against it", async () => {
+    const credits = createCredits(db!, config({ AI_MONTHLY_CREDITS: "20" }));
+    const id = await newUser();
+    await credits.grant(id, 50, "top-up");
+    expect(await credits.status(id, true)).toMatchObject({ free: 20 * MILLI, bought: 50 * MILLI });
+  });
+
+  test("taking credits back takes at most what that kind has", async () => {
+    const credits = createCredits(db!, config({}));
+    const id = await newUser();
+    await credits.grant(id, 5, "grant");
+    await credits.grant(id, 8, "top-up");
+    expect(await credits.grant(id, -100, "grant")).toBe(8 * MILLI);
+    expect(await credits.status(id, true)).toMatchObject({ free: 0, bought: 8 * MILLI });
+  });
+
+  test("bought holds left by a stopped server go back as bought", async () => {
+    const credits = createCredits(db!, config({}));
+    const id = await newUser();
+    await credits.grant(id, 1, "grant");
+    await credits.grant(id, 9, "top-up");
+    await credits.reserve(id, true, () => 6 * MILLI);
+    await credits.releaseHolds();
+    const [account] = await db!.select().from(creditAccounts).where(eq(creditAccounts.userId, id));
+    expect(account).toMatchObject({ balance: 10 * MILLI, bought: 9 * MILLI, held: 0, heldBought: 0 });
   });
 });

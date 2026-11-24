@@ -113,12 +113,17 @@ export type VersionRow = typeof versions.$inferSelect;
 // One per account: what it can spend now (`balance`), what running replies
 // have set aside (`held`, moved back when each step is settled) and what it
 // spent this month (for the hard ceiling).
+// Credits are free (starter, monthly, grants) or bought (top-ups): `bought` and
+// `heldBought` are the bought part of `balance` and `held`; the rest is free.
+// Free credits are spent first.
 export const creditAccounts = pgTable("credit_accounts", {
   userId: text("user_id")
     .primaryKey()
     .references(() => user.id, { onDelete: "cascade" }),
   balance: bigint("balance", { mode: "number" }).notNull().default(0),
+  bought: bigint("bought", { mode: "number" }).notNull().default(0),
   held: bigint("held", { mode: "number" }).notNull().default(0),
+  heldBought: bigint("held_bought", { mode: "number" }).notNull().default(0),
   starterGranted: boolean("starter_granted").notNull().default(false),
   // The month ("2026-11") the monthly allowance was last given.
   allowanceMonth: text("allowance_month"),
@@ -130,7 +135,8 @@ export const creditAccounts = pgTable("credit_accounts", {
 
 export type CreditReason = "starter" | "monthly" | "grant" | "top-up" | "ai";
 
-// Every change of a balance, with the balance after it.
+// Every change of a balance, with the balance after it. `bought` is the part
+// of `change` in bought credits (a charge can take some of each).
 export const creditLedger = pgTable(
   "credit_ledger",
   {
@@ -139,6 +145,7 @@ export const creditLedger = pgTable(
       .notNull()
       .references(() => user.id, { onDelete: "cascade" }),
     change: bigint("change", { mode: "number" }).notNull(),
+    bought: bigint("bought", { mode: "number" }).notNull().default(0),
     balanceAfter: bigint("balance_after", { mode: "number" }).notNull(),
     reason: text("reason").$type<CreditReason>().notNull(),
     detail: jsonb("detail").$type<Record<string, unknown>>(),
@@ -165,6 +172,8 @@ export const aiUsage = pgTable(
     // Our cost in millionths of a dollar, and the credits charged (thousandths).
     costMicroUsd: bigint("cost_micro_usd", { mode: "number" }).notNull(),
     charged: bigint("charged", { mode: "number" }).notNull(),
+    // The part of `charged` paid with bought credits.
+    chargedBought: bigint("charged_bought", { mode: "number" }).notNull().default(0),
     outcome: text("outcome").notNull(),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
