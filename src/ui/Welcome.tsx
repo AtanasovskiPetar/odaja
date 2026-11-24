@@ -8,6 +8,7 @@ import { platform } from "../platform";
 import { useOdaja } from "../store";
 import { openHome, pickHomeFile } from "./homeFileActions";
 import { LogoMark } from "./icons";
+import { InstallDialog } from "./InstallDialog";
 import { NewHomeForm } from "./NewHome";
 import { ThemeSwitch } from "./ThemeSwitch";
 
@@ -106,6 +107,7 @@ function StorageNote() {
 
 export function Welcome() {
   const [error, setError] = useState<string | null>(null);
+  const [installing, setInstalling] = useState(false);
   return (
     <div className="start">
       <div className="start-corner">
@@ -134,11 +136,17 @@ export function Welcome() {
           >
             Open a home file (.odaja)…
           </button>
+          {platform.kind === "browser" && (
+            <button className="open-file" onClick={() => setInstalling(true)}>
+              Install Odaja on your computer…
+            </button>
+          )}
           {platform.kind === "server" && <OpenFolderForm />}
           {error && <div className="inline-error">{error}</div>}
         </div>
         <StorageNote />
       </div>
+      {installing && <InstallDialog onClose={() => setInstalling(false)} />}
     </div>
   );
 }
