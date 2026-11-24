@@ -6,9 +6,14 @@ website stays free with your own API key, and the local companion keeps
 working without an account. Editing together in real time comes later, once
 people ask for it.
 
-This builds on the local-first website in [web-plan.md](web-plan.md). The first
-part (accounts and cloud homes for one person) is being built on the
-`feat/cloud-backend` branch; nothing is released yet.
+This builds on the local-first website in [web-plan.md](web-plan.md).
+
+**Where we are:** phase 1 (accounts and cloud homes for one person) is built and
+on `master` ([#10](https://github.com/AtanasovskiPetar/odaja/pull/10); how it
+works and how to run it: [cloud-platform.md](cloud-platform.md)). Nothing is
+deployed: the website is built without a cloud server, so it behaves as before.
+**Next is phase 0** (domain, host, licence, the payment and AI-cost spikes),
+because deploying (phase 2) depends on those choices.
 
 ## What we agreed
 
@@ -118,7 +123,7 @@ and self-hosting stays real.
 
 ## The stack
 
-**Stays:** Vite, React 19, React Three Fiber, Zustand, Zod 4, TypeScript, Bun; the AI SDK and Anthropic SDK in the page for your own key; the companion as one Bun binary.
+**Stays:** Vite, React 19, React Three Fiber, Zustand, Zod 4, TypeScript, Bun; the AI SDK and Anthropic SDK in the page for your own key; the companion as one Bun binary. **Tailwind CSS 4** for new UI (`src/ui/primitives/`); the older `styles.css` screens move over when they're reworked (see AGENTS.md).
 
 **The cloud server: portable, not tied to one provider**
 
@@ -220,7 +225,7 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Early-supporter page live.
 - Done when: the domain is registered, the host is chosen, the licence is changed, and each spike works or has a replacement. Measurements and pricing notes from this phase are kept outside the repo.
 
-**1. Accounts and cloud homes, one person** (done on `feat/cloud-backend`; what was checked is in [cloud-platform.md](cloud-platform.md))
+**1. Accounts and cloud homes, one person** (done, on `master`; what was checked is in [cloud-platform.md](cloud-platform.md))
 - The server: Hono, Postgres with Drizzle, S3 storage by content hash, `compose.yml` for development.
 - Better Auth: email and password, email links, Google and GitHub, each on when configured; email verification and password reset when email is set up; rate limits; Turnstile on sign-up.
 - Signing in from the app, with no login wall: cloud homes in the home list next to local ones; new cloud home; "Copy to your account"; `.odaja` import and export for cloud homes.
@@ -230,7 +235,11 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Done when: a home edited on one computer is there on another, a second tab can't overwrite it silently, any version can be restored, and the website without an account behaves exactly as before.
 
 **2. Deployed**
-- Staging and production with separate data and secrets; the website on the new domain; the CSP gains the API origin.
+- Staging and production with separate data and secrets; the website on the new domain, built with `VITE_CLOUD_API_URL` (its CSP then allows the API and Turnstile by itself).
+- Secrets per environment: `BETTER_AUTH_SECRET` (the server refuses to start in production without its own), Turnstile keys, Resend, Google and GitHub apps.
+- Database migrations: development uses `bun run db:push`; staging and production apply generated migrations (`bun run db:generate`), checked in and run on deploy.
+- Ready for more than one server process: change events through Postgres `LISTEN/NOTIFY` (today they're in memory, so tabs only hear saves made through the same process), and thinning versions and cleaning up unused content as a job that runs once (today each process runs it hourly).
+- An upload size limit on saving files (today only Bun's default), before the server is public.
 - GitHub Actions: test, then deploy to staging on `master`, to production on a release tag.
 - Sentry and PostHog, with no cookies before consent.
 - Done when: a deploy goes through staging to production, and the website runs from the new domain.
@@ -238,7 +247,7 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 **3. Tools on the server, the prompt-first start and AI credits**
 - The agent tools running on the server against cloud homes (`ctx.files()` over storage), used by the in-app chat for cloud homes; screenshots asked of an open tab.
 - The prompt-first screen with uploads and examples, and the live build with step-by-step progress.
-- The AI proxy with credits and a ledger; the free starter allowance; step caps; per-user rate limits; prompt caching; a version before each AI reply.
+- The AI proxy with credits and a ledger; the free starter allowance; step caps; per-user rate limits; prompt caching. (A version before each AI reply is already kept, since phase 1.)
 - Your own key stays browser-direct and needs no login.
 - The out-of-credits choice: top up, add your own key, or wait.
 - Done when: a new visitor goes from a prompt to a built home in one flow on the free allowance, the cost of every reply is recorded, nobody can spend past their ceiling (tested with parallel requests), and an AI turn can be undone from history.

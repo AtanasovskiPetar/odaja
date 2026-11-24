@@ -1,6 +1,6 @@
 # Odaja Cloud Platform — Progress & Architecture
 
-Branch: `feat/cloud-backend` (merged with `master` @ `v0.8.7`)
+On `master` since [#10](https://github.com/AtanasovskiPetar/odaja/pull/10) (built on the `feat/cloud-backend` branch). Not deployed: the website is built without `VITE_CLOUD_API_URL`, so it has no cloud.
 
 This document captures what has been built so far for Odaja's cloud platform, how to run it locally, and the next steps. The decisions behind it (and the phases) are in [cloud-plan.md](cloud-plan.md).
 
@@ -109,4 +109,4 @@ What phase 1 of [cloud-plan.md](cloud-plan.md) asks for is built and was checked
 
 ## 5. Next
 
-See the phases in [cloud-plan.md](cloud-plan.md). Phase 2 (deployed) needs Postgres `LISTEN/NOTIFY` for change events once there's more than one server. Then: tools on the server for cloud homes (`ctx.files()` over the content store), the AI proxy with credits, sharing (viewer links, Make a copy), payments, remote MCP, teams. Real-time editing comes later, when people ask for it.
+See the phases in [cloud-plan.md](cloud-plan.md). Next is phase 0 (domain, host, licence, spikes), then phase 2 (deployed: secrets per environment, migrations instead of `db:push`, `LISTEN/NOTIFY` and a single cleanup job for more than one server, an upload size limit). Then: tools on the server for cloud homes (`ctx.files()` over the content store), the AI proxy with credits, sharing (viewer links, Make a copy), payments, remote MCP, teams. Real-time editing comes later, when people ask for it.
