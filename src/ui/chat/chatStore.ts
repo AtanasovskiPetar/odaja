@@ -4,9 +4,16 @@
 import { create } from "zustand";
 import { conversationPhotos, deleteConversation, listConversations, loadConversation, newConversation, saveConversation } from "../../agent/chat/conversations";
 import { readSettings } from "../../agent/chat/settings";
-import type { AssistantItem, ChatEvent, ChatSummary, ImageInput, ModelInfo, ProviderId, ProviderInfo, Turn } from "../../agent/chat/types";
+import { useCloudAuth } from "../../cloud/auth";
+import type { AiNotice, AssistantItem, ChatEvent, ChatSummary, ImageInput, ModelInfo, ProviderId, ProviderInfo, Turn } from "../../agent/chat/types";
 
-export type { AssistantItem, ImageInput, ProviderInfo, Turn } from "../../agent/chat/types";
+export type { AiNotice, AssistantItem, ImageInput, ProviderInfo, Turn } from "../../agent/chat/types";
+
+export interface Draft {
+  text: string;
+  files: File[];
+  send?: boolean;
+}
 
 interface ChatState {
   open: boolean;
@@ -22,11 +29,14 @@ interface ChatState {
   busy: boolean;
   // A passing note while the reply waits (a rate limit), or null.
   status: string | null;
-  // Text and files to put in the message box (e.g. a floor plan to build from).
-  draft: { text: string; files: File[] } | null;
+  // Text and files to put in the message box (e.g. a floor plan to build
+  // from), or to send as soon as the chat is open (`send`).
+  draft: Draft | null;
+  // The reply running builds a home (asked for by the prompt-first start).
+  building: boolean;
   toggle(): void;
-  startDraft(text: string, files: File[]): void;
-  takeDraft(): { text: string; files: File[] } | null;
+  startDraft(text: string, files: File[], send?: boolean): void;
+  takeDraft(): Draft | null;
   setSettingsOpen(open: boolean): void;
   init(): Promise<void>;
   loadProviders(): Promise<void>;
@@ -35,7 +45,7 @@ interface ChatState {
   refreshChats(): Promise<void>;
   openChat(id: string | null): Promise<void>;
   deleteChat(id: string): Promise<void>;
-  send(text: string, images: ImageInput[]): Promise<void>;
+  send(text: string, images: ImageInput[], options?: { build?: boolean }): Promise<void>;
   stop(): void;
 }
 
@@ -74,6 +84,9 @@ export const useChat = create<ChatState>((set, get) => {
       } else if (e.type === "error") {
         turns[turns.length - 1] = { ...last, items, error: [last.error, e.message].filter(Boolean).join(" ") };
         return { turns };
+      } else if (e.type === "notice") {
+        turns[turns.length - 1] = { ...last, items, notice: e.notice };
+        return { turns };
       }
       turns[turns.length - 1] = { ...last, items };
       return { turns };
@@ -94,6 +107,7 @@ export const useChat = create<ChatState>((set, get) => {
     busy: false,
     status: null,
     draft: null,
+    building: false,
 
     toggle() {
       const open = !get().open;
@@ -101,8 +115,8 @@ export const useChat = create<ChatState>((set, get) => {
       if (open && get().providers.length === 0) get().init();
     },
 
-    startDraft(text, files) {
-      set({ open: true, draft: { text, files } });
+    startDraft(text, files, send = false) {
+      set({ open: true, draft: { text, files, send } });
       if (get().providers.length === 0) get().init();
     },
 
@@ -188,17 +202,19 @@ export const useChat = create<ChatState>((set, get) => {
       await get().refreshChats();
     },
 
-    async send(text, images) {
+    async send(text, images, options) {
       const { provider, model, chatId, busy } = get();
       if (busy || !provider || (!text.trim() && images.length === 0)) return;
       const now = Date.now();
       set((s) => ({
         busy: true,
+        building: options?.build ?? false,
         turns: [...s.turns, { role: "user", text, images: images.length ? images : undefined, at: now }, { role: "assistant", provider, model, items: [], at: now }],
       }));
       const controller = new AbortController();
       running = controller;
       const errors: string[] = [];
+      let notice: AiNotice | undefined;
       try {
         const conv = (chatId && (await loadConversation(chatId))) || newConversation(provider, model);
         conv.provider = provider;
@@ -221,6 +237,7 @@ export const useChat = create<ChatState>((set, get) => {
           emit(e) {
             if (e.type === "status") return set({ status: get().chatId === conv.id ? e.message : null });
             if (e.type === "error") errors.push(e.message);
+            if (e.type === "notice") notice = e.notice;
             if (get().chatId === conv.id) applyEvent(e);
           },
           signal: controller.signal,
@@ -237,6 +254,7 @@ export const useChat = create<ChatState>((set, get) => {
           model,
           items: result.items,
           error: controller.signal.aborted ? "Stopped." : errors.join(" ") || undefined,
+          notice,
           at: Date.now(),
         });
         conv.updatedAt = Date.now();
@@ -246,7 +264,7 @@ export const useChat = create<ChatState>((set, get) => {
         applyEvent({ type: "error", message: (err as Error).message });
       } finally {
         running = null;
-        set({ busy: false, status: null });
+        set({ busy: false, status: null, building: false });
         get().refreshChats();
       }
     },
@@ -255,4 +273,9 @@ export const useChat = create<ChatState>((set, get) => {
       running?.abort();
     },
   };
+});
+
+// Signing in or out makes Odaja's AI ready or not: ask again.
+useCloudAuth.subscribe((s, prev) => {
+  if (s.status !== prev.status && useChat.getState().providers.length > 0) void useChat.getState().loadProviders();
 });

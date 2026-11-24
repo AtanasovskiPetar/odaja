@@ -2,9 +2,17 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { Hono, type Context, type MiddlewareHandler } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { bodyLimit } from "hono/body-limit";
 import { streamSSE } from "hono/streaming";
+import type Anthropic from "@anthropic-ai/sdk";
 import { newProjectFile, newSceneFile, newShellFile, type StarterRoom } from "../src/model/defaults";
 import { formatJson } from "../src/model/format";
+import { beforeAiLabel } from "../src/agent/chat/anthropic";
+import { affordableOutput, defaultModel, type AiConfig } from "./ai/config";
+import { nextMonthStart, type CreditStatus, type Credits } from "./ai/credits";
+import { homeArea } from "./ai/homeFiles";
+import type { AiLimits } from "./ai/limits";
+import { baseTokens, estimateTokens, MIN_STEP_OUTPUT, runHostedTurn, type ImageInput, type Message, type Screenshots, type TurnEvent } from "./ai/turn";
 import type { CloudAuth, SignInMethods } from "./auth";
 import type { CloudDb } from "./db/index";
 import { projects, type ProjectRow, type VersionReason } from "./db/schema";
@@ -21,10 +29,23 @@ export interface CloudAppDeps {
   homes: Homes;
   events: HomeEvents;
   corsOrigins: string[];
+  // AI on our key (backend/ai/); without it the server offers none.
+  ai?: CloudAi;
 }
 
+export interface CloudAi {
+  cfg: AiConfig;
+  credits: Credits;
+  limits: AiLimits;
+  screenshots: Screenshots;
+  client: Anthropic;
+}
+
+// Largest AI request: the conversation so far with its photos and screenshots.
+const MAX_AI_REQUEST = 40 * 1024 * 1024;
+
 type AppVariables = {
-  user: { id: string; email: string; name: string };
+  user: { id: string; email: string; name: string; emailVerified: boolean };
   project: ProjectRow;
 };
 
@@ -39,7 +60,27 @@ function safeRelPath(raw: string | undefined): string | null {
   return cleaned;
 }
 
-const LOCAL_DEV_ORIGIN = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+// Images sent with an AI request: base64 JPEG, PNG, WebP or GIF; null when
+// the list isn't one.
+function imagesIn(value: unknown, max: number): ImageInput[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > max) return null;
+  const out: ImageInput[] = [];
+  for (const v of value as { mimeType?: unknown; data?: unknown }[]) {
+    if (typeof v?.mimeType !== "string" || !/^image\/(jpeg|png|webp|gif)$/.test(v.mimeType) || typeof v.data !== "string") return null;
+    out.push({ mimeType: v.mimeType, data: v.data });
+  }
+  return out;
+}
+
+// The earlier conversation, as the app kept it: only its shape is checked.
+// Whatever it says, it's the asker's own conversation, and they pay for it.
+const isMessage = (m: unknown) => {
+  const o = m as { role?: unknown; content?: unknown } | null;
+  return Boolean(o) && (o!.role === "user" || o!.role === "assistant") && (typeof o!.content === "string" || Array.isArray(o!.content));
+};
+
+const LOCAL_DEV_ORIGIN =/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
 export function isAllowedOrigin(origin: string, corsOrigins: string[]): boolean {
   if (corsOrigins.includes("*") || corsOrigins.includes(origin)) return true;
@@ -48,7 +89,7 @@ export function isAllowedOrigin(origin: string, corsOrigins: string[]): boolean 
 }
 
 export function createCloudApp(deps: CloudAppDeps) {
-  const { db, blobs, auth, signInMethods, homes, events, corsOrigins } = deps;
+  const { db, blobs, auth, signInMethods, homes, events, corsOrigins, ai } = deps;
   const app = new Hono<AppEnv>();
 
   app.use("*", logger());
@@ -68,7 +109,9 @@ export function createCloudApp(deps: CloudAppDeps) {
 
   app.get("/api/v1/health", (c) => c.json({ ok: true, mode: "cloud" }));
   // What the sign-in window offers (each method is on when configured).
-  app.get("/api/v1/config", (c) => c.json({ signIn: signInMethods }));
+  // And whether it has AI of its own, with which models.
+  const aiModels = () => (ai?.cfg.enabled ? ai.cfg.models.map((m) => ({ id: m.id, name: m.name, rate: m.rate, default: m === defaultModel(ai.cfg) })) : []);
+  app.get("/api/v1/config", (c) => c.json({ signIn: signInMethods, ai: { enabled: Boolean(ai?.cfg.enabled), models: aiModels() } }));
 
   // Mount better-auth (signup, signin, signout, get-session).
   app.on(["GET", "POST"], "/api/v1/auth/*", (c) => auth.handler(c.req.raw));
@@ -80,6 +123,7 @@ export function createCloudApp(deps: CloudAppDeps) {
       id: session.user.id,
       email: session.user.email,
       name: session.user.name,
+      emailVerified: Boolean(session.user.emailVerified),
     });
     await next();
   };
@@ -310,6 +354,153 @@ export function createCloudApp(deps: CloudAppDeps) {
     const [row] = await db.select({ manifest: projects.manifest }).from(projects).where(eq(projects.id, project.id));
     for (const path of changed) events.publish(project.id, { path, hash: row?.manifest[path]?.hash ?? null });
     return c.json({ ok: true, changed });
+  });
+
+  // --- AI on our key (docs/cloud-plan.md, "AI") -----------------------------
+
+  // May this account use the starter and monthly credits? Only with a
+  // confirmed email address, when the server can send one.
+  const eligible = (user: AppVariables["user"]) => !ai?.cfg.requireVerifiedEmail || user.emailVerified;
+  // Millicredits as credits, with two decimals.
+  const credits = (milli: number) => Math.floor(milli / 10) / 100;
+  // Where more credits come from: next month (the allowance, or the ceiling
+  // starting again when that's what limits), or buying them.
+  const moreCredits = (cfg: AiConfig, limitedBy: CreditStatus["limitedBy"]) => ({
+    nextAllowance: cfg.monthlyCredits > 0 || limitedBy === "ceiling" ? nextMonthStart(new Date()).getTime() : null,
+    topUpUrl: cfg.topUpUrl ?? null,
+  });
+  // The reply running for each account (one at a time), to stop it.
+  const running = new Map<string, AbortController>();
+
+  // The account's credits, and what it can use.
+  app.get("/api/v1/ai", requireAuth, async (c) => {
+    if (!ai?.cfg.enabled) return c.json({ enabled: false });
+    const user = c.get("user");
+    const status = await ai.credits.status(user.id, eligible(user));
+    return c.json({ enabled: true, balance: credits(status.available), needsVerifiedEmail: !eligible(user), ...moreCredits(ai.cfg, status.limitedBy) });
+  });
+
+  // Stop the account's running reply: it settles what was used and still
+  // sends its last event, so the tab keeps an exact account of it.
+  app.post("/api/v1/ai/stop", requireAuth, (c) => {
+    running.get(c.get("user").id)?.abort();
+    return c.json({ ok: true });
+  });
+
+  // A reply from our AI on this home, streamed as Server-Sent Events (one
+  // JSON event per `data:` line; backend/ai/turn.ts says which). Refusals
+  // before it starts are plain JSON with a `code`.
+  const aiBodyLimit = bodyLimit({
+    maxSize: MAX_AI_REQUEST,
+    onError: (c) => c.json({ error: "This conversation is too big to send. Start a new chat.", code: "too-big" }, 413),
+  });
+  app.post("/api/v1/projects/:pid/ai/turn", requireAuth, requireProjectAccess("write"), aiBodyLimit, async (c) => {
+    if (!ai?.cfg.enabled) return c.json({ error: "This server has no AI of its own", code: "no-ai" }, 404);
+    const { cfg } = ai;
+    const user = c.get("user");
+    const project = c.get("project");
+    const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!body || typeof body !== "object") return c.json({ error: "Invalid request" }, 400);
+
+    // Every photo shared in the chat comes along (the tools name them by
+    // their place, photo-1, …); the request's size is what limits them.
+    const images = imagesIn(body.images, 6);
+    const photos = imagesIn(body.photos, Infinity);
+    const text = typeof body.text === "string" ? body.text.slice(0, 20_000) : "";
+    const chatId = typeof body.chatId === "string" && /^[a-z0-9-]{1,64}$/.test(body.chatId) ? body.chatId : null;
+    const history = Array.isArray(body.messages) ? (body.messages as Message[]) : [];
+    const model = cfg.models.find((m) => m.id === body.model) ?? defaultModel(cfg);
+    if (!chatId || images === null || photos === null || (!text.trim() && images.length === 0) || !history.every(isMessage)) return c.json({ error: "Invalid request" }, 400);
+    if (!eligible(user)) return c.json({ error: "Confirm your email address to use Odaja's AI.", code: "verify-email" }, 403);
+
+    const inputTokens = baseTokens() + estimateTokens([history, text, images.map(() => ({ type: "image" }))]);
+    if (inputTokens > cfg.maxHistoryTokens) return c.json({ error: "This conversation has grown long.", code: "history-too-long" }, 409);
+
+    const slot = ai.limits.start(user.id);
+    if (!slot.ok) {
+      const message =
+        slot.reason === "busy" ? "Another reply is still running. Wait for it, or stop it." : slot.reason === "minute" ? "That's a lot of requests in a minute. Wait a moment and try again." : "That's the most replies for today. Try again tomorrow.";
+      return c.json({ error: message, code: `limit-${slot.reason}`, retryAfter: slot.retryAfter }, 429, { "Retry-After": String(slot.retryAfter) });
+    }
+    try {
+      const { available, limitedBy } = await ai.credits.status(user.id, true);
+      if (affordableOutput(cfg, model, available, inputTokens) < MIN_STEP_OUTPUT) {
+        slot.done();
+        const ceiling = limitedBy === "ceiling";
+        return c.json(
+          {
+            error: ceiling ? "That's this month's most for Odaja's AI." : "You're out of credits for Odaja's AI.",
+            code: ceiling ? "ceiling" : "no-credits",
+            balance: credits(available),
+            ...moreCredits(cfg, limitedBy),
+          },
+          402,
+        );
+      }
+      // The home as it is now, so the whole reply can be undone from History.
+      await homes.addVersion(project.id, "before-ai", beforeAiLabel(text), user.id);
+    } catch (err) {
+      slot.done();
+      throw err;
+    }
+
+    const ui = (body.ui ?? {}) as Record<string, unknown>;
+    const str = (v: unknown) => (typeof v === "string" && v.length < 300 ? v : null);
+    const area = homeArea({ db, blobs, homes, events }, project.id, user.id);
+    return streamSSE(c, async (stream) => {
+      const controller = new AbortController();
+      running.set(user.id, controller);
+      stream.onAbort(() => controller.abort());
+      // One write at a time, in order.
+      let writing = Promise.resolve();
+      const emit = (e: TurnEvent) => {
+        writing = writing.then(() => stream.writeSSE({ data: JSON.stringify(e) })).catch(() => {});
+      };
+      // Long model steps can be quiet for a while; keep the connection open.
+      const ping = setInterval(() => {
+        writing = writing.then(() => stream.writeSSE({ event: "ping", data: "" })).catch(() => {});
+      }, 15_000);
+      try {
+        await runHostedTurn(
+          { ...ai, db },
+          {
+            userId: user.id,
+            projectId: project.id,
+            model,
+            chatId,
+            history,
+            text,
+            images,
+            photos,
+            ui: { scenePath: str(ui.scenePath), level: str(ui.level), editingObject: str(ui.editingObject) },
+            area,
+          },
+          (e) => {
+            if (e.type === "done") e.balance = e.balance === null ? null : credits(e.balance);
+            emit(e);
+          },
+          controller.signal,
+        );
+      } finally {
+        clearInterval(ping);
+        if (running.get(user.id) === controller) running.delete(user.id);
+        slot.done();
+        await writing;
+      }
+    });
+  });
+
+  // The tab's answer to a screenshot the tools asked for.
+  app.post("/api/v1/ai/screenshot", requireAuth, async (c) => {
+    if (!ai) return c.json({ error: "Not found" }, 404);
+    const body = (await c.req.json().catch(() => null)) as { id?: unknown; data?: unknown; mimeType?: unknown; error?: unknown } | null;
+    if (!body || typeof body.id !== "string") return c.json({ error: "Invalid request" }, 400);
+    const ok = ai.screenshots.answer(c.get("user").id, body.id, {
+      data: typeof body.data === "string" ? body.data : undefined,
+      mimeType: typeof body.mimeType === "string" && /^image\/(jpeg|png|webp)$/.test(body.mimeType) ? body.mimeType : undefined,
+      error: typeof body.error === "string" ? body.error.slice(0, 300) : undefined,
+    });
+    return ok ? c.json({ ok: true }) : c.json({ error: "No screenshot was asked for" }, 404);
   });
 
   return app;

@@ -27,8 +27,17 @@ function useCodec(): ImageCodec {
 }
 
 // Edits made this session, by id ("edit-3"). Small, short-lived; not saved.
-const edits = new Map<string, Raster>();
-let editCounter = 0;
+// One store per place the tools run for one person: the page and the
+// companion share the default; the cloud server keeps one per conversation,
+// so nobody can reach another account's edits by guessing an id.
+export interface EditStore {
+  edits: Map<string, Raster>;
+  counter: number;
+  // How many are kept (the oldest go first).
+  limit: number;
+}
+export const newEditStore = (limit = 40): EditStore => ({ edits: new Map(), counter: 0, limit });
+const defaultEdits = newEditStore();
 
 export async function decode(base64OrBytes: string | Uint8Array): Promise<Raster> {
   return useCodec().decode(typeof base64OrBytes === "string" ? fromBase64(base64OrBytes) : base64OrBytes);
@@ -38,16 +47,16 @@ export async function encodeJpeg(r: Raster, quality = 88): Promise<Uint8Array> {
   return useCodec().encodeJpeg(r, quality);
 }
 
-export function storeEdit(r: Raster): string {
-  const id = `edit-${++editCounter}`;
-  edits.set(id, r);
+export function storeEdit(r: Raster, store: EditStore = defaultEdits): string {
+  const id = `edit-${++store.counter}`;
+  store.edits.set(id, r);
   // Keep memory bounded: forget the oldest edits.
-  if (edits.size > 40) edits.delete(edits.keys().next().value!);
+  if (store.edits.size > store.limit) store.edits.delete(store.edits.keys().next().value!);
   return id;
 }
 
-export function getEdit(id: string): Raster | undefined {
-  return edits.get(id);
+export function getEdit(id: string, store: EditStore = defaultEdits): Raster | undefined {
+  return store.edits.get(id);
 }
 
 // --- pixel operations -----------------------------------------------------

@@ -57,6 +57,9 @@ export interface ProjectList {
 
 export interface Platform {
   kind: "server" | "browser" | "cloud";
+  // With a cloud server: the local host's kind, whichever home is open
+  // (`kind` is "cloud" while an account home is).
+  localKind?: "server" | "browser";
   listProjects(): Promise<ProjectList>;
   openProject(dir: string): Promise<void>;
   // Opens the user's copy of the sample flat, making it (or remaking it when fresh).
@@ -113,6 +116,16 @@ export interface Platform {
   // Requests from the server: open a scene, take a screenshot.
   onOpenSceneRequest(callback: (path: string) => void): void;
   onScreenshotRequest(callback: (view: "plan" | "3d", level?: string) => Promise<{ data: string; mimeType: string }>): void;
+  // Odaja's own AI on the open home (cloud homes; backend/ai/): a reply as
+  // an event stream (and stopping it), the tab's screenshots for its tools,
+  // and catching up with the files a reply changed before a screenshot.
+  hostedAi?: {
+    turn(body: unknown): Promise<Response>;
+    stop(): Promise<void>;
+    answerScreenshot(id: string, result: { data?: string; mimeType?: string; error?: string }): Promise<void>;
+    reload(paths: string[]): Promise<void>;
+    openScene(path: string): void;
+  };
   // The open home's history (cloud homes).
   versions?: {
     list(): Promise<VersionSummary[]>;

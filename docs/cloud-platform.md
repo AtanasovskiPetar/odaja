@@ -107,6 +107,34 @@ What phase 1 of [cloud-plan.md](cloud-plan.md) asks for is built and was checked
 
 ---
 
-## 5. Next
+## 5. Phase 3: Odaja's own AI, credits, the prompt-first start
 
-See the phases in [cloud-plan.md](cloud-plan.md). Next is phase 0 (domain, host, licence, spikes), then phase 2 (deployed: secrets per environment, migrations instead of `db:push`, `LISTEN/NOTIFY` and a single cleanup job for more than one server, an upload size limit). Then: tools on the server for cloud homes (`ctx.files()` over the content store), the AI proxy with credits, sharing (viewer links, Make a copy), payments, remote MCP, teams. Real-time editing comes later, when people ask for it.
+Built after phase 1 (phase 3 of [cloud-plan.md](cloud-plan.md)); on only when the server has `ANTHROPIC_API_KEY` and `AI_MODELS` (`.env.example`). Without them, nothing changes: people use their own keys in the page.
+
+**How a reply runs**
+- The page (`src/agent/chat/runners.ts`, `runOdaja`) sends the message, the conversation so far (kept with the chat in `.odaja/chats/`, `state.odaja`), the chat's photos and what the app shows (scene, level, shape being edited) to `POST /api/v1/projects/:pid/ai/turn`. The server checks access, a confirmed email (when it can send email), the rate limits and the credits, keeps a `before-ai` version, and streams the reply back as Server-Sent Events.
+- The server runs the tool loop with the official Anthropic SDK (`backend/ai/turn.ts`): the same system prompt and tools as the page, the prompt cached (system prompt and tools, plus the conversation), `effort` and the refusal fallback per model from configuration, a step cap.
+- **The tools run on the server** on the home in storage (`backend/ai/homeFiles.ts`): a file the tools read is written back only if it still has that content (`If-Match`); if the user changed it meanwhile, the tool fails with a message and the model reads it again. Every write is announced on the home's change stream, so open tabs reload it. The furniture library is the computer's, so on the server the tools see none (saving to it says why). Photo edits (`edit-1`, …) are kept per conversation, never shared between accounts.
+- **Screenshots and opening scenes** go to the tab that asked, over the reply's stream: the tab reloads the files the reply changed, takes the picture and answers `POST /api/v1/ai/screenshot` (only the asker can answer).
+- A long conversation (`AI_MAX_HISTORY_TOKENS`) is refused with `history-too-long`; the page goes on from a written summary of it.
+- Stop asks the server (`POST /api/v1/ai/stop`), which ends the reply, settles what it used and still sends its last event (the exact messages and the credits left); the page reads the stream to the end.
+
+**Credits** (`backend/ai/credits.ts`, tables `credit_accounts`, `credit_ledger`, `ai_usage`)
+- Kept in thousandths of a credit. Each reply's real cost (tokens × the model's prices) becomes credits at `AI_CREDITS_PER_USD` × the model's `rate`.
+- Before each model step, the most it can cost is held (its output limit sized to what the account can afford, input priced at the dearest rate); after it, what it used is charged (never more than was held) and the rest given back, with a line in the ledger. All in one locked transaction per change, so parallel replies can't spend past the balance or the monthly ceiling (`AI_MONTHLY_CEILING_CREDITS`). A step stopped part way is charged what the API reported for its input and the output streamed so far. Holds left by a stopped server go back when it starts.
+- `AI_STARTER_CREDITS` once per account (with a confirmed email when email is set up); `AI_MONTHLY_CREDITS` tops the balance up to that each month. `bun run credits:grant <email> <credits> [note]` adds credits by hand.
+- Per account: one reply at a time, `AI_REPLIES_PER_MINUTE`, `AI_REPLIES_PER_DAY` (`backend/ai/limits.ts`, in memory like the change events).
+- Out of credits (or at the ceiling) the chat says so and offers buying credits (`AI_TOP_UP_URL`, when set), your own key, or when more come.
+
+**In the app**
+- "Odaja AI (credits)" in the chat's model picker (`src/agent/chat/models.ts`), ready when signed in, with the credits left (`src/cloud/ai.ts`). On a home that isn't in the account, it offers to copy it there.
+- **The prompt-first start** (`src/ui/PromptStart.tsx`): the welcome opens on "Describe your home, or drop in a floor plan…", with examples and floor plans (PDFs become images). Send makes a home in the account and builds it; signed out, the sign-in opens first and the prompt and images are kept through it (also through Google/GitHub's redirect). With a key or model of your own already set up, or without a cloud server, the home is made here and built with it; with neither, the chat opens with the prompt and the key settings. "Use your own API key" and "Start without AI" (the usual form) are under the box.
+- **The live build** (`src/ui/chat/BuildProgress.tsx`): a reply on a home without walls shows its steps ("Drawing the walls… Placing furniture") over the view; the first walls are framed, and the view moves into 3D at the end.
+
+**Running it locally**: as in §3, plus `ANTHROPIC_API_KEY` and `AI_MODELS` in `.env` (see `.env.example`), `bun run db:push` for the new tables. Tests: `bun test backend`; with `TEST_DATABASE_URL` and `TEST_S3_ENDPOINT` (compose.yml's Postgres and `ferdzo/fs`) also the credits under parallel spending, the tools on a home in storage, and whole replies with a scripted model.
+
+---
+
+## 6. Next
+
+See the phases in [cloud-plan.md](cloud-plan.md). Next is phase 0 (domain, host, licence, spikes, and the AI-cost measurements that set the model, credit rate and allowances), then phase 2 (deployed: secrets per environment, migrations instead of `db:push`, `LISTEN/NOTIFY`, one cleanup job and shared rate limits and credit holds for more than one server, an upload size limit). Then: sharing (viewer links, Make a copy), usage and admin (phase 4b: the Usage page, the admin view, free and bought credits apart), payments, remote MCP, teams. Real-time editing comes later, when people ask for it.

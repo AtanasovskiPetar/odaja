@@ -115,6 +115,8 @@ export function NewHomeForm({ initial, onDone, onCancel }: { initial: Start; onD
   const canCloud = useCloudSignedIn();
   const [inCloud, setInCloud] = useState(canCloud);
   const toCloud = canCloud && inCloud;
+  // The website (also while an account home is open, when `kind` is "cloud").
+  const web = (platform.localKind ?? platform.kind) === "browser";
   // On the website a new home replaces the open one: ask first if that loses changes.
   const replacing = useOdaja((s) => !toCloud && platform.kind === "browser" && s.status === "project");
   const losesChanges = useOdaja((s) => replacing && s.unsavedToFile);
@@ -129,7 +131,6 @@ export function NewHomeForm({ initial, onDone, onCancel }: { initial: Start; onD
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const web = platform.kind === "browser";
 
   const check = (): string | null => {
     if (start === "sample") return null;

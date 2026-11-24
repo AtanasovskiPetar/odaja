@@ -12,6 +12,7 @@
     "backend:start": "bun backend/entries/bun.ts",
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
+    "credits:grant": "bun backend/scripts/grant-credits.ts",
     "package:server": "bun scripts/package-server.ts",
     "typecheck": "tsc -b --noEmit",
     "format-project": "bun scripts/format-project.ts",

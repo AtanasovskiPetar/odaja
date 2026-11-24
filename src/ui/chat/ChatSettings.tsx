@@ -46,6 +46,11 @@ function ProviderRow({ provider, onSaved }: { provider: ProviderInfo; onSaved: (
           your own use.
         </p>
       )}
+      {provider.kind === "credits" && (
+        <p className="hint">
+          Odaja's own AI, run on Odaja's server with your account's credits: no key needed. It works on homes in your account. Each reply costs what it really used.
+        </p>
+      )}
       {provider.kind === "api-key" && (
         <div className="provider-field">
           <input

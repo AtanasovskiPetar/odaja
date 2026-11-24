@@ -48,6 +48,7 @@ export function withCloud(local: Platform, cloud: CloudPlatform): Platform {
   });
 
   const own: Partial<Platform> = {
+    localKind: local.kind === "cloud" ? undefined : local.kind,
     async listProjects(): Promise<ProjectList> {
       const mine = await local.listProjects();
       const theirs = signedIn() ? await cloud.listProjects().catch(() => null) : null;
