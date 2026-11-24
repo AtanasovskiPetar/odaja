@@ -9,11 +9,14 @@ people ask for it.
 This builds on the local-first website in [web-plan.md](web-plan.md).
 
 **Where we are:** phase 1 (accounts and cloud homes for one person) is built and
-on `master` ([#10](https://github.com/AtanasovskiPetar/odaja/pull/10); how it
-works and how to run it: [cloud-platform.md](cloud-platform.md)). Nothing is
-deployed: the website is built without a cloud server, so it behaves as before.
-**Next is phase 0** (domain, host, licence, the payment and AI-cost spikes),
-because deploying (phase 2) depends on those choices.
+on `master` ([#10](https://github.com/AtanasovskiPetar/odaja/pull/10)), and
+phase 3 (Odaja's own AI with credits, the tools on the server, the
+prompt-first start) is built; how both work and how to run them:
+[cloud-platform.md](cloud-platform.md). Nothing is deployed: the website is
+built without a cloud server, so it behaves as before. **Next is phase 0**
+(domain, host, licence, the payment and AI-cost spikes): the model for the
+free allowance, the credit rate and the allowances themselves come from its
+measurements, and deploying (phase 2) depends on its choices.
 
 ## What we agreed
 
@@ -41,6 +44,9 @@ because deploying (phase 2) depends on those choices.
 - **Your own key:** as today, browser to provider directly. Free, no login needed.
 - **Free starter allowance:** each verified account gets a small amount of AI on our key, as **credits** (not a prompt count; a big request costs more), on a model chosen for good first results. Steps per reply are capped.
 - **Credits:** each reply costs what it really cost us, converted to credits. Pro includes a monthly allowance; top-ups can be bought; there's a hard ceiling per user so no plan can lose money. When credits run out: buy a top-up, add your own key, or wait for next month.
+- **Credits are kept apart by where they came from:** free (starter and monthly allowance) and bought (top-ups). Free credits are spent first; bought ones don't expire. Every charge says which it came from, so it's always clear what a user got free and what they paid for.
+- **Usage for users:** a Usage page (account menu) shows the balance by kind, every reply with its date, home, model and credits, and what was added (starter, monthly, top-ups) with the balance after each. Nobody has to wonder where their credits went.
+- **Usage for us:** an admin view on the website, for accounts with the admin role (`ADMIN_EMAILS`, checked on the server for every admin route; the code is open source, the data isn't): spend and our real cost per account, per day and month, prompts per account, the most expensive accounts and replies, free credits given against credits bought, and granting credits by hand. It's how pricing, free allowances and abuse are checked.
 - **Cost control:** a cheap capable default model, prompt caching of the system prompt and tools, trimmed history, screenshots only when asked for. Top models are offered at a higher credit rate.
 - **Tools run on the server for cloud homes**, the way the companion runs them on folders today: the same tool code, with `ctx.files()` reading and writing the home in storage. So the in-app chat, our AI and remote MCP all change a cloud home the same way, a tab doesn't have to be open (except for screenshots), and our AI's tools and credits are checked in one trusted place. An open tab reloads what the tools changed.
 - **Screenshots** need something that draws the home: an open tab is asked, as in the companion; without one, the tool says to open the home. A headless renderer can come later.
@@ -183,7 +189,7 @@ and self-hosting stays real.
 | `workspaces`, `memberships`, `invitations` | teams (phase 7): personal or team, plan, seats, roles, invites |
 | `folders`, `folder_access` | team folders, which are restricted and who can see them |
 | `shares` | home, scope (whole home or a scene path), who (user, email invite or link token), role, expiry, password hash, allow copy, created by |
-| `credit_ledger` | workspace, user, change, reason (allowance, top-up, AI reply with model and tokens), time |
+| `credit_ledger` | workspace, user, change, which credits (free or bought), reason (starter, monthly, grant, top-up with the payment's id, AI reply with home and model), balance after, time |
 | `subscriptions` | workspace, plan, status, seats, period, Paddle ids |
 | `ai_usage` | per reply: user, home, model, tokens in and out, cached tokens, cost |
 
@@ -238,28 +244,37 @@ Each phase leaves the website and the companion working, ends with typecheck, te
 - Staging and production with separate data and secrets; the website on the new domain, built with `VITE_CLOUD_API_URL` (its CSP then allows the API and Turnstile by itself).
 - Secrets per environment: `BETTER_AUTH_SECRET` (the server refuses to start in production without its own), Turnstile keys, Resend, Google and GitHub apps.
 - Database migrations: development uses `bun run db:push`; staging and production apply generated migrations (`bun run db:generate`), checked in and run on deploy.
-- Ready for more than one server process: change events through Postgres `LISTEN/NOTIFY` (today they're in memory, so tabs only hear saves made through the same process), and thinning versions and cleaning up unused content as a job that runs once (today each process runs it hourly).
+- Ready for more than one server process: change events through Postgres `LISTEN/NOTIFY` (today they're in memory, so tabs only hear saves made through the same process), and thinning versions and cleaning up unused content as a job that runs once (today each process runs it hourly). The AI's per-account rate limits and screenshot answers are in memory too, and a starting server gives back every credit hold (they belong to replies that were running in it); with several processes, the limits move to Postgres, screenshot answers reach the process running the reply, and holds are released per process.
 - An upload size limit on saving files (today only Bun's default), before the server is public.
 - GitHub Actions: test, then deploy to staging on `master`, to production on a release tag.
 - Sentry and PostHog, with no cookies before consent.
 - Done when: a deploy goes through staging to production, and the website runs from the new domain.
 
-**3. Tools on the server, the prompt-first start and AI credits**
-- The agent tools running on the server against cloud homes (`ctx.files()` over storage), used by the in-app chat for cloud homes; screenshots asked of an open tab.
+**3. Tools on the server, the prompt-first start and AI credits** (built; see [cloud-platform.md](cloud-platform.md) §5)
+- The agent tools running on the server against cloud homes (`ctx.files()` over storage), used by the in-app chat for cloud homes; screenshots asked of an open tab. As built, Odaja's AI runs them on the server; with your own key the tools still run in the page on a cloud home, because the furniture library is the computer's and the server can't reach it (the team library in phase 7 changes that).
 - The prompt-first screen with uploads and examples, and the live build with step-by-step progress.
 - The AI proxy with credits and a ledger; the free starter allowance; step caps; per-user rate limits; prompt caching. (A version before each AI reply is already kept, since phase 1.)
 - Your own key stays browser-direct and needs no login.
 - The out-of-credits choice: top up, add your own key, or wait.
 - Done when: a new visitor goes from a prompt to a built home in one flow on the free allowance, the cost of every reply is recorded, nobody can spend past their ceiling (tested with parallel requests), and an AI turn can be undone from history.
+- Left for later: Turnstile on the first free AI use (sign-up already has it; see Security); the real model, prices and allowances from phase 0's measurements; checking the whole flow against the real API (it was checked with a stand-in that streams like it).
 
 **4. Sharing**
 - Viewer links that open without an account; Make a copy; whole home or one scene; expiry, password, allow copy.
 - Shares by email (with invites); editors, with the `If-Match` check; walls read-only for scene editors; "Shared with me" in the home list; emails on sharing.
 - Done when: a viewer link opens with no account, a copy is independent of the original, a scene editor can't change walls, and two editors saving the same file never lose each other's work silently.
 
+**4b. Usage and admin** (its own phase, built when it suits; before payments, since bought credits need the split below, and before free credits are offered to the public)
+- Free and bought credits kept apart on the account and in the ledger, free ones spent first (see "Credits" above); existing balances count as free.
+- The Usage page for users (`GET /api/v1/ai/usage`): the balance by kind, every reply with its date, home, model and credits, what was added and the balance after each, this month's totals.
+- The admin role (`ADMIN_EMAILS`, checked on the server for every admin route) and the admin usage view: spend, our real cost and prompts per account, by day and month; the most expensive accounts and replies; free credits given; granting credits.
+- Done when: a user can see what each of their prompts cost and where their credits came from, an admin can see every account's spend and our real cost by day and month, and a non-admin gets nothing from the admin routes.
+
 **5. Payments**
 - Paddle: Pro monthly and yearly, top-ups, the early-supporter price; webhooks to `subscriptions` and credits; plan limits (cloud homes, history length, sharing features); invoices and the customer portal.
-- Done when: buying Pro on staging (Paddle sandbox) unlocks it at once, cancelling ends it at the period's end, and a top-up adds credits.
+- Buying credits: "Buy credits" (in the Usage page and when they run out) opens Paddle's checkout for a credit pack; Paddle's webhook adds them as bought credits (`top-up` in the ledger, with the payment's id, once per payment even if the webhook comes twice). Bought credits go in their own pool (phase 4b). A refunded top-up takes back what's left of it.
+- The admin view adds revenue: what each account paid against what its AI cost us.
+- Done when: buying Pro on staging (Paddle sandbox) unlocks it at once, cancelling ends it at the period's end, and a top-up adds credits that show in the Usage page as bought.
 
 **6. The companion, signed in, and remote MCP**
 - Sign-in in the companion; cloud homes next to folders; Claude Code and MCP tool calls on a cloud home go to the cloud server's tools, with the user's permissions.

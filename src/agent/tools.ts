@@ -72,7 +72,7 @@ import {
   updateLevel,
 } from "../model/levels";
 import { checkPath, extension, fromBase64, sha256Hex, toBase64, type AgentFiles, type FileArea } from "./files";
-import { adjust, autoColor, crop, decode, encodeJpeg, fit, getEdit, rectify, rotate, seamless, storeEdit, type Raster } from "./photos";
+import { adjust, autoColor, crop, decode, encodeJpeg, fit, getEdit, rectify, rotate, seamless, storeEdit, type EditStore, type Raster } from "./photos";
 
 export type ToolContent = { type: "text"; text: string } | { type: "image"; data: string; mimeType: string };
 export interface ToolResult {
@@ -94,6 +94,9 @@ export interface ToolContext {
   editingObject?(): string | null;
   // The level shown in the app, if known.
   level?(): string | null;
+  // Where photo edits (edit-1, …) are kept: the cloud server gives each
+  // conversation its own; elsewhere one per process (one person).
+  edits?: EditStore;
 }
 
 export interface ToolDef<S extends z.ZodType = z.ZodType> {
@@ -371,7 +374,7 @@ const tileArgs = z.object({
 
 // A photo from the chat ("photo-2") or an earlier edit ("edit-1").
 async function loadPicture(ctx: ToolContext, ref: string): Promise<Raster> {
-  const edit = getEdit(ref);
+  const edit = getEdit(ref, ctx.edits);
   if (edit) return edit;
   const m = /^photo-(\d+)$/.exec(ref);
   if (!m) throw new ToolError(`"${ref}" isn't a photo (photo-1, photo-2, …) or an edit (edit-1, …)`);
@@ -1041,7 +1044,7 @@ export const TOOLS: ToolDef[] = [
       r = adjust(r, input.brightness ?? 0, input.contrast ?? 0);
       r = await fit(r, 1600);
       if (input.seamless) r = seamless(r);
-      const id = storeEdit(r);
+      const id = storeEdit(r, ctx.edits);
       const preview = await encodeJpeg(await fit(r, 768), 85);
       return {
         content: [

@@ -1,4 +1,11 @@
-import { createCloudApp } from "../app";
+import Anthropic from "@anthropic-ai/sdk";
+import { jimpCodec } from "../../server/imageCodec";
+import { setImageCodec } from "../../src/agent/photos";
+import { aiConfigFrom } from "../ai/config";
+import { createCredits } from "../ai/credits";
+import { createAiLimits } from "../ai/limits";
+import { createScreenshots } from "../ai/turn";
+import { createCloudApp, type CloudAi } from "../app";
 import { createAuth, signInMethods, type AuthConfig, type OAuthApp } from "../auth";
 import { createDb } from "../db/index";
 import { createMailer } from "../email";
@@ -33,16 +40,38 @@ const blobs = createS3BlobStore({
   secretAccessKey: env.S3_SECRET_ACCESS_KEY ?? "odaja_secret_key",
 });
 
+const mailer = createMailer({ resendApiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM });
 const authConfig: AuthConfig = {
   secret: authSecret,
   baseURL: authUrl,
   trustedOrigins: corsOrigins,
-  mailer: createMailer({ resendApiKey: env.RESEND_API_KEY, from: env.EMAIL_FROM }),
+  mailer,
   google: oauth(env.GOOGLE_CLIENT_ID, env.GOOGLE_CLIENT_SECRET),
   github: oauth(env.GITHUB_CLIENT_ID, env.GITHUB_CLIENT_SECRET),
   checkLeakedPasswords: env.AUTH_CHECK_LEAKED_PASSWORDS === "true",
   turnstile: env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET_KEY ? { siteKey: env.TURNSTILE_SITE_KEY, secretKey: env.TURNSTILE_SECRET_KEY } : undefined,
 };
+
+// AI on our key: on with ANTHROPIC_API_KEY and AI_MODELS (backend/ai/config.ts).
+const aiConfig = aiConfigFrom(env, { emailConfigured: mailer.configured });
+let ai: CloudAi | undefined;
+if (aiConfig.enabled) {
+  // The photo tools decode and encode images with jimp here, as in the companion.
+  setImageCodec(jimpCodec);
+  const credits = createCredits(db, aiConfig);
+  ai = {
+    cfg: aiConfig,
+    credits,
+    limits: createAiLimits(aiConfig),
+    screenshots: createScreenshots(),
+    client: new Anthropic({ apiKey: aiConfig.apiKey, baseURL: aiConfig.baseURL }),
+  };
+  credits
+    .releaseHolds()
+    .then((n) => n && console.log(`[odaja-cloud] gave back credits held by ${n} replies that were running when the server stopped`))
+    .catch((err) => console.warn("[odaja-cloud] couldn't release held credits:", (err as Error).message));
+  console.log(`[odaja-cloud] AI on: ${aiConfig.models.map((m) => `${m.id} (${m.model})`).join(", ")}`);
+}
 
 const app = createCloudApp({
   db,
@@ -52,6 +81,7 @@ const app = createCloudApp({
   homes: createHomes(db, blobs),
   events: createHomeEvents(),
   corsOrigins,
+  ai,
 });
 
 blobs.ensureBucket().catch((err) => {

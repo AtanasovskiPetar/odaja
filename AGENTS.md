@@ -28,7 +28,8 @@ bun run typecheck
 bun run format-project <dir>                   # reformat a project's JSON the way the app saves it
 docker compose up -d && bun run db:push        # the cloud server's Postgres and S3 (see docs/cloud-platform.md)
 bun run backend:dev                            # the cloud server (:8787); VITE_CLOUD_API_URL in .env makes the app offer signing in
-bun test backend                               # the cloud server's tests
+bun test backend                               # the cloud server's tests (TEST_DATABASE_URL, TEST_S3_ENDPOINT: also those on Postgres and S3)
+bun run credits:grant <email> <credits>        # give an account credits for Odaja's AI
 ```
 
 In development the app runs at http://localhost:5173; `bun run start` serves the
@@ -97,6 +98,15 @@ the copy too. To change the sample itself, open it deliberately with
     PATH (`server/env.ts`), or `ODAJA_CLAUDE`. The conversation keeps Claude
     Code's session id to continue it; photos reach the photo tools through the
     chat id the MCP server passes along. For personal use only.
+  - *Odaja AI (credits)*, with a cloud server that has its own key
+    (`backend/ai/`): the page sends the message and the conversation to
+    `/api/v1/projects/:pid/ai/turn`; the server checks credits and limits, runs
+    the tool loop with the Anthropic SDK and the tools on the home in storage,
+    and streams the reply back (screenshots are asked of that tab). Only on
+    homes in the account. Credits are held before each step and settled after
+    it, in one locked transaction, so nobody spends past their balance or the
+    monthly ceiling. Models, prices, credit rates and allowances are
+    configuration (`.env.example`), never code. See docs/cloud-platform.md §5.
 
 ## Security
 
@@ -134,7 +144,9 @@ there, or it's refused. The policy isn't applied in development.
 | `src/model/issues.ts` | Design checks (furniture in walls, overlaps, blocked doors, clearances) with quick fixes |
 | `src/agent/tools.ts` | AI tools shared by the chat and the MCP server. They reach files only through `ctx.files()` (`src/agent/files.ts`: the home and the library), so they run on the server (`server/agentFiles.ts`, folders on disk) and in the website's page (browser storage, via `platform.localTools`) |
 | `src/agent/client.ts` | Calling the tools from the app: in the page on the website, through `/api/tools/call` otherwise |
-| `src/agent/chat/` | The chat engine, in the page: providers and models, settings (IndexedDB), conversations (with the home), the system prompt, the two runners (Anthropic SDK, AI SDK) |
+| `src/agent/chat/` | The chat engine, in the page: providers and models, settings (IndexedDB), conversations (with the home), the system prompt, the runners (Anthropic SDK, AI SDK, Claude Code through the companion, Odaja's AI through the cloud server) |
+| `backend/ai/` | Odaja's own AI on the cloud server: configuration (models, prices, credits; `config.ts`), credits and their ledger (`credits.ts`), rate limits, the tools' file access to a home in storage (`homeFiles.ts`, `If-Match` on every write), the tool loop streamed to the tab (`turn.ts`) |
+| `src/cloud/ai.ts`, `src/ui/PromptStart.tsx`, `src/ui/chat/BuildProgress.tsx` | The account's credits and the server's AI models; the prompt-first welcome (sign-in keeps the prompt, then the AI builds the home); the build's steps over the view while it happens |
 | `mcp/server.ts` | MCP server forwarding Odaja's tools to MCP clients |
 | `src/model/finishes.ts`, `src/model/finishOps.ts` | Finishes: face rectangles with openings cut out, wall sides facing a room, quantities; and the named edits |
 | `src/three/textures.ts` | Real-scale tile textures (patterns drawn on canvas, or photos) |

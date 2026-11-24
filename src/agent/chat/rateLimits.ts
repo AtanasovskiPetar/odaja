@@ -6,6 +6,7 @@
 
 export const PROVIDER_NAMES: Record<string, string> = {
   "claude-code": "Claude Code",
+  odaja: "Odaja AI",
   anthropic: "Anthropic",
   openai: "OpenAI",
   google: "Gemini",

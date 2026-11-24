@@ -20,8 +20,9 @@ async function answers(url: string): Promise<boolean> {
 // "not running" from "not allowing this site", so the status says both.
 // Claude Code runs on the companion (a web page can't start programs), so it's
 // offered only there.
-async function claudeCode(): Promise<ProviderInfo | null> {
-  if (platform.kind !== "server") return null;
+export async function claudeCode(): Promise<ProviderInfo | null> {
+  // The companion (also while an account home is open there).
+  if ((platform.localKind ?? platform.kind) !== "server") return null;
   try {
     const status = (await (await fetch("/api/claude-code/status")).json()) as { loggedIn: boolean; detail: string };
     return { id: "claude-code", name: "Claude Code (your subscription)", kind: "subscription", ready: status.loggedIn, status: status.detail, defaultModel: "default" };
@@ -30,9 +31,30 @@ async function claudeCode(): Promise<ProviderInfo | null> {
   }
 }
 
+// Odaja's own AI, when the cloud server has it: ready once signed in.
+async function odaja(): Promise<ProviderInfo | null> {
+  const [{ useCloudAuth }, { useCloudAi, formatCredits }] = await Promise.all([import("../../cloud/auth"), import("../../cloud/ai")]);
+  if (!useCloudAuth.getState().apiBase) return null;
+  await useCloudAi.getState().load();
+  const ai = useCloudAi.getState();
+  if (!ai.enabled) return null;
+  const signedIn = useCloudAuth.getState().status === "signed-in";
+  // The credits already known (kept current by replies and signing in).
+  const status = signedIn ? (ai.status ?? (await ai.refresh())) : null;
+  return {
+    id: "odaja",
+    name: "Odaja AI (credits)",
+    kind: "credits",
+    ready: signedIn,
+    status: !signedIn ? "Sign in to use it" : status ? `${formatCredits(status.balance)} credits left` : "Signed in",
+    defaultModel: ai.models.find((m) => m.default)?.id ?? "",
+  };
+}
+
 export async function listProviders(settings: ChatSettings): Promise<ProviderInfo[]> {
-  const [cc, ollama, lmstudio] = await Promise.all([
+  const [cc, ours, ollama, lmstudio] = await Promise.all([
     claudeCode(),
+    odaja().catch(() => null),
     answers(`${baseUrl(settings, "ollama")}/api/tags`),
     answers(`${baseUrl(settings, "lmstudio")}/v1/models`),
   ]);
@@ -56,6 +78,7 @@ export async function listProviders(settings: ChatSettings): Promise<ProviderInf
   });
   return [
     ...(cc ? [cc] : []),
+    ...(ours ? [ours] : []),
     keyed("anthropic", "Anthropic API", "claude-opus-5-5"),
     keyed("openai", "OpenAI API", ""),
     keyed("google", "Google Gemini API", ""),
@@ -94,6 +117,11 @@ export async function listModels(provider: ProviderId, settings: ChatSettings): 
         { id: "sonnet", name: "Sonnet (latest)", vision: true, tools: true },
         { id: "haiku", name: "Haiku (latest)", vision: true, tools: true },
       ];
+    case "odaja": {
+      const { useCloudAi } = await import("../../cloud/ai");
+      await useCloudAi.getState().load();
+      return useCloudAi.getState().models.map((m) => ({ id: m.id, name: m.rate !== 1 ? `${m.name} (×${m.rate} credits)` : m.name, vision: true, tools: true }));
+    }
     case "anthropic": {
       if (!key) return [];
       const client = new Anthropic({ apiKey: key, dangerouslyAllowBrowser: true });

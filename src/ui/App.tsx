@@ -13,6 +13,7 @@ import { PreparingIndicator } from "../three/render/ShaderGate";
 import { deleteSelected, deleteStructureSelection, duplicateSelected } from "./actions";
 import { AddPanel } from "./AddPanel";
 import { Inspector } from "./Inspector";
+import { BuildProgress } from "./chat/BuildProgress";
 import { ChatPanel } from "./chat/ChatPanel";
 import { useChat } from "./chat/chatStore";
 import { ImportDialog } from "./ImportDialog";
@@ -1039,6 +1040,7 @@ export function App() {
           {editingStructure && <StructureToolbar />}
         </div>
         <Notice />
+        <BuildProgress />
         <IssuesPanel />
         <Errors />
           </>

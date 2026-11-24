@@ -42,6 +42,8 @@ interface CloudAuthState {
   emailLink(email: string, captcha?: string): Promise<boolean>;
   social(provider: "google" | "github"): Promise<void>;
   requestReset(email: string, captcha?: string): Promise<boolean>;
+  // Send the email confirming the signed-in account's address again.
+  resendVerification(): Promise<boolean>;
   resetPassword(token: string, password: string): Promise<boolean>;
   handleUnauthorized(): void;
 }
@@ -132,6 +134,12 @@ export const useCloudAuth = create<CloudAuthState>((set, get) => ({
     const res = await authFetch(get().apiBase, "/request-password-reset", { email, redirectTo: `${here()}?reset-password` }, captcha);
     if (!res.ok) set({ error: message(res, "Couldn't send the email.") });
     return res.ok;
+  },
+
+  async resendVerification() {
+    const { apiBase, user } = get();
+    if (!user) return false;
+    return (await authFetch(apiBase, "/send-verification-email", { email: user.email, callbackURL: here() }).catch(() => null))?.ok ?? false;
   },
 
   async resetPassword(token, password) {

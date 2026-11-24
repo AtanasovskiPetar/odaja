@@ -1,9 +1,13 @@
 // The in-app chat: talk to a model about the open design; it works with
 // Odaja's tools and the scene updates live.
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
+import { formatCredits, formatDay, useCloudAi } from "../../cloud/ai";
+import { useCloudAuth, useCloudSignedIn } from "../../cloud/auth";
+import { platform } from "../../platform";
 import { useOdaja } from "../../store";
+import { Button } from "../primitives/Button";
 import { ChatSettingsDialog } from "./ChatSettings";
-import { useChat, type AssistantItem, type ImageInput, type Turn } from "./chatStore";
+import { useChat, type AiNotice, type AssistantItem, type ImageInput, type Turn } from "./chatStore";
 import { IconArrowUp, IconChevron, IconClip, IconClose, IconPlus, IconSliders, IconStop } from "../icons";
 
 // Downscale big photos before sending: fewer tokens, same usefulness.
@@ -125,6 +129,94 @@ function TurnView({ turn, live }: { turn: Turn; live: boolean }) {
       {live && turn.items.length === 0 && !status && <div className="thinking">Thinking…</div>}
       {status && <div className="chat-status">{status}</div>}
       {turn.error && <div className="chat-error">{turn.error}</div>}
+      {turn.notice && <NoticeView notice={turn.notice} />}
+    </div>
+  );
+}
+
+// Copy the open home to the account, where Odaja's AI can work on it.
+const copyToAccount = () => useOdaja.getState().copyHomeToCloud();
+
+// Why Odaja's AI stopped or couldn't start, and what to do next.
+function NoticeView({ notice }: { notice: AiNotice }) {
+  const [sent, setSent] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState(false);
+  const ownKey = (
+    <Button size="sm" onClick={() => useChat.getState().setSettingsOpen(true)}>
+      Use your own API key
+    </Button>
+  );
+  let text: ReactNode;
+  let actions: ReactNode = null;
+  switch (notice.kind) {
+    case "no-credits":
+    case "ceiling":
+      text = (
+        <>
+          {notice.kind === "ceiling" ? "That's this month's most for Odaja's AI on your account." : "You're out of credits for Odaja's AI."}
+          {notice.nextAllowance ? ` More come on ${formatDay(notice.nextAllowance)}.` : ""} Until then, you can use your own API key.
+        </>
+      );
+      actions = (
+        <>
+          {notice.topUpUrl && notice.kind === "no-credits" && (
+            <Button size="sm" variant="primary" onClick={() => window.open(notice.topUpUrl!, "_blank", "noopener")}>
+              Buy credits
+            </Button>
+          )}
+          {ownKey}
+        </>
+      );
+      break;
+    case "verify-email":
+      text = "Confirm your email address to use Odaja's AI: open the link we sent you, then send your message again.";
+      actions = (
+        <Button size="sm" disabled={sent !== null} onClick={async () => setSent(await useCloudAuth.getState().resendVerification())}>
+          {sent === null ? "Send the link again" : sent ? "Sent. Check your inbox" : "Couldn't send it"}
+        </Button>
+      );
+      break;
+    case "sign-in":
+      text = "Sign in to use Odaja's AI. Your homes in this browser stay as they are.";
+      actions = (
+        <Button size="sm" variant="primary" onClick={() => useCloudAuth.getState().openSignIn({ mode: "sign-in" })}>
+          Sign in
+        </Button>
+      );
+      break;
+    case "local-home":
+      text = "Odaja's AI works on homes in your account. Copy this one there to use it (the original stays where it is), or use your own API key here.";
+      actions = (
+        <>
+          <Button size="sm" variant="primary" disabled={busy} onClick={() => (setBusy(true), copyToAccount().finally(() => setBusy(false)))}>
+            {busy ? "Copying…" : "Copy to your account"}
+          </Button>
+          {ownKey}
+        </>
+      );
+      break;
+  }
+  return (
+    <div className="mt-2 rounded-[8px] border border-accent-line bg-accent-wash p-3 text-[13px] leading-snug text-ink">
+      <p className="m-0">{text}</p>
+      {actions && <div className="mt-2.5 flex flex-wrap gap-2">{actions}</div>}
+    </div>
+  );
+}
+
+// Odaja's AI in the picker: the credits left, or what it needs first.
+function OdajaNote() {
+  const signedIn = useCloudSignedIn();
+  const status = useCloudAi((s) => s.status);
+  // Re-read when the open home changes; the open host says where it lives.
+  useOdaja((s) => s.projectDir);
+  const cloudHome = platform.kind === "cloud";
+  if (!signedIn) return <div className="picker-note">Sign in to use Odaja's AI. New accounts get free credits to try it.</div>;
+  return (
+    <div className="picker-note">
+      {status ? `${formatCredits(status.balance)} credits left.` : ""}
+      {status?.needsVerifiedEmail ? " Confirm your email address to use them." : ""}
+      {!cloudHome ? " Works on homes in your account." : ""}
     </div>
   );
 }
@@ -158,7 +250,7 @@ function ModelPicker() {
           </option>
         ))}
       </select>
-      {info && !info.ready && <div className="picker-note">{info.status}</div>}
+      {info?.id === "odaja" ? <OdajaNote /> : info && !info.ready && <div className="picker-note">{info.status}</div>}
       {modelsError && <div className="picker-note">{modelsError}</div>}
       {current && current.tools === undefined && info?.kind === "local" && <div className="picker-note">Local models must support tool calling to change the design.</div>}
     </div>
@@ -213,9 +305,14 @@ export function ChatPanel() {
     if (!draft) return;
     const taken = takeDraft();
     if (!taken) return;
+    if (taken.send) {
+      // Sent at once (the prompt-first start): the reply shows here.
+      Promise.all(taken.files.map(toImageInput)).then((converted) => send(taken.text, converted, { build: true }));
+      return;
+    }
     setText(taken.text);
     Promise.all(taken.files.map(toImageInput)).then((converted) => setImages(converted));
-  }, [draft, takeDraft]);
+  }, [draft, takeDraft, send]);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
@@ -229,6 +326,12 @@ export function ChatPanel() {
 
   const submit = () => {
     if (busy || (!text.trim() && images.length === 0)) return;
+    // Odaja's AI needs an account: sign in first; the message stays here.
+    const chat = useChat.getState();
+    if (chat.provider === "odaja" && useCloudAuth.getState().status !== "signed-in") {
+      useCloudAuth.getState().openSignIn({ mode: "sign-in" });
+      return;
+    }
     send(text.trim(), images);
     setText("");
     setImages([]);

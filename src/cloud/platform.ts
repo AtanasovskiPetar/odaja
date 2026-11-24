@@ -79,9 +79,10 @@ export function createCloudPlatform(apiBase: string, library: () => FileArea | n
     // storage unavailable
   }
 
-  const changeListeners: ((path: string) => void)[] = [];
+  // The app's listeners return a promise when they reload something.
+  const changeListeners: ((path: string) => unknown)[] = [];
   const openSceneListeners: ((path: string) => void)[] = [];
-  const announce = (rel: string) => changeListeners.forEach((cb) => cb(rel));
+  const announce = (rel: string) => Promise.all(changeListeners.map((cb) => cb(rel))).then(() => {});
 
   const requireOpen = (): string => {
     if (!currentId) throw new Error("No cloud project is open");
@@ -700,6 +701,34 @@ export function createCloudPlatform(apiBase: string, library: () => FileArea | n
 
     onScreenshotRequest() {
       // Screenshots are taken by this page directly (the tools run in it).
+    },
+
+    hostedAi: {
+      turn(body) {
+        return fetch(`${base}/api/v1/projects/${encodeURIComponent(requireOpen())}/ai/turn`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      },
+      async stop() {
+        await fetch(`${base}/api/v1/ai/stop`, { method: "POST", credentials: "include" }).catch(() => {});
+      },
+      async answerScreenshot(id, result) {
+        await fetch(`${base}/api/v1/ai/screenshot`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id, ...result }),
+        }).catch(() => {});
+      },
+      // Load these files again now and wait until the app has them (the
+      // change stream would bring them too, but maybe not before a screenshot).
+      async reload(paths) {
+        await Promise.all(paths.map((rel) => announce(rel)));
+      },
+      openScene: (path) => openSceneListeners.forEach((cb) => cb(path)),
     },
 
     versions: {
