@@ -10,6 +10,7 @@ import { openHome, pickHomeFile } from "./homeFileActions";
 import { LogoMark } from "./icons";
 import { InstallDialog } from "./InstallDialog";
 import { NewHomeForm } from "./NewHome";
+import { PromptStart } from "./PromptStart";
 import { ThemeSwitch } from "./ThemeSwitch";
 
 // The companion: open a home's folder anywhere on disk by its path (the home
@@ -108,6 +109,13 @@ function StorageNote() {
 export function Welcome() {
   const [error, setError] = useState<string | null>(null);
   const [installing, setInstalling] = useState(false);
+  // The prompt comes first; the usual ways to start are a click away.
+  const [withoutAi, setWithoutAi] = useState(false);
+  const install = platform.kind === "browser" && (
+    <button className="open-file" onClick={() => setInstalling(true)}>
+      Install Odaja on your computer…
+    </button>
+  );
   return (
     <div className="start">
       <div className="start-corner">
@@ -122,30 +130,39 @@ export function Welcome() {
           A drafting table for your home. Measure it, furnish it, walk through it, <em>and talk it over</em> before anything is built.
         </p>
       </header>
-      <div className="card welcome-card">
-        <h2>Where shall we start?</h2>
-        <NewHomeForm initial="sample" />
-        <div className="welcome-more">
-          <button
-            className="open-file"
-            onClick={async () => {
-              setError(null);
-              const picked = await pickHomeFile().catch((err) => (setError((err as Error).message), null));
-              if (picked) openHome(picked).catch((err) => setError((err as Error).message));
-            }}
-          >
-            Open a home file (.odaja)…
-          </button>
-          {platform.kind === "browser" && (
-            <button className="open-file" onClick={() => setInstalling(true)}>
-              Install Odaja on your computer…
+      {withoutAi ? (
+        <div className="card welcome-card">
+          <h2>Where shall we start?</h2>
+          <NewHomeForm initial="sample" />
+          <div className="welcome-more">
+            <button
+              className="open-file"
+              onClick={async () => {
+                setError(null);
+                const picked = await pickHomeFile().catch((err) => (setError((err as Error).message), null));
+                if (picked) openHome(picked).catch((err) => setError((err as Error).message));
+              }}
+            >
+              Open a home file (.odaja)…
             </button>
-          )}
-          {platform.kind === "server" && <OpenFolderForm />}
-          {error && <div className="inline-error">{error}</div>}
+            {install}
+            {platform.kind === "server" && <OpenFolderForm />}
+            {error && <div className="inline-error">{error}</div>}
+          </div>
+          <StorageNote />
+          <button className="link mt-3" onClick={() => setWithoutAi(false)}>
+            ← Describe it to the AI instead
+          </button>
         </div>
-        <StorageNote />
-      </div>
+      ) : (
+        <>
+          <PromptStart onStartWithoutAi={() => setWithoutAi(true)} />
+          <div className="welcome-more mx-auto mt-4 max-w-[560px] border-t-0 pt-0">
+            {install}
+            <StorageNote />
+          </div>
+        </>
+      )}
       {installing && <InstallDialog onClose={() => setInstalling(false)} />}
     </div>
   );

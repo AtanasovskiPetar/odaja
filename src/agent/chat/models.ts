@@ -20,7 +20,7 @@ async function answers(url: string): Promise<boolean> {
 // "not running" from "not allowing this site", so the status says both.
 // Claude Code runs on the companion (a web page can't start programs), so it's
 // offered only there.
-async function claudeCode(): Promise<ProviderInfo | null> {
+export async function claudeCode(): Promise<ProviderInfo | null> {
   if (platform.kind !== "server") return null;
   try {
     const status = (await (await fetch("/api/claude-code/status")).json()) as { loggedIn: boolean; detail: string };

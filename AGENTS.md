@@ -148,6 +148,7 @@ there, or it's refused. The policy isn't applied in development.
 | `src/three/render/` | Realistic rendering (see its README): sky and environment light, guided ambient occlusion (`ao/`, patched into materials by `aoMaterial.ts`), physical materials, window fill lights (`WindowLight.tsx`, reaching about 8 m). `ShaderGate.tsx` draws the frame: shaders compile in the background and meshes appear once theirs are ready, the house shell first. Keep the light setup constant (the same number of lights, shadows on): a change recompiles every shader |
 | `src/three/capture.ts` | Viewport screenshots (plan view includes the dimension overlay) |
 | `src/ui/chat/` | Chat panel, model picker, connection settings |
+| `src/ui/PromptStart.tsx`, `src/ui/chat/BuildProgress.tsx` | The prompt-first welcome: describe the home or drop in a floor plan, and the chat builds it with your own key or model ("Start without AI" shows the usual ways); the build's steps over the view while it happens |
 | `src/three/modelImport.ts` | Loading model files (GLB/glTF, FBX, OBJ+MTL, DAE, 3DS, USDZ/USD, 3MF, STL, PLY, WRL), units/up-axis/facing normalisation, simplification, GLB export |
 | `src/three/ModelView.tsx` | Renders model objects stretched to their size, with the bounding box as fallback |
 | `src/three/thumbnail.ts` | Preview images for library items |
@@ -185,5 +186,12 @@ there, or it's refused. The policy isn't applied in development.
 - Edits made outside the app (agents, editors) are pushed onto the undo stack,
   so the user can undo them in the app.
 - Stack: Bun, Vite, React 19, React Three Fiber + drei, Zustand, Zod 4,
-  TypeScript. Odaja is heading for a local-first website plus the optional
+  Tailwind CSS 4, TypeScript. Odaja is heading for a local-first website plus the optional
   companion; there is no desktop (Tauri) app.
+- Styling: new UI is written in **Tailwind**, built from the components in
+  `src/ui/primitives/` (Button, Input, Popover) and the colour names in
+  `src/ui/theme.css`, which map to the variables in `styles.css` (light and dark).
+  `styles.css` is the older way: it's loaded as a lower layer, so Tailwind's
+  classes win, and screens move off it when they're reworked (a full move is
+  planned). Tailwind resets the browser's own button and list styles, so every
+  button needs styles of its own. Use only colour variables that exist in `styles.css`.
