@@ -129,6 +129,7 @@ function TurnView({ turn, live }: { turn: Turn; live: boolean }) {
   );
 }
 
+
 function ModelPicker() {
   const providers = useChat((s) => s.providers);
   const provider = useChat((s) => s.provider);
@@ -213,9 +214,14 @@ export function ChatPanel() {
     if (!draft) return;
     const taken = takeDraft();
     if (!taken) return;
+    if (taken.send) {
+      // Sent at once (the prompt-first start): the reply shows here.
+      Promise.all(taken.files.map(toImageInput)).then((converted) => send(taken.text, converted, { build: true }));
+      return;
+    }
     setText(taken.text);
     Promise.all(taken.files.map(toImageInput)).then((converted) => setImages(converted));
-  }, [draft, takeDraft]);
+  }, [draft, takeDraft, send]);
 
   useEffect(() => {
     scroller.current?.scrollTo({ top: scroller.current.scrollHeight });
