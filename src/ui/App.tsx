@@ -50,6 +50,7 @@ import { ThemeCycleButton } from "./ThemeSwitch";
 import { toggleUnitSystem, useUnitSystem } from "./unitPref";
 import { HomeMenu, openHomeFromPicker } from "./HomeMenu";
 import { AddToLibraryDialog, ExportImageDialog, OpenHomeDialog, SaveFileDialog } from "./HomeFileDialogs";
+import { InstallDialog } from "./InstallDialog";
 import { isHomeFile, requestOpenHome, saveHome } from "./homeFileActions";
 import { isLibraryFile, openLibraryFileWithNotice } from "./libraryFiles";
 import { WalkOverlay, WalkStartPicker } from "./WalkOverlay";
@@ -951,6 +952,7 @@ function Dialogs() {
   if (dialog?.kind === "save-file") return <SaveFileDialog saveAs={dialog.saveAs} />;
   if (dialog?.kind === "open-home") return <OpenHomeDialog file={dialog.file} handle={dialog.handle} />;
   if (dialog?.kind === "export-image") return <ExportImageDialog />;
+  if (dialog?.kind === "install") return <InstallDialog />;
   if (dialog?.kind === "new-home") return <NewHomeDialog />;
   if (dialog?.kind === "open-folder") return <OpenFolderDialog />;
   if (dialog?.kind === "manage-homes") return <ManageHomesDialog />;

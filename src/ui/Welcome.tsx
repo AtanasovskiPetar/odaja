@@ -9,6 +9,7 @@ import { platform } from "../platform";
 import { useOdaja } from "../store";
 import { openHome, pickHomeFile } from "./homeFileActions";
 import { LogoMark } from "./icons";
+import { InstallDialog } from "./InstallDialog";
 import { NewHomeForm } from "./NewHome";
 import { PromptStart } from "./PromptStart";
 import { ThemeSwitch } from "./ThemeSwitch";
@@ -110,6 +111,12 @@ export function Welcome() {
   const [error, setError] = useState<string | null>(null);
   // The prompt comes first; the usual ways to start are a click away.
   const [withoutAi, setWithoutAi] = useState(false);
+  const [installing, setInstalling] = useState(false);
+  const install = platform.kind === "browser" && (
+    <button className="open-file" onClick={() => setInstalling(true)}>
+      Install Odaja on your computer…
+    </button>
+  );
   return (
     <div className="start">
       <div className="start-corner">
@@ -139,6 +146,7 @@ export function Welcome() {
             >
               Open a home file (.odaja)…
             </button>
+            {install}
             {platform.kind === "server" && <OpenFolderForm />}
             {platform.cloud && <AccountHomes />}
             {error && <div className="inline-error">{error}</div>}
@@ -153,10 +161,12 @@ export function Welcome() {
           <PromptStart onStartWithoutAi={() => setWithoutAi(true)} />
           <div className="welcome-more mx-auto mt-4 max-w-[560px] border-t-0 pt-0">
             {platform.cloud && <AccountHomes />}
+            {install}
             <StorageNote />
           </div>
         </>
       )}
+      {installing && <InstallDialog onClose={() => setInstalling(false)} />}
     </div>
   );
 }

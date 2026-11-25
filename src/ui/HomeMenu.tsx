@@ -1,5 +1,6 @@
 // The home's name in the sidebar opens the home menu: switch homes, manage all
-// homes, create a new home, import/export .odaja files, or export an image.
+// homes, create a new home, import/export .odaja files, export an image, or
+// (on the website) how to install Odaja on the computer.
 import { useEffect, useRef, useState } from "react";
 import { useCloudAuth, useCloudSignedIn } from "../cloud/auth";
 import { SAVE_LABELS, useCloudSave, type SaveState } from "../cloud/saveStatus";
@@ -220,6 +221,15 @@ export function HomeMenu() {
           >
             <span>Export image…</span>
           </button>
+          {/* The website (also while an account home is open there). */}
+          {(platform.localKind ?? platform.kind) === "browser" && (
+            <>
+              <div className="my-1 border-t border-line" />
+              <button type="button" role="menuitem" onClick={run(() => useOdaja.getState().openDialog({ kind: "install" }))} className={itemClass}>
+                <span>Install on your computer…</span>
+              </button>
+            </>
+          )}
 
           {web && (
             <p className="m-0 mt-1 border-t border-line pt-1.5 px-2 text-[11px] text-muted">

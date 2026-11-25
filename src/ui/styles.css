@@ -3967,3 +3967,60 @@ button.link.danger {
   opacity: 0.8;
 }
 
+/* Installing the companion (the home menu, on the website). */
+.install-dialog {
+  width: min(520px, 100%);
+}
+
+.install-points {
+  margin: 0 0 16px;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-2);
+}
+
+.install-points li + li {
+  margin-top: 4px;
+}
+
+.install-command + .install-command {
+  margin-top: 10px;
+}
+
+.install-command-label {
+  margin-bottom: 4px;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.install-command-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  border-radius: var(--r-s);
+  background: var(--well);
+}
+
+.install-command-row code {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: nowrap;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+.install-command-row button {
+  width: auto;
+  flex: none;
+  margin: 0;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.install-dialog .hint code {
+  font-family: var(--mono);
+}
